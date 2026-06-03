@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj" />
+    <Project Path="src/Pulse.Edge.Api/Pulse.Edge.Api.csproj" />
+    <Project Path="src/Pulse.Edge.Cloud/Pulse.Edge.Cloud.csproj" />
+    <Project Path="src/Pulse.Edge.Protocols.MqttProtocol/Pulse.Edge.Protocols.MqttProtocol.csproj" />
+    <Project Path="src/Pulse.Edge.Protocols.OpcUa/Pulse.Edge.Protocols.OpcUa.csproj" />
+    <Project Path="src/Pulse.Edge.Storage/Pulse.Edge.Storage.csproj" />
+  </Folder>
+</Solution>
