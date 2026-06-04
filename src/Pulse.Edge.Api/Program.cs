@@ -15,6 +15,7 @@ using Pulse.Edge.Agent;
 using Pulse.Edge.Cloud.Services;
 using Pulse.Edge.Protocols.MqttProtocol;
 using Pulse.Edge.Protocols.Modbus;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -46,9 +47,18 @@ var app = builder.Build();
 
 app.UseCors();
 
-// Serve React UI static assets
-app.UseDefaultFiles();
-app.UseStaticFiles();
+// Serve React UI static assets embedded in the assembly
+var embeddedProvider = new ManifestEmbeddedFileProvider(typeof(Program).Assembly, "wwwroot");
+
+app.UseDefaultFiles(new DefaultFilesOptions
+{
+    FileProvider = embeddedProvider
+});
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = embeddedProvider
+});
 
 // GET /api/dashboard - Returns system status, SQLite db details, and current queues
 app.MapGet("/api/dashboard", async (QueueStorageService storageService) =>
@@ -593,8 +603,11 @@ using (var scope = app.Services.CreateScope())
     await storage.InitializeAsync();
 }
 
-// Fallback all SPA routing to index.html
-app.MapFallbackToFile("index.html");
+// Fallback all SPA routing to index.html from embedded files
+app.MapFallbackToFile("index.html", new StaticFileOptions
+{
+    FileProvider = embeddedProvider
+});
 
 app.Run();
 
