@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Pulse.Edge</AssemblyName>
     <GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
+    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
   </PropertyGroup>
 
   <ItemGroup>

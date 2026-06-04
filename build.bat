@@ -104,13 +104,13 @@ echo   ✅ Multi-Platform Build Completed Successfully!
 echo =============================================
 echo Deployment packages generated in dist\ folder:
 if exist dist\win-x86 (
-    echo   ➡️  Windows 32-bit:  dist\win-x86\Pulse.Edge.exe
+    echo   ➡️  Windows 32-bit:  dist\win-x86\ (Pulse.Edge.exe and Pulse.Edge.Agent.exe)
 )
 if exist dist\win-x64 (
-    echo   ➡️  Windows 64-bit:  dist\win-x64\Pulse.Edge.exe
+    echo   ➡️  Windows 64-bit:  dist\win-x64\ (Pulse.Edge.exe and Pulse.Edge.Agent.exe)
 )
 if exist dist\linux-x64 (
-    echo   ➡️  Linux 64-bit:    dist\linux-x64\Pulse.Edge
+    echo   ➡️  Linux 64-bit:    dist\linux-x64\ (Pulse.Edge and Pulse.Edge.Agent)
 )
 echo.
 echo Each target folder is standalone and ready to run!
@@ -124,8 +124,15 @@ exit /b 0
 set RID=%1
 set OUT_DIR=dist\%RID%
 
-echo 🔌 Compiling standalone binary for target: %RID%...
+echo 🔌 Compiling standalone Web/API/UI server for target: %RID%...
 dotnet publish src\Pulse.Edge.Api\Pulse.Edge.Api.csproj -c Release -r %RID% --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o %OUT_DIR%
+if %errorlevel% neq 0 (
+    echo ❌ Error: Compilation failed for %RID%
+    exit /b 1
+)
+
+echo 🤖 Compiling standalone background Agent daemon for target: %RID%...
+dotnet publish src\Pulse.Edge.Agent\Pulse.Edge.Agent.csproj -c Release -r %RID% --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o %OUT_DIR%
 if %errorlevel% neq 0 (
     echo ❌ Error: Compilation failed for %RID%
     exit /b 1
@@ -135,6 +142,7 @@ if %errorlevel% neq 0 (
 echo 🧹 Cleaning up compiler artifacts in %OUT_DIR%...
 del /f /q %OUT_DIR%\*.pdb >nul 2>nul
 del /f /q %OUT_DIR%\Pulse.Edge.staticwebassets.endpoints.json >nul 2>nul
+del /f /q %OUT_DIR%\Pulse.Edge.Agent.staticwebassets.endpoints.json >nul 2>nul
 del /f /q %OUT_DIR%\appsettings.Development.json >nul 2>nul
 if exist %OUT_DIR%\web.config (
     del /f /q %OUT_DIR%\web.config

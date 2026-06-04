@@ -37,31 +37,40 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<QueueStorageService>();
 builder.Services.AddSingleton<OpcUaDriver>();
 
-// Register Agent background synchronization & communication protocols
-builder.Services.AddSingleton<CloudClient>();
-builder.Services.AddSingleton<SyncService>();
-builder.Services.AddSingleton<MqttDriver>();
-builder.Services.AddSingleton<ModbusDriver>();
+var hostingMode = builder.Configuration["hostingMode"] ?? "SinglePort";
+var isSinglePort = string.Equals(hostingMode, "SinglePort", StringComparison.OrdinalIgnoreCase);
 
-// Register background Worker process
-builder.Services.AddHostedService<Worker>();
+if (isSinglePort)
+{
+    // Register Agent background synchronization & communication protocols
+    builder.Services.AddSingleton<CloudClient>();
+    builder.Services.AddSingleton<SyncService>();
+    builder.Services.AddSingleton<MqttDriver>();
+    builder.Services.AddSingleton<ModbusDriver>();
+
+    // Register background Worker process
+    builder.Services.AddHostedService<Worker>();
+}
 
 var app = builder.Build();
 
 app.UseCors();
 
-// Serve React UI static assets embedded in the assembly
-var embeddedProvider = new ManifestEmbeddedFileProvider(typeof(Program).Assembly, "wwwroot");
-
-app.UseDefaultFiles(new DefaultFilesOptions
+if (isSinglePort)
 {
-    FileProvider = embeddedProvider
-});
+    // Serve React UI static assets embedded in the assembly
+    var embeddedProvider = new ManifestEmbeddedFileProvider(typeof(Program).Assembly, "wwwroot");
 
-app.UseStaticFiles(new StaticFileOptions
-{
-    FileProvider = embeddedProvider
-});
+    app.UseDefaultFiles(new DefaultFilesOptions
+    {
+        FileProvider = embeddedProvider
+    });
+
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = embeddedProvider
+    });
+}
 
 // GET /api/dashboard - Returns system status, SQLite db details, and current queues
 app.MapGet("/api/dashboard", async (QueueStorageService storageService) =>
@@ -606,11 +615,14 @@ using (var scope = app.Services.CreateScope())
     await storage.InitializeAsync();
 }
 
-// Fallback all SPA routing to index.html from embedded files
-app.MapFallbackToFile("index.html", new StaticFileOptions
+if (isSinglePort)
 {
-    FileProvider = embeddedProvider
-});
+    // Fallback all SPA routing to index.html from embedded files
+    app.MapFallbackToFile("index.html", new StaticFileOptions
+    {
+        FileProvider = new ManifestEmbeddedFileProvider(typeof(Program).Assembly, "wwwroot")
+    });
+}
 
 app.Run();
 

@@ -33,14 +33,38 @@ wait_for_http() {
   echo "✅ $label is ready (${elapsed}s)"
 }
 
-# 1. Start local Unified Edge Server (Hosts API & background Agent)
-echo "🔌 Starting Unified Edge Server (on http://localhost:5288)..."
-dotnet run --project src/Pulse.Edge.Api/Pulse.Edge.Api.csproj &
+# Detect hosting mode from appsettings config (default: SinglePort)
+HOSTING_MODE="SinglePort"
+if [ -f src/Pulse.Edge.Api/appsettings.Development.json ]; then
+  HOSTING_MODE=$(grep -i '"hostingMode"' src/Pulse.Edge.Api/appsettings.Development.json | head -n 1 | awk -F'"' '{print $4}')
+fi
+if [ -z "$HOSTING_MODE" ] && [ -f src/Pulse.Edge.Api/appsettings.json ]; then
+  HOSTING_MODE=$(grep -i '"hostingMode"' src/Pulse.Edge.Api/appsettings.json | head -n 1 | awk -F'"' '{print $4}')
+fi
+if [ -z "$HOSTING_MODE" ]; then
+  HOSTING_MODE="SinglePort"
+fi
+
+echo "📢 Detected Hosting Mode: $HOSTING_MODE"
+
+if [ "$HOSTING_MODE" == "SinglePort" ]; then
+  # 1. Start local Unified Edge Server (Hosts API & background Agent)
+  echo "🔌 Starting Unified Edge Server (on http://localhost:5288)..."
+  dotnet run --project src/Pulse.Edge.Api/Pulse.Edge.Api.csproj &
+else
+  # 1. Start separate Edge Agent Daemon
+  echo "🤖 Starting Standalone Edge Agent Daemon..."
+  dotnet run --project src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj &
+
+  # 2. Start separate local REST API
+  echo "🔌 Starting Edge API Server (on http://localhost:5288)..."
+  dotnet run --project src/Pulse.Edge.Api/Pulse.Edge.Api.csproj &
+fi
 
 # Wait for the API to be healthy before starting the UI
 wait_for_http "http://localhost:5288/api/dashboard" "Edge API" 90
 
-# 2. Start local React Web UI (only after API is up)
+# Start local React Web UI (only after API is up)
 echo "💻 Starting Vite Web UI Server (on http://localhost:8080)..."
 cd src/Pulse.Edge.UI
 pnpm dev &

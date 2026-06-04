@@ -80,8 +80,18 @@ build_target() {
     local rid=$1
     local out_dir="dist/$rid"
     
-    echo "🔌 Compiling standalone binary for target: $rid..."
+    echo "🔌 Compiling standalone Web/API/UI server for target: $rid..."
     dotnet publish src/Pulse.Edge.Api/Pulse.Edge.Api.csproj \
+      -c Release \
+      -r "$rid" \
+      --self-contained true \
+      -p:PublishSingleFile=true \
+      -p:IncludeNativeLibrariesForSelfExtract=true \
+      -p:PublishTrimmed=false \
+      -o "$out_dir/"
+
+    echo "🤖 Compiling standalone background Agent daemon for target: $rid..."
+    dotnet publish src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj \
       -c Release \
       -r "$rid" \
       --self-contained true \
@@ -94,6 +104,7 @@ build_target() {
     echo "🧹 Cleaning up compiler artifacts in $out_dir..."
     rm -f "$out_dir"/*.pdb
     rm -f "$out_dir"/Pulse.Edge.staticwebassets.endpoints.json
+    rm -f "$out_dir"/Pulse.Edge.Agent.staticwebassets.endpoints.json
     rm -f "$out_dir"/appsettings.Development.json
     if [ -f "$out_dir"/web.config ]; then
         rm "$out_dir"/web.config
@@ -110,13 +121,13 @@ echo "  ✅ Multi-Platform Build Completed Successfully!"
 echo "============================================="
 echo "Deployment packages generated in dist/ folder:"
 if [ -d "dist/win-x86" ]; then
-    echo "  ➡️  Windows 32-bit:  dist/win-x86/Pulse.Edge.exe"
+    echo "  ➡️  Windows 32-bit:  dist/win-x86/ (Pulse.Edge.exe & Pulse.Edge.Agent.exe)"
 fi
 if [ -d "dist/win-x64" ]; then
-    echo "  ➡️  Windows 64-bit:  dist/win-x64/Pulse.Edge.exe"
+    echo "  ➡️  Windows 64-bit:  dist/win-x64/ (Pulse.Edge.exe & Pulse.Edge.Agent.exe)"
 fi
 if [ -d "dist/linux-x64" ]; then
-    echo "  ➡️  Linux 64-bit:    dist/linux-x64/Pulse.Edge"
+    echo "  ➡️  Linux 64-bit:    dist/linux-x64/ (Pulse.Edge & Pulse.Edge.Agent)"
 fi
 echo ""
 echo "Each target folder is standalone and ready to run!"
