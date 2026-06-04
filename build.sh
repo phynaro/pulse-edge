@@ -28,10 +28,31 @@ else
     exit 1
 fi
 
-# Determine target(s) to compile
-TARGETS=("win-x86" "win-x64" "linux-x64")
-if [ -n "$1" ] && [ "$1" != "all" ]; then
-    TARGETS=("$1")
+# Sanitize and normalize input argument
+INPUT_TARGET=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+if [ -n "$INPUT_TARGET" ]; then
+    case "$INPUT_TARGET" in
+        "win-x86" | "winx86" | "x86")
+            TARGETS=("win-x86")
+            ;;
+        "win-x64" | "winx64" | "x64")
+            TARGETS=("win-x64")
+            ;;
+        "linux-x64" | "linuxx64" | "linux" | "ubuntu" | "linux64")
+            TARGETS=("linux-x64")
+            ;;
+        "all")
+            TARGETS=("win-x86" "win-x64" "linux-x64")
+            ;;
+        *)
+            echo "❌ Error: Unsupported or unrecognized target '$1'."
+            echo "Supported targets are: win-x86, win-x64, linux-x64, all"
+            exit 1
+            ;;
+    esac
+else
+    # Default to all targets if no argument is passed
+    TARGETS=("win-x86" "win-x64" "linux-x64")
 fi
 
 echo "📦 Package Manager: $PKG_MANAGER"

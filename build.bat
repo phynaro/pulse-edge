@@ -31,10 +31,26 @@ if %errorlevel% eq 0 (
     )
 )
 
-:: Determine targets to compile
-set TARGET_ARG=%~1
-if "%TARGET_ARG%"=="" (
+:: Determine targets to compile (Sanitize and map input)
+set TARGET_INPUT=%~1
+if "%TARGET_INPUT%"=="" (
     set TARGET_ARG=all
+) else (
+    set TARGET_ARG=%TARGET_INPUT%
+    
+    if /i "!TARGET_ARG!"=="win-x86" set TARGET_ARG=win-x86
+    if /i "!TARGET_ARG!"=="winx86" set TARGET_ARG=win-x86
+    if /i "!TARGET_ARG!"=="x86" set TARGET_ARG=win-x86
+    
+    if /i "!TARGET_ARG!"=="win-x64" set TARGET_ARG=win-x64
+    if /i "!TARGET_ARG!"=="winx64" set TARGET_ARG=win-x64
+    if /i "!TARGET_ARG!"=="x64" set TARGET_ARG=win-x64
+    
+    if /i "!TARGET_ARG!"=="linux-x64" set TARGET_ARG=linux-x64
+    if /i "!TARGET_ARG!"=="linuxx64" set TARGET_ARG=linux-x64
+    if /i "!TARGET_ARG!"=="linux" set TARGET_ARG=linux-x64
+    if /i "!TARGET_ARG!"=="ubuntu" set TARGET_ARG=linux-x64
+    if /i "!TARGET_ARG!"=="linux64" set TARGET_ARG=linux-x64
 )
 
 echo 📦 Using package manager: !PKG_MANAGER!
@@ -71,8 +87,16 @@ if "!TARGET_ARG!"=="all" (
     call :build_target win-x86
     call :build_target win-x64
     call :build_target linux-x64
+) else if "!TARGET_ARG!"=="win-x86" (
+    call :build_target win-x86
+) else if "!TARGET_ARG!"=="win-x64" (
+    call :build_target win-x64
+) else if "!TARGET_ARG!"=="linux-x64" (
+    call :build_target linux-x64
 ) else (
-    call :build_target !TARGET_ARG!
+    echo ❌ Error: Unsupported or unrecognized target '!TARGET_INPUT!'.
+    echo Supported targets are: win-x86, win-x64, linux-x64, all
+    exit /b 1
 )
 
 echo =============================================
@@ -85,7 +109,7 @@ if exist dist\win-x86 (
 if exist dist\win-x64 (
     echo   ➡️  Windows 64-bit:  dist\win-x64\Pulse.Edge.exe
 )
-if exist exist dist\linux-x64 (
+if exist dist\linux-x64 (
     echo   ➡️  Linux 64-bit:    dist\linux-x64\Pulse.Edge
 )
 echo.
