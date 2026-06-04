@@ -19,6 +19,9 @@ using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Default Kestrel to listen on port 5288 on all network interfaces
+builder.WebHost.UseUrls("http://*:5288");
+
 // Enable CORS so the development React UI running on port 8080 can poll the API on port 5244
 builder.Services.AddCors(options =>
 {
