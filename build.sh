@@ -100,5 +100,5 @@ fi
 echo ""
 echo "Each target folder is standalone and ready to run!"
 echo "To build a single target, pass its RID as an argument, e.g.:"
-echo "  ./build-windows.sh linux-x64"
+echo "  ./build.sh linux-x64"
 echo "============================================="

@@ -91,7 +91,7 @@ if exist exist dist\linux-x64 (
 echo.
 echo Each target folder is standalone and ready to run!
 echo To compile a single target, pass its RID as an argument, e.g.:
-echo   build-windows.bat linux-x64
+echo   build.bat linux-x64
 echo =============================================
 pause
 exit /b 0
