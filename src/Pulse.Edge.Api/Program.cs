@@ -11,6 +11,10 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using Pulse.Edge.Protocols.OpcUa;
+using Pulse.Edge.Agent;
+using Pulse.Edge.Cloud.Services;
+using Pulse.Edge.Protocols.MqttProtocol;
+using Pulse.Edge.Protocols.Modbus;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +32,15 @@ builder.Services.AddCors(options =>
 // Register SQLite storage service and OPC UA driver
 builder.Services.AddSingleton<QueueStorageService>();
 builder.Services.AddSingleton<OpcUaDriver>();
+
+// Register Agent background synchronization & communication protocols
+builder.Services.AddSingleton<CloudClient>();
+builder.Services.AddSingleton<SyncService>();
+builder.Services.AddSingleton<MqttDriver>();
+builder.Services.AddSingleton<ModbusDriver>();
+
+// Register background Worker process
+builder.Services.AddHostedService<Worker>();
 
 var app = builder.Build();
 

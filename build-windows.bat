@@ -66,28 +66,23 @@ if not exist src\Pulse.Edge.Api\wwwroot (
 del /f /s /q src\Pulse.Edge.Api\wwwroot\* >nul 2>nul
 xcopy /e /i /y src\Pulse.Edge.UI\dist src\Pulse.Edge.Api\wwwroot\
 
-:: 4. Compile Agent Daemon
-echo 🤖 Compiling Pulse.Edge.Agent (!ARCH!)...
-dotnet publish src\Pulse.Edge.Agent\Pulse.Edge.Agent.csproj -c Release -r !ARCH! --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o dist\Agent
+:: 4. Compile Unified API Server (Hosts API, background sync worker, and React UI)
+echo 🔌 Compiling Unified Pulse.Edge (!ARCH!) executable...
+dotnet publish src\Pulse.Edge.Api\Pulse.Edge.Api.csproj -c Release -r !ARCH! --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o dist
 if %errorlevel% neq 0 (
-    echo ❌ Error: Agent compilation failed.
-    exit /b 1
-)
-
-:: 5. Compile Unified API Server (API + Web UI)
-echo 🔌 Compiling Pulse.Edge.Api (!ARCH!) with Unified UI...
-dotnet publish src\Pulse.Edge.Api\Pulse.Edge.Api.csproj -c Release -r !ARCH! --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o dist\Api
-if %errorlevel% neq 0 (
-    echo ❌ Error: API compilation failed.
+    echo ❌ Error: Compilation failed.
     exit /b 1
 )
 
 echo =============================================
 echo   ✅ Build Completed Successfully!
 echo =============================================
-echo Your Windows executables are located at:
-echo  - Agent Daemon:  dist\Agent\Pulse.Edge.Agent.exe
-echo  - API + Web UI:  dist\Api\Pulse.Edge.Api.exe
+echo Your unified Windows executable is located at:
+echo  - Unified Process:  dist\Pulse.Edge.exe
+echo  - UI Assets Folder: dist\wwwroot\
+echo.
+echo To run this application, copy the entire 'dist/' folder
+echo to the target machine and execute 'Pulse.Edge.exe'.
 echo.
 echo To compile for 64-bit Windows instead, run:
 echo   build-windows.bat x64

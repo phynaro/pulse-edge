@@ -28,14 +28,14 @@ else
     exit 1
 fi
 
-echo "🎯 Target Architecture: ${1:-win-x86}"
-echo "📦 Using package manager: $PKG_MANAGER"
-
 # Define Target Architecture (default to win-x86)
 ARCH="win-x86"
 if [ "$1" == "x64" ]; then
     ARCH="win-x64"
 fi
+
+echo "🎯 Target Architecture: $ARCH"
+echo "📦 Using package manager: $PKG_MANAGER"
 
 # Create a clean dist directory at the root
 rm -rf dist
@@ -54,32 +54,26 @@ mkdir -p src/Pulse.Edge.Api/wwwroot
 rm -rf src/Pulse.Edge.Api/wwwroot/*
 cp -R src/Pulse.Edge.UI/dist/ src/Pulse.Edge.Api/wwwroot/
 
-# 4. Compile Agent Daemon
-echo "🤖 Compiling Pulse.Edge.Agent ($ARCH)..."
-dotnet publish src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj \
-  -c Release \
-  -r $ARCH \
-  --self-contained true \
-  -p:PublishSingleFile=true \
-  -p:PublishTrimmed=false \
-  -o dist/Agent
-
-# 5. Compile Unified API Server (API + Web UI)
-echo "🔌 Compiling Pulse.Edge.Api ($ARCH) with Unified UI..."
+# 4. Compile Unified API Server (Hosts API, background sync worker, and React UI)
+echo "🔌 Compiling Unified Pulse.Edge ($ARCH) executable..."
 dotnet publish src/Pulse.Edge.Api/Pulse.Edge.Api.csproj \
   -c Release \
   -r $ARCH \
   --self-contained true \
   -p:PublishSingleFile=true \
+  -p:IncludeNativeLibrariesForSelfExtract=true \
   -p:PublishTrimmed=false \
-  -o dist/Api
+  -o dist/
 
 echo "============================================="
 echo "  ✅ Build Completed Successfully!"
 echo "============================================="
-echo "Your Windows executables are located at:"
-echo " - Agent Daemon:  dist/Agent/Pulse.Edge.Agent.exe"
-echo " - API + Web UI:  dist/Api/Pulse.Edge.Api.exe"
+echo "Your unified Windows executable is located at:"
+echo " - Unified Process:  dist/Pulse.Edge.exe"
+echo " - UI Assets Folder: dist/wwwroot/"
+echo ""
+echo "To run this application, copy the entire 'dist/' folder"
+echo "to the target machine and execute 'Pulse.Edge.exe'."
 echo ""
 echo "To compile for 64-bit Windows instead, run:"
 echo "  ./build-windows.sh x64"

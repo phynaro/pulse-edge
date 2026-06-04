@@ -33,21 +33,18 @@ wait_for_http() {
   echo "✅ $label is ready (${elapsed}s)"
 }
 
-# 1. Start Edge Agent Daemon
-echo "🤖 Starting Edge Agent Daemon..."
-dotnet run --project src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj &
-
-# 2. Start local REST API
-echo "🔌 Starting Edge API Server (on http://localhost:5288)..."
+# 1. Start local Unified Edge Server (Hosts API & background Agent)
+echo "🔌 Starting Unified Edge Server (on http://localhost:5288)..."
 dotnet run --project src/Pulse.Edge.Api/Pulse.Edge.Api.csproj &
 
 # Wait for the API to be healthy before starting the UI
 wait_for_http "http://localhost:5288/api/dashboard" "Edge API" 90
 
-# 3. Start local React Web UI (only after API is up)
+# 2. Start local React Web UI (only after API is up)
 echo "💻 Starting Vite Web UI Server (on http://localhost:8080)..."
 cd src/Pulse.Edge.UI
-npm run dev &
+pnpm dev &
 
 # Keep script alive and wait for all background tasks
 wait
+

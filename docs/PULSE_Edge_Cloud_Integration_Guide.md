@@ -2,12 +2,12 @@
 
 **Audience:** PULSE Edge development team
 **Scope:** How to talk to the real PULSE Cloud **control plane** that now exists, run both sides on one machine, and migrate `CloudClient` off its mocks.
-**Status date:** 2026-06-04
+**Status date:** 2026-06-04 (telemetry endpoint added)
 
 > **TL;DR**
 > - The cloud now has **real** endpoints for: device **register**, **config** pull, **data-source** declaration, and **heartbeat**.
 > - Registration is **two-phase**: the edge registers and becomes `pending`; a **human approves** it in the cloud UI, which **issues the API key once**. The edge does **not** receive a key from `register`.
-> - **Telemetry / events ingestion does not exist yet** — keep those mocked.
+> - **Telemetry ingestion is now live** — wire `SendTelemetryBatchAsync` to `POST /edge/telemetry`. **Events ingestion does not exist yet** — keep `SendEventsBatchAsync` mocked.
 > - A real device calls the server directly at `http://localhost:3000/edge/...` — **no `/api` prefix** (that prefix only exists for the web app's dev proxy).
 
 ---
@@ -20,7 +20,7 @@
 | Pull config (identity + site + data sources) | `GET /edge/config` | API key | ✅ live |
 | Declare / update data sources | `POST /edge/data-sources` | API key | ✅ live |
 | Liveness heartbeat | `POST /edge/heartbeat` | API key | ✅ live |
-| **Telemetry upload** | `POST /edge/telemetry` (planned) | API key | ❌ **not built** — keep mocked |
+| **Telemetry upload** | `POST /edge/telemetry` | API key | ✅ live |
 | **Event upload** | `POST /edge/events` (planned) | API key | ❌ **not built** — keep mocked |
 | Data source → Work Unit → Asset binding | (cloud admin UI) | — | ❌ not built |
 | OEE / insights | — | — | ❌ not built |
@@ -175,6 +175,24 @@ Body is an **array** (declare many at once). Upsert by `(device, externalId)` �
 ```
 Response `200`: `{ "ok": true, "status": "active" }`. Updates `last_seen_at` (shown in the Web UI).
 
+### `POST /edge/telemetry` — `Authorization: Bearer <key>`
+Body is a JSON **array** of 1..5000 numeric frames. Each metric value must be a
+finite number (strings/bools/NaN/Infinity → that frame is rejected). `ts` is
+optional ISO-8601 UTC with an explicit `Z` or `±hh:mm` offset (defaults to
+server receive time). `org`/`site`/`device` are derived from the key — never send them.
+
+```json
+[
+  { "dataSource": "DS001", "ts": "2026-06-04T13:45:00.123Z",
+    "metrics": { "good_count": 142, "temperature": 85.3, "run_status": 1 } }
+]
+```
+
+Response `202`: `{ "accepted": <n>, "rejected": <n>, "errors": [ { "index": <i>, "reason": "..." } ] }`.
+A `503` means the cloud did not accept the batch — **keep it in the outbox and retry**.
+Declare data sources first via `POST /edge/data-sources` (telemetry is accepted regardless).
+State/OEE events are a **separate, not-yet-built** path — keep `SendEventsBatchAsync` mocked.
+
 ---
 
 ## 6. End-to-end curl walkthrough
@@ -215,7 +233,7 @@ curl -s -o /dev/null -w '%{http_code}\n' localhost:3000/edge/config -H "authoriz
 
 ## 7. What to change in `Pulse.Edge.Cloud`
 
-`CloudClient` currently **simulates** everything against imagined `/api/...` paths and **fakes an instant key**. Migrate the three real calls; leave telemetry/events mocked.
+`CloudClient` currently **simulates** everything against imagined `/api/...` paths and **fakes an instant key**. Migrate the real calls; leave events mocked.
 
 | `CloudClient` method | Today (mock) | Change to |
 |---|---|---|
@@ -223,7 +241,7 @@ curl -s -o /dev/null -w '%{http_code}\n' localhost:3000/edge/config -H "authoriz
 | `SendHeartbeatAsync` | logs only | `POST /edge/heartbeat` with `Authorization: Bearer <key>` |
 | (new) `GetConfigAsync` | — | `GET /edge/config` → site + known data sources |
 | (new) `UpsertDataSourcesAsync` | — | `POST /edge/data-sources` (array body) |
-| `SendTelemetryBatchAsync` | mock `POST /api/telemetry` | **leave mocked** — endpoint not built yet |
+| `SendTelemetryBatchAsync` | mock `POST /api/telemetry` | wire to `POST /edge/telemetry` (array body; treat any non-202 as retry) |
 | `SendEventsBatchAsync` | mock `POST /api/events` | **leave mocked** — endpoint not built yet |
 
 Suggested config keys for the edge (localhost defaults):
@@ -255,7 +273,7 @@ Implementation notes:
 - **My device never gets a key.** That's expected until a human approves it in the Web UI. No approval = no key, by design.
 - **`config` shows `site: null`?** The device isn't approved/assigned yet, or has been revoked.
 - **Can two edges use `DS001`?** Yes. `externalId` is unique only within a device.
-- **Where do telemetry frames go for now?** Nowhere real — keep `SendTelemetryBatchAsync` mocked. Ingestion (Step 9) is a separate, not-yet-built cloud workstream. Don't point it at a guessed endpoint.
+- **Where do telemetry frames go?** `POST /edge/telemetry` is now live — wire `SendTelemetryBatchAsync` to it. Event ingestion (`SendEventsBatchAsync`) is still a separate, not-yet-built workstream — keep that one mocked.
 
 ---
 
