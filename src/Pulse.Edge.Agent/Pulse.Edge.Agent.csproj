@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Worker">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -16,5 +16,6 @@
     <ProjectReference Include="..\Pulse.Edge.Cloud\Pulse.Edge.Cloud.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Protocols.OpcUa\Pulse.Edge.Protocols.OpcUa.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Protocols.MqttProtocol\Pulse.Edge.Protocols.MqttProtocol.csproj" />
+    <ProjectReference Include="..\Pulse.Edge.Protocols.Modbus\Pulse.Edge.Protocols.Modbus.csproj" />
   </ItemGroup>
 </Project>

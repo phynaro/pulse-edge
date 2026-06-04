@@ -14,9 +14,16 @@ public class DataPoint
     public double ScaleFactor { get; set; } = 1.0;
     public double Offset { get; set; } = 0.0;
     public bool IsEnabled { get; set; } = true;
+    public string ByteOrder { get; set; } = "ABCD";
+    public string? Description { get; set; }
+
+    // MQTT parsing configurations
+    public string MqttParseMode { get; set; } = "Plaintext"; // "Plaintext" or "JSON"
+    public string? MqttJsonPath { get; set; }
 
     // Diagnostic columns
     public string? LastValue { get; set; }
     public string? LastError { get; set; }
     public DateTime? LastUpdated { get; set; }
+    public int ConsecutiveFailures { get; set; } = 0;
 }

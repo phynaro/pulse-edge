@@ -189,6 +189,96 @@ body {
   animation: pulse-warn 1.6s infinite;
 }
 
+.pulse-dot.error {
+  background-color: var(--danger-color);
+  box-shadow: 0 0 0 0 rgba(245, 101, 101, 0.7);
+  animation: pulse-danger 1.6s infinite;
+}
+
+.pulse-dot.pending {
+  background-color: var(--warning-color);
+  box-shadow: 0 0 0 0 rgba(236, 201, 75, 0.7);
+  animation: pulse-warn 1.6s infinite;
+}
+
+.pulse-dot.revoked {
+  background-color: #ed8936;
+  box-shadow: 0 0 0 0 rgba(237, 137, 54, 0.7);
+  animation: pulse-warn 1.6s infinite;
+}
+
+/* Page Header System */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px; /* Generous spacing */
+}
+
+.page-header-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-header-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  letter-spacing: -0.5px;
+}
+
+.page-header-title svg {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.3s ease;
+}
+
+.page-header-title:hover svg {
+  transform: scale(1.15) rotate(5deg);
+  color: var(--primary-dark) !important;
+}
+
+.page-header-desc {
+  margin: 6px 0 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  max-width: 600px;
+  line-height: 1.5;
+}
+
+.page-header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Monospace Node Serial Badge in Topbar */
+.topbar-node-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--bg-color);
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.topbar-node-badge .badge-label {
+  color: var(--primary-dark);
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.topbar-node-badge .badge-value {
+  color: var(--text-primary);
+}
+
 /* Scrollable Content Container */
 .content-area {
   flex: 1;
@@ -353,8 +443,18 @@ body {
 }
 
 .badge.info {
+  background-color: rgba(66, 153, 225, 0.12);
+  color: #2b6cb0;
+}
+
+.badge.primary {
   background-color: rgba(60, 232, 189, 0.15);
   color: #2bc59e;
+}
+
+.badge.neutral {
+  background-color: rgba(74, 85, 104, 0.08);
+  color: #4a5568;
 }
 
 /* Animations */
@@ -413,4 +513,19 @@ body {
 @keyframes slideUp {
   from { transform: translateY(16px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes pulse-danger {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(245, 101, 101, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(245, 101, 101, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(245, 101, 101, 0);
+  }
 }

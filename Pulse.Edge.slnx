@@ -5,6 +5,7 @@
     <Project Path="src/Pulse.Edge.Cloud/Pulse.Edge.Cloud.csproj" />
     <Project Path="src/Pulse.Edge.Protocols.MqttProtocol/Pulse.Edge.Protocols.MqttProtocol.csproj" />
     <Project Path="src/Pulse.Edge.Protocols.OpcUa/Pulse.Edge.Protocols.OpcUa.csproj" />
+    <Project Path="src/Pulse.Edge.Protocols.Modbus/Pulse.Edge.Protocols.Modbus.csproj" />
     <Project Path="src/Pulse.Edge.Storage/Pulse.Edge.Storage.csproj" />
   </Folder>
 </Solution>

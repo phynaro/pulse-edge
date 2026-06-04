@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Pulse.Edge.Storage\Pulse.Edge.Storage.csproj" />
+    <ProjectReference Include="..\Pulse.Edge.Protocols.OpcUa\Pulse.Edge.Protocols.OpcUa.csproj" />
   </ItemGroup>
 
 </Project>

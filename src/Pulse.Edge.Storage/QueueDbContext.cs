@@ -11,6 +11,7 @@ public class QueueDbContext : DbContext
     public DbSet<DriverAdapter> DriverAdapters => Set<DriverAdapter>();
     public DbSet<DataSource> DataSources => Set<DataSource>();
     public DbSet<DataPoint> DataPoints => Set<DataPoint>();
+    public DbSet<StreamTemplate> StreamTemplates => Set<StreamTemplate>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
