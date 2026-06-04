@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo =============================================
-echo   📦 PULSE Edge Windows Build Utility
+echo   📦 PULSE Edge Multi-Platform Build Utility
 echo =============================================
 
 :: 1. Check prerequisites
@@ -31,14 +31,14 @@ if %errorlevel% eq 0 (
     )
 )
 
-:: Define Target Architecture (default to win-x86)
-set ARCH=win-x86
-if "%~1"=="x64" (
-    set ARCH=win-x64
+:: Determine targets to compile
+set TARGET_ARG=%~1
+if "%TARGET_ARG%"=="" (
+    set TARGET_ARG=all
 )
 
-echo 🎯 Target Architecture: !ARCH!
 echo 📦 Using package manager: !PKG_MANAGER!
+echo 🎯 Compiling target: !TARGET_ARG!
 
 :: Create clean dist directory
 if exist dist (
@@ -66,33 +66,53 @@ if not exist src\Pulse.Edge.Api\wwwroot (
 del /f /s /q src\Pulse.Edge.Api\wwwroot\* >nul 2>nul
 xcopy /e /i /y src\Pulse.Edge.UI\dist src\Pulse.Edge.Api\wwwroot\
 
-:: 4. Compile Unified API Server with Embedded UI and Self-Extracted Native DLLs
-echo 🔌 Compiling Single Standalone Pulse.Edge (!ARCH!) executable...
-dotnet publish src\Pulse.Edge.Api\Pulse.Edge.Api.csproj -c Release -r !ARCH! --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o dist
+:: 4. Build based on selection
+if "!TARGET_ARG!"=="all" (
+    call :build_target win-x86
+    call :build_target win-x64
+    call :build_target linux-x64
+) else (
+    call :build_target !TARGET_ARG!
+)
+
+echo =============================================
+echo   ✅ Multi-Platform Build Completed Successfully!
+echo =============================================
+echo Deployment packages generated in dist\ folder:
+if exist dist\win-x86 (
+    echo   ➡️  Windows 32-bit:  dist\win-x86\Pulse.Edge.exe
+)
+if exist dist\win-x64 (
+    echo   ➡️  Windows 64-bit:  dist\win-x64\Pulse.Edge.exe
+)
+if exist exist dist\linux-x64 (
+    echo   ➡️  Linux 64-bit:    dist\linux-x64\Pulse.Edge
+)
+echo.
+echo Each target folder is standalone and ready to run!
+echo To compile a single target, pass its RID as an argument, e.g.:
+echo   build-windows.bat linux-x64
+echo =============================================
+pause
+exit /b 0
+
+:build_target
+set RID=%1
+set OUT_DIR=dist\%RID%
+
+echo 🔌 Compiling standalone binary for target: %RID%...
+dotnet publish src\Pulse.Edge.Api\Pulse.Edge.Api.csproj -c Release -r %RID% --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o %OUT_DIR%
 if %errorlevel% neq 0 (
-    echo ❌ Error: Compilation failed.
+    echo ❌ Error: Compilation failed for %RID%
     exit /b 1
 )
 
-:: 5. Clean up unnecessary compiler artifacts
-echo 🧹 Cleaning up compiler artifacts...
-del /f /q dist\*.pdb >nul 2>nul
-del /f /q dist\Pulse.Edge.staticwebassets.endpoints.json >nul 2>nul
-del /f /q dist\appsettings.Development.json >nul 2>nul
-if exist dist\web.config (
-    del /f /q dist\web.config
+:: Clean up unnecessary compiler artifacts
+echo 🧹 Cleaning up compiler artifacts in %OUT_DIR%...
+del /f /q %OUT_DIR%\*.pdb >nul 2>nul
+del /f /q %OUT_DIR%\Pulse.Edge.staticwebassets.endpoints.json >nul 2>nul
+del /f /q %OUT_DIR%\appsettings.Development.json >nul 2>nul
+if exist %OUT_DIR%\web.config (
+    del /f /q %OUT_DIR%\web.config
 )
-
-echo =============================================
-echo   ✅ Build Completed Successfully!
-echo =============================================
-echo Your Windows deployment package is located at:
-echo  ➡️  dist\
-echo.
-echo Files left in dist\:
-echo  1. Pulse.Edge.exe      - The entire unified application (Standalone)
-echo  2. appsettings.json    - Configuration overrides template (Optional)
-echo.
-echo You only need to distribute the single 'Pulse.Edge.exe' file!
-echo =============================================
-pause
+exit /b 0

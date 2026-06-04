@@ -4,7 +4,7 @@
 set -e
 
 echo "============================================="
-echo "  📦 PULSE Edge Windows Build Utility"
+echo "  📦 PULSE Edge Multi-Platform Build Utility"
 echo "============================================="
 
 # 1. Check prerequisites
@@ -28,20 +28,20 @@ else
     exit 1
 fi
 
-# Define Target Architecture (default to win-x86)
-ARCH="win-x86"
-if [ "$1" == "x64" ]; then
-    ARCH="win-x64"
+# Determine target(s) to compile
+TARGETS=("win-x86" "win-x64" "linux-x64")
+if [ -n "$1" ] && [ "$1" != "all" ]; then
+    TARGETS=("$1")
 fi
 
-echo "🎯 Target Architecture: $ARCH"
-echo "📦 Using package manager: $PKG_MANAGER"
+echo "📦 Package Manager: $PKG_MANAGER"
+echo "🎯 Targets to compile: ${TARGETS[*]}"
 
-# Create a clean dist directory at the root
+# Create a clean dist directory
 rm -rf dist
 mkdir -p dist
 
-# 2. Build the React Frontend
+# 2. Build the React Frontend (Compiled once and reused)
 echo "💻 Building React UI static assets..."
 cd src/Pulse.Edge.UI
 $INSTALL_CMD
@@ -54,38 +54,51 @@ mkdir -p src/Pulse.Edge.Api/wwwroot
 rm -rf src/Pulse.Edge.Api/wwwroot/*
 cp -R src/Pulse.Edge.UI/dist/ src/Pulse.Edge.Api/wwwroot/
 
-# 4. Compile Unified API Server with Embedded UI and Self-Extracted Native DLLs
-echo "🔌 Compiling Single Standalone Pulse.Edge ($ARCH) executable..."
-dotnet publish src/Pulse.Edge.Api/Pulse.Edge.Api.csproj \
-  -c Release \
-  -r $ARCH \
-  --self-contained true \
-  -p:PublishSingleFile=true \
-  -p:IncludeNativeLibrariesForSelfExtract=true \
-  -p:PublishTrimmed=false \
-  -o dist/
+# 4. Helper function to publish a specific target
+build_target() {
+    local rid=$1
+    local out_dir="dist/$rid"
+    
+    echo "🔌 Compiling standalone binary for target: $rid..."
+    dotnet publish src/Pulse.Edge.Api/Pulse.Edge.Api.csproj \
+      -c Release \
+      -r "$rid" \
+      --self-contained true \
+      -p:PublishSingleFile=true \
+      -p:IncludeNativeLibrariesForSelfExtract=true \
+      -p:PublishTrimmed=false \
+      -o "$out_dir/"
 
-# 5. Clean up unnecessary compiler artifacts
-echo "🧹 Cleaning up compiler artifacts..."
-rm -f dist/*.pdb
-rm -f dist/Pulse.Edge.staticwebassets.endpoints.json
-rm -f dist/appsettings.Development.json
-if [ -f dist/web.config ]; then
-    rm dist/web.config
+    # Clean up unnecessary compiler artifacts from output directory
+    echo "🧹 Cleaning up compiler artifacts in $out_dir..."
+    rm -f "$out_dir"/*.pdb
+    rm -f "$out_dir"/Pulse.Edge.staticwebassets.endpoints.json
+    rm -f "$out_dir"/appsettings.Development.json
+    if [ -f "$out_dir"/web.config ]; then
+        rm "$out_dir"/web.config
+    fi
+}
+
+# 5. Build all requested targets
+for target in "${TARGETS[@]}"; do
+    build_target "$target"
+done
+
+echo "============================================="
+echo "  ✅ Multi-Platform Build Completed Successfully!"
+echo "============================================="
+echo "Deployment packages generated in dist/ folder:"
+if [ -d "dist/win-x86" ]; then
+    echo "  ➡️  Windows 32-bit:  dist/win-x86/Pulse.Edge.exe"
 fi
-
-echo "============================================="
-echo "  ✅ Build Completed Successfully!"
-echo "============================================="
-echo "Your Windows deployment package is located at:"
-echo " ➡️  dist/"
+if [ -d "dist/win-x64" ]; then
+    echo "  ➡️  Windows 64-bit:  dist/win-x64/Pulse.Edge.exe"
+fi
+if [ -d "dist/linux-x64" ]; then
+    echo "  ➡️  Linux 64-bit:    dist/linux-x64/Pulse.Edge"
+fi
 echo ""
-echo "Files left in dist/:"
-echo " 1. Pulse.Edge.exe      - The entire unified application (Standalone)"
-echo " 2. appsettings.json    - Configuration overrides template (Optional)"
-echo ""
-echo "You only need to distribute the single 'Pulse.Edge.exe' file!"
-echo ""
-echo "To compile for 64-bit Windows instead, run:"
-echo "  ./build-windows.sh x64"
+echo "Each target folder is standalone and ready to run!"
+echo "To build a single target, pass its RID as an argument, e.g.:"
+echo "  ./build-windows.sh linux-x64"
 echo "============================================="
