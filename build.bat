@@ -51,6 +51,17 @@ if "%TARGET_INPUT%"=="" (
     if /i "!TARGET_ARG!"=="linux" set TARGET_ARG=linux-x64
     if /i "!TARGET_ARG!"=="ubuntu" set TARGET_ARG=linux-x64
     if /i "!TARGET_ARG!"=="linux64" set TARGET_ARG=linux-x64
+    
+    if /i "!TARGET_ARG!"=="linux-arm" set TARGET_ARG=linux-arm
+    if /i "!TARGET_ARG!"=="linuxarm" set TARGET_ARG=linux-arm
+    if /i "!TARGET_ARG!"=="arm" set TARGET_ARG=linux-arm
+    if /i "!TARGET_ARG!"=="rpi32" set TARGET_ARG=linux-arm
+    
+    if /i "!TARGET_ARG!"=="linux-arm64" set TARGET_ARG=linux-arm64
+    if /i "!TARGET_ARG!"=="linuxarm64" set TARGET_ARG=linux-arm64
+    if /i "!TARGET_ARG!"=="arm64" set TARGET_ARG=linux-arm64
+    if /i "!TARGET_ARG!"=="rpi" set TARGET_ARG=linux-arm64
+    if /i "!TARGET_ARG!"=="rpi64" set TARGET_ARG=linux-arm64
 )
 
 echo 📦 Using package manager: !PKG_MANAGER!
@@ -87,16 +98,42 @@ if "!TARGET_ARG!"=="all" (
     call :build_target win-x86
     call :build_target win-x64
     call :build_target linux-x64
+    call :build_target linux-arm
+    call :build_target linux-arm64
 ) else if "!TARGET_ARG!"=="win-x86" (
     call :build_target win-x86
 ) else if "!TARGET_ARG!"=="win-x64" (
     call :build_target win-x64
 ) else if "!TARGET_ARG!"=="linux-x64" (
     call :build_target linux-x64
+) else if "!TARGET_ARG!"=="linux-arm" (
+    call :build_target linux-arm
+) else if "!TARGET_ARG!"=="linux-arm64" (
+    call :build_target linux-arm64
 ) else (
     echo ❌ Error: Unsupported or unrecognized target '!TARGET_INPUT!'.
-    echo Supported targets are: win-x86, win-x64, linux-x64, all
+    echo Supported targets are: win-x86, win-x64, linux-x64, linux-arm, linux-arm64, all
     exit /b 1
+)
+
+:: 5. Auto-compile Inno Setup installer if available and win-x64 was compiled
+echo 📦 Checking for Inno Setup compiler (ISCC.exe)...
+set ISCC_PATH="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if exist !ISCC_PATH! (
+    if exist dist\win-x64 (
+        echo   Found Inno Setup Compiler. Building installer package...
+        !ISCC_PATH! PulseEdge.iss
+        if !errorlevel! eq 0 (
+            echo   ✅ Windows Installer compiled successfully: dist-setup\PulseEdgeSetup-1.0.0.exe
+        ) else (
+            echo   ❌ Error: Inno Setup compilation failed.
+        )
+    ) else (
+        echo   Skipping installer build because dist\win-x64 was not compiled.
+    )
+) else (
+    echo   Inno Setup not found in standard path (!ISCC_PATH!). Skipping installer build.
+    echo   To compile the installer manually, open 'PulseEdge.iss' in Inno Setup and compile.
 )
 
 echo =============================================
@@ -104,13 +141,19 @@ echo   ✅ Multi-Platform Build Completed Successfully!
 echo =============================================
 echo Deployment packages generated in dist\ folder:
 if exist dist\win-x86 (
-    echo   ➡️  Windows 32-bit:  dist\win-x86\ (Pulse.Edge.exe and Pulse.Edge.Agent.exe)
+    echo   ➡️  Windows 32-bit:       dist\win-x86\ (Pulse.Edge.exe and Pulse.Edge.Agent.exe)
 )
 if exist dist\win-x64 (
-    echo   ➡️  Windows 64-bit:  dist\win-x64\ (Pulse.Edge.exe and Pulse.Edge.Agent.exe)
+    echo   ➡️  Windows 64-bit:       dist\win-x64\ (Pulse.Edge.exe and Pulse.Edge.Agent.exe)
 )
 if exist dist\linux-x64 (
-    echo   ➡️  Linux 64-bit:    dist\linux-x64\ (Pulse.Edge and Pulse.Edge.Agent)
+    echo   ➡️  Linux 64-bit (x64):   dist\linux-x64\ (Pulse.Edge and Pulse.Edge.Agent)
+)
+if exist dist\linux-arm (
+    echo   ➡️  Linux 32-bit (ARM):   dist\linux-arm\ (Pulse.Edge and Pulse.Edge.Agent)
+)
+if exist dist\linux-arm64 (
+    echo   ➡️  Linux 64-bit (ARM):   dist\linux-arm64\ (Pulse.Edge and Pulse.Edge.Agent)
 )
 echo.
 echo Each target folder is standalone and ready to run!

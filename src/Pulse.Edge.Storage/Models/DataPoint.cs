@@ -18,6 +18,7 @@ public class DataPoint
     public string? Description { get; set; }
 
     // MQTT parsing configurations
+    public string? MqttDeviceId { get; set; } // Nullable: linked to an MqttDevice session
     public string MqttParseMode { get; set; } = "Plaintext"; // "Plaintext" or "JSON"
     public string? MqttJsonPath { get; set; }
 

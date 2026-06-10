@@ -24,6 +24,43 @@ public class QueueStorageService
         using var db = new QueueDbContext();
         await db.Database.EnsureCreatedAsync();
 
+        // Create DeviceConfigs table if missing
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS DeviceConfigs (
+                    Id TEXT PRIMARY KEY,
+                    CloudEdgeId TEXT NOT NULL DEFAULT '',
+                    ClaimSecret TEXT NOT NULL DEFAULT '',
+                    SerialNumber TEXT NOT NULL DEFAULT '',
+                    SiteId TEXT NOT NULL DEFAULT '',
+                    SiteName TEXT NOT NULL DEFAULT '',
+                    ApiKey TEXT NOT NULL DEFAULT '',
+                    CloudEndpoint TEXT NOT NULL DEFAULT 'http://localhost:3000',
+                    Version TEXT NOT NULL DEFAULT '1.0.0',
+                    IsSyncEnabled INTEGER NOT NULL DEFAULT 1,
+                    CloudStatus TEXT NOT NULL DEFAULT 'PendingApproval'
+                );
+            ");
+        }
+        catch {}
+
+        // Create QueueEvents table if missing
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS QueueEvents (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    EventType TEXT NOT NULL,
+                    PayloadJson TEXT NOT NULL,
+                    Timestamp TEXT NOT NULL,
+                    RetryCount INTEGER NOT NULL DEFAULT 0,
+                    IsSending INTEGER NOT NULL DEFAULT 0
+                );
+            ");
+        }
+        catch {}
+
         // Enable Write-Ahead Logging (WAL) for better concurrent read/write throughput
         try
         {
@@ -75,6 +112,16 @@ public class QueueStorageService
         try
         {
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE DeviceConfigs ADD COLUMN SiteName TEXT NOT NULL DEFAULT '';");
+        }
+        catch
+        {
+            // Column already exists, ignore exception
+        }
+
+        // Auto-migrate schema: add ClaimSecret column to existing databases if it's missing
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE DeviceConfigs ADD COLUMN ClaimSecret TEXT NOT NULL DEFAULT '';");
         }
         catch
         {
@@ -212,9 +259,53 @@ public class QueueStorageService
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE DataPoints ADD COLUMN LastUpdated TEXT NULL;");
         }
         catch {}
+        // Add diagnostic columns to existing DataPoints table if missing
         try
         {
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE DataPoints ADD COLUMN ConsecutiveFailures INTEGER NOT NULL DEFAULT 0;");
+        }
+        catch {}
+
+        // Add MqttDeviceId column to existing DataPoints table if missing
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE DataPoints ADD COLUMN MqttDeviceId TEXT NULL;");
+        }
+        catch {}
+
+        // Create MqttDevices table if missing
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS MqttDevices (
+                    Id TEXT PRIMARY KEY,
+                    AdapterId TEXT NOT NULL,
+                    Name TEXT NOT NULL,
+                    TopicSubscription TEXT NOT NULL,
+                    MqttParseMode TEXT NOT NULL DEFAULT 'JSON',
+                    IsEnabled INTEGER NOT NULL DEFAULT 1,
+                    LwtTopic TEXT NULL,
+                    LwtOnlinePayload TEXT NOT NULL DEFAULT 'Online',
+                    LwtOfflinePayload TEXT NOT NULL DEFAULT 'Offline',
+                    Status TEXT NOT NULL DEFAULT 'Disconnected',
+                    LastError TEXT NULL,
+                    LastUpdated TEXT NULL,
+                    ConsecutiveFailures INTEGER NOT NULL DEFAULT 0
+                );
+            ");
+        }
+        catch {}
+
+        // Create MqttSeenTopics table if missing
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS MqttSeenTopics (
+                    Topic TEXT PRIMARY KEY,
+                    Payload TEXT NOT NULL,
+                    LastSeen TEXT NOT NULL
+                );
+            ");
         }
         catch {}
 
@@ -227,12 +318,13 @@ public class QueueStorageService
 
         await db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS QueueTelemetry (
-                Id           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                DataSourceId TEXT    NOT NULL,
-                Timestamp    TEXT    NOT NULL,
-                MetricsJson  TEXT    NOT NULL DEFAULT '{{}}',
-                RetryCount   INTEGER NOT NULL DEFAULT 0,
-                IsSending    INTEGER NOT NULL DEFAULT 0,
+                Id            INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                DataSourceId  TEXT    NOT NULL,
+                Timestamp     TEXT    NOT NULL,
+                MetricsJson   TEXT    NOT NULL DEFAULT '{{}}',
+                QualitiesJson TEXT    NOT NULL DEFAULT '{{}}',
+                RetryCount    INTEGER NOT NULL DEFAULT 0,
+                IsSending     INTEGER NOT NULL DEFAULT 0,
                 UNIQUE (DataSourceId, Timestamp)
             );
         ");
@@ -245,53 +337,6 @@ public class QueueStorageService
 
         // Safety check: reset sending status for any items stuck in-flight due to an abrupt shutdown/crash
         await ResetSendingStatusAsync();
-
-        // Seed default driver adapters if not present in database
-        if (!await db.DriverAdapters.AnyAsync())
-        {
-            db.DriverAdapters.AddRange(new List<DriverAdapter>
-            {
-                new() { Id = "adp-opcua-1", Name = "OPC UA PLC 1", Protocol = "OPC_UA", Host = "opc.tcp://192.168.1.50:4840", Port = 4840, IsEnabled = true, Status = "Disconnected", ConfigJson = "{}" },
-                new() { Id = "adp-mqtt-1", Name = "HiveMQ Broker", Protocol = "MQTT", Host = "broker.hivemq.com", Port = 1883, IsEnabled = true, Status = "Disconnected", ConfigJson = "{}" },
-                new() { Id = "adp-modbus-1", Name = "Modbus Simulator", Protocol = "MODBUS_TCP", Host = "192.168.1.51", Port = 502, IsEnabled = true, Status = "Disconnected", ConfigJson = "{}" }
-            });
-            await db.SaveChangesAsync();
-        }
-
-        // Seed default stream templates if not present
-        if (!await db.StreamTemplates.AnyAsync())
-        {
-            db.StreamTemplates.AddRange(new List<StreamTemplate>
-            {
-                new() { Id = "Production", Description = "OEE & Production Counts", ParametersJson = "[\"RunStatus\",\"GoodCount\",\"RejectCount\"]", Icon = "BarChart3" },
-                new() { Id = "Energy", Description = "Power and energy meters", ParametersJson = "[\"Voltage\",\"Current\",\"Power\",\"Energy\"]", Icon = "Zap" }
-            });
-            await db.SaveChangesAsync();
-        }
-
-        // Seed default data sources if not present
-        if (!await db.DataSources.AnyAsync())
-        {
-            db.DataSources.AddRange(new List<DataSource>
-            {
-                new() { Id = "DS001", Name = "CasePacker Production", Type = "Production", Description = "Main telemetry signals for the line packer" },
-                new() { Id = "DS002", Name = "Packaging Line Energy", Type = "Energy", Description = "Substation power meter telemetry" }
-            });
-            await db.SaveChangesAsync();
-        }
-
-        // Seed default data points if not present
-        if (!await db.DataPoints.AnyAsync())
-        {
-            db.DataPoints.AddRange(new List<DataPoint>
-            {
-                new() { Id = "dp-01", AdapterId = "adp-opcua-1", DataSourceId = "DS001", Metric = "temperature", Address = "ns=2;s=Machine_Temperature", DataType = "Float", ScanIntervalMs = 1000, ScaleFactor = 1.0, Offset = 0.0, IsEnabled = true, Description = "OPC UA machine block temperature sensor" },
-                new() { Id = "dp-02", AdapterId = "adp-mqtt-1", DataSourceId = "DS001", Metric = "good_count", Address = "pulse/factory/casepacker/temp", DataType = "Int32", ScanIntervalMs = 0, ScaleFactor = 1.0, Offset = 0.0, IsEnabled = true, Description = "MQTT MQTT CasePacker packer counter broker topic" },
-                new() { Id = "dp-03", AdapterId = "adp-modbus-1", DataSourceId = "DS002", Metric = "voltage", Address = "40001", DataType = "Int16", ScanIntervalMs = 5000, ScaleFactor = 0.1, Offset = 0.0, IsEnabled = true, Description = "Substation incoming busbar voltage register" },
-                new() { Id = "dp-04", AdapterId = "adp-modbus-1", DataSourceId = "DS002", Metric = "power", Address = "40002", DataType = "Int16", ScanIntervalMs = 5000, ScaleFactor = 1.0, Offset = 0.0, IsEnabled = true, Description = "Substation energy meter active power register" }
-            });
-            await db.SaveChangesAsync();
-        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -361,6 +406,7 @@ public class QueueStorageService
             existing.IsSyncEnabled = config.IsSyncEnabled;
             existing.CloudEndpoint = config.CloudEndpoint;
             existing.CloudEdgeId = config.CloudEdgeId;
+            existing.ClaimSecret = config.ClaimSecret;
             existing.CloudStatus = config.CloudStatus;
             db.DeviceConfigs.Update(existing);
         }
@@ -376,16 +422,14 @@ public class QueueStorageService
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Enqueues a single metric reading into the merged-metrics telemetry buffer.
+    /// Enqueues a single metric reading into the merged-metrics telemetry buffer with its quality status.
     ///
     /// Grouping key: (DataSourceId, Timestamp truncated to ms)
-    ///   - Uses SQLite-native INSERT OR IGNORE + UPDATE json_set so that the
+    ///   - Uses SQLite-native INSERT OR IGNORE + UPDATE json_set/json_remove so that the
     ///     UNIQUE (DataSourceId, Timestamp) constraint itself drives the upsert.
-    ///     This avoids EF Core DateTime text-format comparison mismatches that
-    ///     would otherwise cause spurious UNIQUE constraint violations.
     ///   - All tags polled in the same tick for the same stream produce ONE row.
     /// </summary>
-    public async Task EnqueueTelemetryAsync(string dataSourceId, DateTime timestamp, string metricName, double value)
+    public async Task EnqueueTelemetryAsync(string dataSourceId, DateTime timestamp, string metricName, double? value, string quality)
     {
         using var db = new QueueDbContext();
 
@@ -395,8 +439,11 @@ public class QueueStorageService
             timestamp.Hour, timestamp.Minute, timestamp.Second,
             timestamp.Millisecond, DateTimeKind.Utc);
 
-        // Initial JSON for a brand-new row
-        var initialJson = JsonSerializer.Serialize(new Dictionary<string, double> { [metricName] = value });
+        // Initial JSON objects for a brand-new row
+        var initialMetrics = value.HasValue
+            ? JsonSerializer.Serialize(new Dictionary<string, double> { [metricName] = value.Value })
+            : "{}";
+        var initialQualities = JsonSerializer.Serialize(new Dictionary<string, string> { [metricName] = quality });
 
         // The JSON path for json_set, e.g. "$.temperature"
         var jsonPath = "$." + metricName;
@@ -404,16 +451,32 @@ public class QueueStorageService
         // Step 1: Insert a new row only if no row exists for this (stream, tick).
         //         INSERT OR IGNORE silently skips if the UNIQUE constraint fires.
         await db.Database.ExecuteSqlInterpolatedAsync($@"
-            INSERT OR IGNORE INTO QueueTelemetry (DataSourceId, Timestamp, MetricsJson, RetryCount, IsSending)
-            VALUES ({dataSourceId}, {ts}, {initialJson}, 0, 0)
+            INSERT OR IGNORE INTO QueueTelemetry (DataSourceId, Timestamp, MetricsJson, QualitiesJson, RetryCount, IsSending)
+            VALUES ({dataSourceId}, {ts}, {initialMetrics}, {initialQualities}, 0, 0)
         ");
 
-        // Step 2: Merge the metric into the row's MetricsJson using SQLite json_set.
-        //         Runs whether we just inserted or the row already existed.
-        //         json_set adds the key if missing or overwrites it if present.
+        // Step 2: Merge the metric value into the row's MetricsJson using SQLite json_set or json_remove.
+        if (value.HasValue)
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync($@"
+                UPDATE QueueTelemetry
+                SET MetricsJson = json_set(MetricsJson, {jsonPath}, {value.Value})
+                WHERE DataSourceId = {dataSourceId} AND Timestamp = {ts} AND IsSending = 0
+            ");
+        }
+        else
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync($@"
+                UPDATE QueueTelemetry
+                SET MetricsJson = json_remove(MetricsJson, {jsonPath})
+                WHERE DataSourceId = {dataSourceId} AND Timestamp = {ts} AND IsSending = 0
+            ");
+        }
+
+        // Step 3: Merge the quality status into QualitiesJson using SQLite json_set.
         await db.Database.ExecuteSqlInterpolatedAsync($@"
             UPDATE QueueTelemetry
-            SET MetricsJson = json_set(MetricsJson, {jsonPath}, {value})
+            SET QualitiesJson = json_set(QualitiesJson, {jsonPath}, {quality})
             WHERE DataSourceId = {dataSourceId} AND Timestamp = {ts} AND IsSending = 0
         ");
 

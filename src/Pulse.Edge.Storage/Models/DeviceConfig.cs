@@ -6,6 +6,7 @@ public class DeviceConfig
 {
     public string Id { get; set; } = string.Empty; // Store UUID as string
     public string CloudEdgeId { get; set; } = string.Empty; // Cloud's UUID for this device
+    public string ClaimSecret { get; set; } = string.Empty; // Device-generated raw secret
     public string SerialNumber { get; set; } = string.Empty;
     public string SiteId { get; set; } = string.Empty;
     public string SiteName { get; set; } = string.Empty;

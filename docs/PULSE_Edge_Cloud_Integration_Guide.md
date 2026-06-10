@@ -2,12 +2,13 @@
 
 **Audience:** PULSE Edge development team
 **Scope:** How to talk to the real PULSE Cloud **control plane** that now exists, run both sides on one machine, and migrate `CloudClient` off its mocks.
-**Status date:** 2026-06-04 (telemetry endpoint added)
+**Status date:** 2026-06-05 (self-service claim endpoint added)
 
 > **TL;DR**
-> - The cloud now has **real** endpoints for: device **register**, **config** pull, **data-source** declaration, and **heartbeat**.
-> - Registration is **two-phase**: the edge registers and becomes `pending`; a **human approves** it in the cloud UI, which **issues the API key once**. The edge does **not** receive a key from `register`.
-> - **Telemetry ingestion is now live** — wire `SendTelemetryBatchAsync` to `POST /edge/telemetry`. **Events ingestion does not exist yet** — keep `SendEventsBatchAsync` mocked.
+> - The cloud now has **real** endpoints for: device **register**, **claim**, **config** pull, **data-source** declaration, **heartbeat**, and **telemetry**.
+> - Provisioning is **three-phase and self-service**: the edge **registers** (sending a `claimSecretHash`) and becomes `pending`; a **human approves** it in the cloud UI (assigns a site, status → `approved`); the edge then **claims** its API key by polling `POST /edge/claim` with the raw secret. **No operator copy/paste of the key** — the edge fetches it itself, once.
+> - The claim secret is **device-generated** and **immutable after first registration**. Only its `sha256` hash is ever sent or stored. Keep the raw secret on the device, forever.
+> - **Telemetry ingestion is live** — wire `SendTelemetryBatchAsync` to `POST /edge/telemetry`. **Events ingestion does not exist yet** — keep `SendEventsBatchAsync` mocked.
 > - A real device calls the server directly at `http://localhost:3000/edge/...` — **no `/api` prefix** (that prefix only exists for the web app's dev proxy).
 
 ---
@@ -17,6 +18,7 @@
 | Capability | Method & path | Auth | Status |
 |---|---|---|---|
 | Self-register (bootstrap) | `POST /edge/register` | none (open) | ✅ live |
+| Claim API key (proof-of-possession) | `POST /edge/claim` | claim secret (open) | ✅ live |
 | Pull config (identity + site + data sources) | `GET /edge/config` | API key | ✅ live |
 | Declare / update data sources | `POST /edge/data-sources` | API key | ✅ live |
 | Liveness heartbeat | `POST /edge/heartbeat` | API key | ✅ live |
@@ -30,8 +32,9 @@ Admin-side (used by the **cloud web UI**, not the edge — listed so you underst
 | Capability | Method & path |
 |---|---|
 | List sites (approval dropdown) | `GET /edge/sites` |
-| List devices | `GET /edge/devices?status=pending\|active\|revoked` |
-| Approve device (assign site + issue key) | `POST /edge/devices/:id/approve` |
+| List devices | `GET /edge/devices?status=pending\|approved\|active\|revoked` |
+| Approve device (assign site; status → `approved`, **no key issued here**) | `POST /edge/devices/:id/approve` |
+| Re-issue (reset `active` → `approved` so the edge re-claims a fresh key) | `POST /edge/devices/:id/reissue` |
 | Revoke device (kills key) | `POST /edge/devices/:id/revoke` |
 
 ---
@@ -91,26 +94,30 @@ API docs (Swagger) are served at `http://localhost:3000/docs`.
 
 ---
 
-## 4. The real registration & approval flow
+## 4. The real registration, approval & claim flow
 
-This is the part that differs most from the current mock. **`register` does not return a key.** Approval is a deliberate human gate.
+Provisioning is **self-service**: `register` never returns a key, approval is a deliberate human gate, and the edge **claims** its key itself by polling — no operator copy/paste.
 
 ```
 EDGE                                CLOUD                         OPERATOR (Web UI)
  │                                    │                                  │
- │ 1. generate deviceId (UUID),       │                                  │
- │    persist it forever              │                                  │
+ │ 1. generate deviceId (UUID) +      │                                  │
+ │    a high-entropy claimSecret;     │                                  │
+ │    persist BOTH forever            │                                  │
  │                                    │                                  │
- │ 2. POST /edge/register ───────────▶│ creates device, status=pending   │
+ │ 2. POST /edge/register ───────────▶│ creates device, status=pending,  │
+ │    {deviceId, hostname,            │ stores sha256(claimSecret)        │
+ │     claimSecretHash}               │                                  │
  │ ◀──── { edgeId, status:"pending" } │                                  │
  │                                    │ 3. device appears under "Pending" │
  │                                    │ ◀──────────────────── opens "Edge Devices"
  │                                    │                       picks a Site, clicks Approve
- │                                    │ 4. issue API key (shown ONCE), ───▶│
- │                                    │    status=active, site assigned    │ copies key
- │                                    │                                    │
- │ 5. operator hands the key to the edge (paste into edge config / env)   │
- │ ◀───────────────────────────────────────────────────────────────────── │
+ │                                    │ 4. status=approved, site assigned │
+ │                                    │    (NO key issued here)           │
+ │                                    │                                  │
+ │ 5. POST /edge/claim {deviceId,     │ pending  → {status:"pending"}     │
+ │    claimSecret}  (poll) ──────────▶│ approved → issue key ONCE,        │
+ │ ◀── {status:"active", apiKey} ─────│            status=active          │
  │                                    │                                  │
  │ 6. GET /edge/config (Bearer key) ─▶│ returns identity + site + DS list │
  │ 7. POST /edge/data-sources ───────▶│ upserts DS by (device, externalId)│
@@ -119,13 +126,17 @@ EDGE                                CLOUD                         OPERATOR (Web 
 
 ### Key facts that drive your implementation
 
-1. **`deviceId` must be a UUID.** The cloud validates it (`z.string().uuid()`). Generate it once on first start and store it locally forever (you already do this — Step 2 of the registration-flow doc).
-2. **`register` is idempotent.** Re-sending the same `deviceId` returns the **same** `edgeId`, updates only `hostname`/`agentVersion`, and **never** changes status or key. A revoked device stays revoked. Safe to call on every boot.
-3. **The API key is issued once and shown once** (in the approve modal in the Web UI). There is **no edge endpoint to fetch the key after approval.** In v1 the operator copies it and configures it on the edge. Treat the key as a secret you receive out-of-band.
-4. **Key format:** `pe_live_<48 hex chars>`. Send it as `Authorization: Bearer <key>`.
-5. **Revoke is immediate.** Once revoked, every API-key call returns `401`. Your edge should treat a `401` on `config`/`heartbeat`/`data-sources` as "I have been de-provisioned" and surface that to the operator (it will need re-approval).
-
-> **Polling note:** Because there's no "fetch my key" endpoint yet, an edge that registers and waits cannot auto-acquire its key. For dev, just approve in the UI and paste the key. If you want a smoother loop later, that's a cloud follow-up (a one-time claim endpoint) — raise it with the cloud team; don't invent it on the edge.
+1. **`deviceId` must be a UUID.** The cloud validates it (`z.string().uuid()`). Generate it once on first start and store it locally forever.
+2. **The claim secret is yours, generated on the device.** On first start, generate a high-entropy secret (e.g. 24+ random bytes, hex/base64). At register you send **only its sha256 hash** (`claimSecretHash`, 64 lowercase hex chars). You present the **raw** secret later at `claim`. Persist the raw secret locally, forever, as securely as the API key. **The cloud never sees the raw secret except at claim, and stores only the hash.**
+3. **`register` is idempotent and the claim secret is immutable after first registration.** Re-sending the same `deviceId` returns the **same** `edgeId` and updates only `hostname`/`agentVersion` — it will **not** change the stored `claimSecretHash`, status, or key. (Register is unauthenticated and `deviceId` isn't a secret, so an open re-key would be a hijack — it's blocked by design.) Safe to call on every boot. `claimSecretHash` is **required** on every register call; a missing/malformed one is `400`.
+4. **`claim` is how you get the key — poll it.** After register, poll `POST /edge/claim` with `{deviceId, claimSecret}`:
+   - `200 {status:"pending"}` → not approved yet; keep polling (e.g. every 15–30s).
+   - `200 {status:"active", apiKey}` → **persist the key now**; this is the only time it is returned.
+   - `401` → unknown device **or** wrong secret (the cloud does not distinguish, to avoid enumeration).
+   - `403 {status:"revoked"}` → the device was revoked; needs operator re-approval.
+   - `409 {status:"active"}` → already claimed (key not returned again). If you don't have the key, the operator must **re-issue** (Web UI) so you can claim a fresh one.
+5. **Key format:** `pe_live_<48 hex chars>`. Send it as `Authorization: Bearer <key>`.
+6. **Revoke / re-issue.** Revoke is immediate — every API-key call returns `401`; treat a `401` on `config`/`heartbeat`/`data-sources`/`telemetry` as "de-provisioned" and surface it. **Re-issue** (operator action) flips an active device back to `approved` and clears the key; your edge should detect the `401`, then resume polling `claim` with its existing secret to pick up the new key. This is also the recovery path if the device loses its key after claiming.
 
 ---
 
@@ -136,13 +147,32 @@ Base URL: `http://localhost:3000`
 ### `POST /edge/register` — open, no auth
 Request:
 ```json
-{ "deviceId": "4d3dbf7f-8c3a-4d44-a98b-f2c2f5f11322", "hostname": "PACKAGING-PC", "agentVersion": "1.0.0" }
+{ "deviceId": "4d3dbf7f-8c3a-4d44-a98b-f2c2f5f11322", "hostname": "PACKAGING-PC",
+  "agentVersion": "1.0.0",
+  "claimSecretHash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" }
 ```
-`agentVersion` is optional. Response `200`:
+`agentVersion` is optional. `claimSecretHash` is **required** — the lowercase-hex sha256 of your
+device-generated claim secret (64 chars; `^[a-f0-9]{64}$`). It is recorded only on first
+registration and is **immutable** thereafter. Response `200`:
 ```json
 { "edgeId": "89da9732-4fda-4b91-92ce-a6654f93533b", "status": "pending" }
 ```
-`status` is `pending` until approved, `active` after, `revoked` if revoked.
+`status` is `pending` until approved, `approved` after approval (awaiting claim), `active` after the
+key is claimed, `revoked` if revoked. `400` if `deviceId` isn't a UUID, `hostname` is empty, or
+`claimSecretHash` is missing/not 64-hex.
+
+### `POST /edge/claim` — open, secret-guarded
+The edge polls this to pick up its API key. The raw secret proves possession; the cloud compares its
+sha256 against the stored hash in constant time.
+```json
+{ "deviceId": "4d3dbf7f-8c3a-4d44-a98b-f2c2f5f11322", "claimSecret": "<the raw secret>" }
+```
+Responses:
+- `200 { "status": "pending" }` — approved not yet; keep polling.
+- `200 { "status": "active", "apiKey": "pe_live_..." }` — **the key, returned exactly once.** Persist it immediately.
+- `401 { "error": "invalid device or secret" }` — unknown device or wrong secret.
+- `403 { "status": "revoked" }` — device revoked; needs operator re-approval.
+- `409 { "status": "active", "error": "already claimed" }` — key already issued; re-issue (operator) to claim again.
 
 ### `GET /edge/config` — `Authorization: Bearer <key>`
 Response `200`:
@@ -200,33 +230,48 @@ State/OEE events are a **separate, not-yet-built** path — keep `SendEventsBatc
 This is the exact sequence we smoke-test the cloud with. Run it after the stack is up.
 
 ```bash
-# 1. Register (open). deviceId must be a UUID.
+# 1. Generate a deviceId (UUID) and a claim secret; hash the secret for register.
 DEVICE_ID=$(uuidgen | tr 'A-Z' 'a-z')
+CLAIM_SECRET=$(openssl rand -hex 24)
+CLAIM_HASH=$(printf %s "$CLAIM_SECRET" | openssl dgst -sha256 -hex | awk '{print $2}')
+
+# 2. Register (open). claimSecretHash is required.
 curl -s -XPOST localhost:3000/edge/register \
   -H 'content-type: application/json' \
-  -d "{\"deviceId\":\"$DEVICE_ID\",\"hostname\":\"SMOKE-PC\"}"
+  -d "{\"deviceId\":\"$DEVICE_ID\",\"hostname\":\"SMOKE-PC\",\"claimSecretHash\":\"$CLAIM_HASH\"}"
 # → {"edgeId":"<EDGE_ID>","status":"pending"}
 
-# 2. Approve in the Web UI:
+# 3. Approve in the Web UI:
 #    open http://localhost:5173 → "Edge Devices" → device under "Pending" →
-#    Approve → pick "Bangkok Factory" → copy the pe_live_... key shown once.
-KEY=pe_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+#    Approve → pick "Bangkok Factory". No key is shown — the edge claims it next.
 
-# 3. Pull config
+# 4. Claim the key (poll until status flips from pending to active).
+KEY=$(curl -s -XPOST localhost:3000/edge/claim \
+  -H 'content-type: application/json' \
+  -d "{\"deviceId\":\"$DEVICE_ID\",\"claimSecret\":\"$CLAIM_SECRET\"}" \
+  | sed -n 's/.*"apiKey":"\([^"]*\)".*/\1/p')
+echo "$KEY"   # pe_live_...   (empty if still pending — approve first, then re-run)
+
+# 5. Pull config
 curl -s localhost:3000/edge/config -H "authorization: Bearer $KEY"
 
-# 4. Declare a data source (upsert)
+# 6. Declare a data source (upsert)
 curl -s -XPOST localhost:3000/edge/data-sources \
   -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '[{"externalId":"DS001","name":"CasePacker Production","metrics":["good_count","run_status"]}]'
 
-# 5. Heartbeat
+# 7. Heartbeat
 curl -s -XPOST localhost:3000/edge/heartbeat \
   -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"agentVersion":"1.0.0"}'
 
-# 6. (negative) a bad key is rejected
+# 8. (negative) a bad key is rejected
 curl -s -o /dev/null -w '%{http_code}\n' localhost:3000/edge/config -H "authorization: Bearer nope"   # → 401
+
+# 9. (negative) a wrong claim secret is rejected
+curl -s -o /dev/null -w '%{http_code}\n' -XPOST localhost:3000/edge/claim \
+  -H 'content-type: application/json' \
+  -d "{\"deviceId\":\"$DEVICE_ID\",\"claimSecret\":\"nope\"}"   # → 401
 ```
 
 ---
@@ -237,30 +282,36 @@ curl -s -o /dev/null -w '%{http_code}\n' localhost:3000/edge/config -H "authoriz
 
 | `CloudClient` method | Today (mock) | Change to |
 |---|---|---|
-| `RegisterDeviceAsync` | returns `(mockApiKey, mockSiteId)` immediately | `POST /edge/register` → returns `{ edgeId, status }`, **no key**. The key arrives later via operator config. Split "register" from "I have a key". |
+| `RegisterDeviceAsync` | returns `(mockApiKey, mockSiteId)` immediately | `POST /edge/register` with `{deviceId, hostname, agentVersion, claimSecretHash}` → returns `{ edgeId, status }`, **no key**. Split "register" from "I have a key". |
+| (new) `ClaimKeyAsync` | — | `POST /edge/claim` with `{deviceId, claimSecret}`. Poll until `200 {status:"active", apiKey}`; persist the key. Handle `pending`/`401`/`403`/`409` per §4.4. |
 | `SendHeartbeatAsync` | logs only | `POST /edge/heartbeat` with `Authorization: Bearer <key>` |
 | (new) `GetConfigAsync` | — | `GET /edge/config` → site + known data sources |
 | (new) `UpsertDataSourcesAsync` | — | `POST /edge/data-sources` (array body) |
 | `SendTelemetryBatchAsync` | mock `POST /api/telemetry` | wire to `POST /edge/telemetry` (array body; treat any non-202 as retry) |
 | `SendEventsBatchAsync` | mock `POST /api/events` | **leave mocked** — endpoint not built yet |
 
-Suggested config keys for the edge (localhost defaults):
+Suggested config / local-state keys for the edge (localhost defaults):
 
 ```jsonc
 // appsettings.Development.json (or env)
 {
   "Cloud": {
     "BaseUrl": "http://localhost:3000",   // NOT /api
-    "ApiKey": "",                          // empty until operator pastes the issued key
-    "HeartbeatSeconds": 30
+    "HeartbeatSeconds": 30,
+    "ClaimPollSeconds": 20                 // how often to poll /edge/claim while approved-pending
   }
 }
 ```
+Plus device-local **persisted state** (NOT shipped config — generated on first run and stored on the device): `DeviceId` (UUID), `ClaimSecret` (raw, kept secret), and `ApiKey` (empty until claimed). The `claimSecretHash` you send at register is `sha256(ClaimSecret)` — never store/ship the hash as your source of truth; derive it from the raw secret.
 
 Implementation notes:
-- Use one `HttpClient` with `BaseAddress = http://localhost:3000` and a default `Authorization: Bearer <ApiKey>` header set **after** the key is configured.
-- On boot: if `ApiKey` is empty → call `register` (idempotent), log `edgeId` + `pending`, and wait for the operator to provide the key. If `ApiKey` is present → call `config`, push `data-sources`, start the heartbeat loop.
-- Treat `401` from any keyed call as "de-provisioned/revoked": stop the heartbeat loop, clear the in-memory key, and surface a clear operator message.
+- Use one `HttpClient` with `BaseAddress = http://localhost:3000`. Set the default `Authorization: Bearer <ApiKey>` header **only after** the key is claimed.
+- **First run:** generate `DeviceId` and `ClaimSecret`, persist both. 
+- **On boot:**
+  - If `ApiKey` is empty → call `register` (idempotent; send `sha256(ClaimSecret)` as `claimSecretHash`), then **poll `claim`** until it returns `active` + the key; persist the key. Log `pending` while waiting on the operator.
+  - If `ApiKey` is present → call `config`, push `data-sources`, start the heartbeat loop.
+- Treat `401` from any keyed call as "de-provisioned": stop the heartbeat loop, clear the in-memory `ApiKey`, and **resume polling `claim`** with your existing `ClaimSecret` (covers operator re-issue and recovery). If `claim` returns `403 revoked`, surface a clear operator message — it needs re-approval.
+- **Never re-generate the `ClaimSecret`** on an existing device — the cloud locks it at first registration and a new secret can never claim. Lose the device's persisted secret and the operator must revoke + the device re-registers as a new identity.
 - `deviceId` is yours and permanent; `edgeId` is the cloud's UUID for the same device. Persist both.
 
 ---
@@ -269,8 +320,11 @@ Implementation notes:
 
 - **404 on every call?** You're probably hitting `/api/edge/...`. The `/api` prefix is **only** the web dev proxy. Edge calls `/edge/...` directly.
 - **400 `FST_ERR_CTP_EMPTY_JSON_BODY`?** You sent `Content-Type: application/json` with an **empty body** (e.g. on a bodyless POST). Only set the JSON content-type when you actually send a body.
-- **400 on register?** `deviceId` isn't a valid UUID, or `hostname` is empty.
-- **My device never gets a key.** That's expected until a human approves it in the Web UI. No approval = no key, by design.
+- **400 on register?** `deviceId` isn't a valid UUID, `hostname` is empty, or `claimSecretHash` is missing / not 64 lowercase hex chars.
+- **`claim` keeps returning `{status:"pending"}`.** Expected until a human approves the device in the Web UI. Keep polling.
+- **`claim` returns `401`.** Wrong `claimSecret` for that `deviceId` (or the deviceId is unknown). Make sure you send the **raw** secret whose sha256 you registered — not the hash.
+- **`claim` returns `409 already claimed` but I have no key.** The key was issued once and you didn't persist it. Ask the operator to **Re-issue** the device (Web UI) — it returns to `approved` and you can claim a fresh key with the same secret.
+- **My device never gets a key.** Until approved, `claim` stays `pending` — that's by design. After approval the edge must actually poll `claim`.
 - **`config` shows `site: null`?** The device isn't approved/assigned yet, or has been revoked.
 - **Can two edges use `DS001`?** Yes. `externalId` is unique only within a device.
 - **Where do telemetry frames go?** `POST /edge/telemetry` is now live — wire `SendTelemetryBatchAsync` to it. Event ingestion (`SendEventsBatchAsync`) is still a separate, not-yet-built workstream — keep that one mocked.

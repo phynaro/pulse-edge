@@ -41,18 +41,24 @@ if [ -n "$INPUT_TARGET" ]; then
         "linux-x64" | "linuxx64" | "linux" | "ubuntu" | "linux64")
             TARGETS=("linux-x64")
             ;;
+        "linux-arm" | "linuxarm" | "arm" | "rpi32")
+            TARGETS=("linux-arm")
+            ;;
+        "linux-arm64" | "linuxarm64" | "arm64" | "rpi" | "rpi64")
+            TARGETS=("linux-arm64")
+            ;;
         "all")
-            TARGETS=("win-x86" "win-x64" "linux-x64")
+            TARGETS=("win-x86" "win-x64" "linux-x64" "linux-arm" "linux-arm64")
             ;;
         *)
             echo "❌ Error: Unsupported or unrecognized target '$1'."
-            echo "Supported targets are: win-x86, win-x64, linux-x64, all"
+            echo "Supported targets are: win-x86, win-x64, linux-x64, linux-arm, linux-arm64, all"
             exit 1
             ;;
     esac
 else
     # Default to all targets if no argument is passed
-    TARGETS=("win-x86" "win-x64" "linux-x64")
+    TARGETS=("win-x86" "win-x64" "linux-x64" "linux-arm" "linux-arm64")
 fi
 
 echo "📦 Package Manager: $PKG_MANAGER"
@@ -121,16 +127,24 @@ echo "  ✅ Multi-Platform Build Completed Successfully!"
 echo "============================================="
 echo "Deployment packages generated in dist/ folder:"
 if [ -d "dist/win-x86" ]; then
-    echo "  ➡️  Windows 32-bit:  dist/win-x86/ (Pulse.Edge.exe & Pulse.Edge.Agent.exe)"
+    echo "  ➡️  Windows 32-bit:       dist/win-x86/ (Pulse.Edge.exe & Pulse.Edge.Agent.exe)"
 fi
 if [ -d "dist/win-x64" ]; then
-    echo "  ➡️  Windows 64-bit:  dist/win-x64/ (Pulse.Edge.exe & Pulse.Edge.Agent.exe)"
+    echo "  ➡️  Windows 64-bit:       dist/win-x64/ (Pulse.Edge.exe & Pulse.Edge.Agent.exe)"
 fi
 if [ -d "dist/linux-x64" ]; then
-    echo "  ➡️  Linux 64-bit:    dist/linux-x64/ (Pulse.Edge & Pulse.Edge.Agent)"
+    echo "  ➡️  Linux 64-bit (x64):   dist/linux-x64/ (Pulse.Edge & Pulse.Edge.Agent)"
+fi
+if [ -d "dist/linux-arm" ]; then
+    echo "  ➡️  Linux 32-bit (ARM):   dist/linux-arm/ (Pulse.Edge & Pulse.Edge.Agent)"
+fi
+if [ -d "dist/linux-arm64" ]; then
+    echo "  ➡️  Linux 64-bit (ARM):   dist/linux-arm64/ (Pulse.Edge & Pulse.Edge.Agent)"
 fi
 echo ""
-echo "Each target folder is standalone and ready to run!"
-echo "To build a single target, pass its RID as an argument, e.g.:"
-echo "  ./build.sh linux-x64"
+echo "Windows Installer script created:"
+echo "  ➡️  PulseEdge.iss"
+echo "To compile it into a single-file executable wizard (PulseEdgeSetup-1.0.0.exe),"
+echo "open it inside Inno Setup compiler on a Windows host or run:"
+echo "  ISCC PulseEdge.iss"
 echo "============================================="

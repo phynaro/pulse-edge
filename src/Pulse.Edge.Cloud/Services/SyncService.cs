@@ -50,52 +50,79 @@ public class SyncService
                         isSyncCurrentlyPaused = false;
                     }
 
-                    // 1. Process Telemetry batch
-                    var telemetryBatch = await _storageService.GetPendingTelemetryBatchAsync(batchSize: 100);
-                    if (telemetryBatch.Any())
-                    {
-                        processedAnyData = true;
-                        
-                        // Attempt cloud transmission
-                        bool success = await _cloudClient.SendTelemetryBatchAsync(currentDeviceId, currentApiKey, telemetryBatch);
-                        var ids = telemetryBatch.Select(x => x.Id).ToList();
+                    string currentBaseUrl = config?.CloudEndpoint ?? "http://localhost:3000";
 
-                        if (success)
+                    if (!string.IsNullOrEmpty(currentApiKey))
+                    {
+                        // 1. Process Telemetry batch
+                        var telemetryBatch = await _storageService.GetPendingTelemetryBatchAsync(batchSize: 100);
+                        if (telemetryBatch.Any())
                         {
-                            // Delete from local queue database
-                            await _storageService.CompleteTelemetryBatchAsync(ids);
-                            _logger.LogInformation("[Sync] Successfully synced and cleared {Count} telemetry records.", telemetryBatch.Count);
-                        }
-                        else
-                        {
-                            // Unlock records and increment retry counts
-                            await _storageService.FailTelemetryBatchAsync(ids);
-                            _logger.LogWarning("[Sync] Telemetry upload failed. Re-queued items for retry.");
+                            processedAnyData = true;
                             
-                            // Back off slightly on failure
-                            await Task.Delay(3000, stoppingToken);
+                            // Attempt cloud transmission
+                            var result = await _cloudClient.SendTelemetryBatchAsync(currentBaseUrl, currentDeviceId, currentApiKey, telemetryBatch);
+                            var ids = telemetryBatch.Select(x => x.Id).ToList();
+
+                            if (result == TelemetrySyncResult.Success)
+                            {
+                                // Delete from local queue database
+                                await _storageService.CompleteTelemetryBatchAsync(ids);
+                                _logger.LogInformation("[Sync] Successfully synced and cleared {Count} telemetry records.", telemetryBatch.Count);
+                            }
+                            else if (result == TelemetrySyncResult.ClientError)
+                            {
+                                // Remove from outbox because they are malformed and won't succeed on retry
+                                await _storageService.CompleteTelemetryBatchAsync(ids);
+                                _logger.LogError("[Sync] Telemetry upload failed with ClientError (400). Cleared {Count} records to avoid blocking the queue.", telemetryBatch.Count);
+                            }
+                            else if (result == TelemetrySyncResult.Unauthorized)
+                            {
+                                // Unlock records and increment retry counts (keep them queued)
+                                await _storageService.FailTelemetryBatchAsync(ids);
+                                _logger.LogError("[Sync] Telemetry upload failed with Unauthorized (401). API Key has been revoked. Stopping sync loop.");
+
+                                // Clear API key and mark status as Revoked
+                                if (config != null)
+                                {
+                                    config.ApiKey = "";
+                                    config.SiteId = "";
+                                    config.SiteName = "";
+                                    config.CloudStatus = "Revoked";
+                                    await _storageService.SaveDeviceConfigAsync(config);
+                                }
+                            }
+                            else // TransientError
+                            {
+                                // Unlock records and increment retry counts
+                                await _storageService.FailTelemetryBatchAsync(ids);
+                                _logger.LogWarning("[Sync] Telemetry upload failed with TransientError. Re-queued items for retry.");
+                                
+                                // Back off slightly on failure
+                                await Task.Delay(3000, stoppingToken);
+                            }
                         }
-                    }
 
-                    // 2. Process Alert Events batch
-                    var eventBatch = await _storageService.GetPendingEventsBatchAsync(batchSize: 100);
-                    if (eventBatch.Any())
-                    {
-                        processedAnyData = true;
-
-                        bool success = await _cloudClient.SendEventsBatchAsync(currentDeviceId, currentApiKey, eventBatch);
-                        var ids = eventBatch.Select(x => x.Id).ToList();
-
-                        if (success)
+                        // 2. Process Alert Events batch
+                        var eventBatch = await _storageService.GetPendingEventsBatchAsync(batchSize: 100);
+                        if (eventBatch.Any())
                         {
-                            await _storageService.CompleteEventsBatchAsync(ids);
-                            _logger.LogInformation("[Sync] Successfully synced and cleared {Count} event records.", eventBatch.Count);
-                        }
-                        else
-                        {
-                            await _storageService.FailEventsBatchAsync(ids);
-                            _logger.LogWarning("[Sync] Events upload failed. Re-queued items.");
-                            await Task.Delay(3000, stoppingToken);
+                            processedAnyData = true;
+
+                            bool success = await _cloudClient.SendEventsBatchAsync(currentDeviceId, currentApiKey, eventBatch);
+                            var ids = eventBatch.Select(x => x.Id).ToList();
+
+                            if (success)
+                            {
+                                await _storageService.CompleteEventsBatchAsync(ids);
+                                _logger.LogInformation("[Sync] Successfully synced and cleared {Count} event records.", eventBatch.Count);
+                            }
+                            else
+                            {
+                                await _storageService.FailEventsBatchAsync(ids);
+                                _logger.LogWarning("[Sync] Events upload failed. Re-queued items.");
+                                await Task.Delay(3000, stoppingToken);
+                            }
                         }
                     }
                 }

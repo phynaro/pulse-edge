@@ -10,7 +10,6 @@ const formatToLocalTime = (dateStr: string | null | undefined) => {
   return new Date(utcStr).toLocaleString();
 };
 
-/** Parse MetricsJson dict into sorted [name, value] pairs */
 function parseMetrics(metricsJson: string): [string, number][] {
   try {
     const obj = JSON.parse(metricsJson) as Record<string, number>;
@@ -20,7 +19,6 @@ function parseMetrics(metricsJson: string): [string, number][] {
   }
 }
 
-/** Format a number compactly: up to 4 significant digits */
 function fmtVal(v: number): string {
   if (Math.abs(v) >= 1000) return v.toFixed(1);
   if (Math.abs(v) >= 100) return v.toFixed(2);
@@ -34,11 +32,11 @@ interface BufferTabProps {
 
 export default function BufferTab({ bufferTelemetry, bufferEvents }: BufferTabProps) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div className="tab-stack">
       <div className="page-header">
         <div className="page-header-info">
           <h2 className="page-header-title">
-            <Layers size={24} style={{ color: 'var(--primary-color)' }} />
+            <Layers size={24} className="page-header-icon" />
             SQLite Queue Buffer Explorer
           </h2>
           <p className="page-header-desc">
@@ -47,33 +45,30 @@ export default function BufferTab({ bufferTelemetry, bufferEvents }: BufferTabPr
         </div>
       </div>
 
-      {/* ── Telemetry Queue ────────────────────────────────────────────────── */}
       <div className="panel">
         <div className="panel-header">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <div className="panel-header-col">
             <h2 className="panel-title">Pending Telemetry Queue — <code>QueueTelemetry</code></h2>
-            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            <span className="panel-subtitle">
               Each row = one stream snapshot (all metrics merged by poll tick)
             </span>
           </div>
           <span className="badge info">{bufferTelemetry.length} frame{bufferTelemetry.length !== 1 ? 's' : ''}</span>
         </div>
 
-        <div style={{ overflowX: 'auto', maxHeight: '420px' }}>
+        <div className="table-scroll-md">
           {bufferTelemetry.length === 0 ? (
-            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-              Queue is empty — sync is draining to cloud.
-            </div>
+            <div className="table-empty">Queue is empty — sync is draining to cloud.</div>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{ width: '50px' }}>ID</th>
-                  <th style={{ width: '90px' }}>Stream</th>
-                  <th style={{ width: '150px' }}>Buffered At</th>
+                  <th className="col-id">ID</th>
+                  <th className="col-stream">Stream</th>
+                  <th className="col-time">Buffered At</th>
                   <th>Metrics</th>
-                  <th style={{ width: '60px' }}>Retries</th>
-                  <th style={{ width: '90px' }}>Status</th>
+                  <th className="col-retries">Retries</th>
+                  <th className="col-status">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -81,62 +76,28 @@ export default function BufferTab({ bufferTelemetry, bufferEvents }: BufferTabPr
                   const metrics = parseMetrics(item.metricsJson);
                   return (
                     <tr key={item.id}>
-                      <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                        #{item.id}
-                      </td>
-                      <td>
-                        <span style={{
-                          fontWeight: 600,
-                          fontSize: '12px',
-                          background: 'var(--accent-subtle, rgba(99,102,241,0.15))',
-                          color: 'var(--accent, #6366f1)',
-                          borderRadius: '4px',
-                          padding: '2px 7px',
-                        }}>
-                          {item.dataSourceId}
-                        </span>
-                      </td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                        {formatToLocalTime(item.timestamp)}
-                      </td>
+                      <td className="cell-mono-secondary">#{item.id}</td>
+                      <td><span className="stream-badge">{item.dataSourceId}</span></td>
+                      <td className="cell-mono-nowrap">{formatToLocalTime(item.timestamp)}</td>
                       <td>
                         {metrics.length === 0 ? (
-                          <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '12px' }}>
-                            {item.metricsJson}
-                          </span>
+                          <span className="metric-empty">{item.metricsJson}</span>
                         ) : (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', padding: '2px 0' }}>
+                          <div className="metric-chip-list">
                             {metrics.map(([name, val]) => (
-                              <span
-                                key={name}
-                                title={`${name} = ${val}`}
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  fontSize: '11px',
-                                  borderRadius: '5px',
-                                  padding: '2px 8px',
-                                  background: 'var(--surface-secondary, rgba(255,255,255,0.05))',
-                                  border: '1px solid var(--border-color, rgba(255,255,255,0.1))',
-                                  fontFamily: 'var(--font-mono)',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                <span style={{ color: 'var(--text-secondary)' }}>{name}</span>
-                                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-                                  {fmtVal(val)}
-                                </span>
+                              <span key={name} title={`${name} = ${val}`} className="metric-chip">
+                                <span className="metric-chip-name">{name}</span>
+                                <span className="metric-chip-value">{fmtVal(val)}</span>
                               </span>
                             ))}
                           </div>
                         )}
                       </td>
-                      <td style={{ textAlign: 'center' }}>
+                      <td className="cell-center">
                         {item.retryCount > 0 ? (
                           <span className="badge warning">{item.retryCount}</span>
                         ) : (
-                          <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                          <span className="text-secondary">—</span>
                         )}
                       </td>
                       <td>
@@ -153,64 +114,44 @@ export default function BufferTab({ bufferTelemetry, bufferEvents }: BufferTabPr
         </div>
       </div>
 
-      {/* ── Events Queue ──────────────────────────────────────────────────── */}
       <div className="panel">
         <div className="panel-header">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <div className="panel-header-col">
             <h2 className="panel-title">Pending Events Queue — <code>QueueEvents</code></h2>
-            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            <span className="panel-subtitle">
               Alarms, machine state changes, and operational events
             </span>
           </div>
           <span className="badge info">{bufferEvents.length} event{bufferEvents.length !== 1 ? 's' : ''}</span>
         </div>
 
-        <div style={{ overflowX: 'auto', maxHeight: '350px' }}>
+        <div className="table-scroll-sm">
           {bufferEvents.length === 0 ? (
-            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-              No pending events.
-            </div>
+            <div className="table-empty">No pending events.</div>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{ width: '50px' }}>ID</th>
-                  <th style={{ width: '120px' }}>Event Type</th>
+                  <th className="col-id">ID</th>
+                  <th className="col-event">Event Type</th>
                   <th>Payload</th>
-                  <th style={{ width: '150px' }}>Buffered At</th>
-                  <th style={{ width: '60px' }}>Retries</th>
-                  <th style={{ width: '90px' }}>Status</th>
+                  <th className="col-time">Buffered At</th>
+                  <th className="col-retries">Retries</th>
+                  <th className="col-status">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {bufferEvents.map((item) => (
                   <tr key={item.id}>
-                    <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                      #{item.id}
-                    </td>
-                    <td>
-                      <span style={{
-                        fontWeight: 600,
-                        fontSize: '12px',
-                        background: 'var(--warning-subtle, rgba(245,158,11,0.15))',
-                        color: 'var(--warning, #f59e0b)',
-                        borderRadius: '4px',
-                        padding: '2px 7px',
-                      }}>
-                        {item.eventType}
-                      </span>
-                    </td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--code-color)' }}>
-                      {item.payloadJson}
-                    </td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                      {formatToLocalTime(item.timestamp)}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
+                    <td className="cell-mono-secondary">#{item.id}</td>
+                    <td><span className="event-badge">{item.eventType}</span></td>
+                    <td className="cell-mono-code">{item.payloadJson}</td>
+                    <td className="cell-mono-nowrap">{formatToLocalTime(item.timestamp)}</td>
+                    <td className="cell-center">
                       {item.retryCount > 0 ? (
                         <span className="badge warning">{item.retryCount}</span>
                       ) : (
-                        <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                        <span className="text-secondary">—</span>
                       )}
                     </td>
                     <td>

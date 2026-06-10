@@ -20,7 +20,8 @@ import type {
   DataPoint, 
   DiagnosticData, 
   BufferTelemetryItem, 
-  BufferEventItem 
+  BufferEventItem,
+  MqttDevice
 } from './types';
 
 import DashboardTab from './components/DashboardTab';
@@ -29,6 +30,7 @@ import TagsTab from './components/TagsTab';
 import ProtocolsTab from './components/ProtocolsTab';
 import BufferTab from './components/BufferTab';
 import SettingsTab from './components/SettingsTab';
+import OnboardingWizard from './components/OnboardingWizard';
 
 const formatToLocalTimeString = (dateStr: string | null | undefined) => {
   if (!dateStr) return '';
@@ -64,6 +66,7 @@ export default function App() {
   const [datasources, setDatasources] = useState<DataSource[]>([]);
   const [adapters, setAdapters] = useState<DriverAdapter[]>([]);
   const [datapoints, setDatapoints] = useState<DataPoint[]>([]);
+  const [mqttDevices, setMqttDevices] = useState<MqttDevice[]>([]);
   const [diagnostics, setDiagnostics] = useState<DiagnosticData | null>(null);
   const [isSyncEnabled, setIsSyncEnabled] = useState<boolean>(true);
 
@@ -108,11 +111,11 @@ export default function App() {
   const hasInitializedSettingsRef = useRef(false);
   const [cloudEndpoint, setCloudEndpoint] = useState<string>('');
   const [edgeSerial, setEdgeSerial] = useState<string>('');
-  const [pulseApiKey, setPulseApiKey] = useState<string>('');
+  const [isOnboarded, setIsOnboarded] = useState<boolean>(true);
 
   const fetchData = async () => {
     try {
-      const [dashRes, dsRes, adaptersRes, dpRes, diagRes, syncRes, teleBufferRes, eventBufferRes, settingsRes] = await Promise.all([
+      const [dashRes, dsRes, adaptersRes, dpRes, diagRes, syncRes, teleBufferRes, eventBufferRes, settingsRes, mqttRes] = await Promise.all([
         fetch('/api/dashboard'),
         fetch('/api/datasources'),
         fetch('/api/adapters'),
@@ -121,10 +124,11 @@ export default function App() {
         fetch('/api/settings/sync-status'),
         fetch('/api/buffer/telemetry'),
         fetch('/api/buffer/events'),
-        fetch('/api/settings')
+        fetch('/api/settings'),
+        fetch('/api/mqtt-devices')
       ]);
 
-      if (!dashRes.ok || !dsRes.ok || !adaptersRes.ok || !dpRes.ok || !diagRes.ok || !syncRes.ok || !teleBufferRes.ok || !eventBufferRes.ok || !settingsRes.ok) {
+      if (!dashRes.ok || !dsRes.ok || !adaptersRes.ok || !dpRes.ok || !diagRes.ok || !syncRes.ok || !teleBufferRes.ok || !eventBufferRes.ok || !settingsRes.ok || !mqttRes.ok) {
         throw new Error('API fetch failed');
       }
 
@@ -137,17 +141,19 @@ export default function App() {
       const teleBufferData: BufferTelemetryItem[] = await teleBufferRes.json();
       const eventBufferData: BufferEventItem[] = await eventBufferRes.json();
       const settingsData = await settingsRes.json();
+      const mqttData: MqttDevice[] = await mqttRes.json();
 
       setDashboard(dashData);
       if (!hasInitializedSettingsRef.current) {
         setCloudEndpoint(settingsData.cloudEndpoint || 'http://localhost:3000');
-        setEdgeSerial(settingsData.serialNumber || 'PULSE-EDGE-MOCK-999');
-        setPulseApiKey(settingsData.apiKey || '');
+        setEdgeSerial(settingsData.serialNumber || '');
+        setIsOnboarded(!!settingsData.serialNumber);
         hasInitializedSettingsRef.current = true;
       }
       setDatasources(dsData);
       setAdapters(adaptersData);
       setDatapoints(dpData);
+      setMqttDevices(mqttData);
       setDiagnostics(diagData);
       setIsSyncEnabled(syncData.isSyncEnabled);
       setBufferTelemetry(teleBufferData);
@@ -245,6 +251,27 @@ export default function App() {
     }
   };
 
+  const handleRenameStream = async (ds: DataSource, newName: string) => {
+    try {
+      const updated = { ...ds, name: newName };
+      const res = await fetch('/api/datasources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      if (res.ok) {
+        fetchData();
+        toast.success(`Stream renamed to '${newName}' successfully.`);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.error || 'Failed to rename stream.');
+      }
+    } catch (err) {
+      console.error('Error renaming stream:', err);
+      toast.error('Error renaming stream.');
+    }
+  };
+
   const handleSaveSettings = async () => {
     try {
       const res = await fetch('/api/settings', {
@@ -252,8 +279,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           serialNumber: edgeSerial,
-          cloudEndpoint: cloudEndpoint,
-          apiKey: pulseApiKey
+          cloudEndpoint: cloudEndpoint
         })
       });
 
@@ -306,6 +332,22 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('pulse_ui_show_live_feed', showLiveFeedPanel.toString());
   }, [showLiveFeedPanel]);
+
+  if (!isOnboarded) {
+    return (
+      <>
+        <OnboardingWizard 
+          toast={toast} 
+          onComplete={() => { 
+            hasInitializedSettingsRef.current = false;
+            setIsOnboarded(true); 
+            void fetchData(); 
+          }} 
+        />
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
+      </>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -369,7 +411,7 @@ export default function App() {
         
         <div className="sidebar-footer">
           <div>AGENT V{dashboard?.version || '1.0.0'}</div>
-          <div style={{ marginTop: '4px', fontSize: '10px' }}>DB Status: SQLite WAL</div>
+          <div className="sidebar-footer-note">DB Status: SQLite WAL</div>
         </div>
       </aside>
 
@@ -377,7 +419,7 @@ export default function App() {
       <main className="main-content">
         {/* Sticky 60px Topbar */}
         <header className="topbar">
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div className="topbar-badge-group">
             <div className="topbar-node-badge">
               <span className="badge-label">NODE</span>
               <span className="badge-value">{edgeSerial}</span>
@@ -403,7 +445,7 @@ export default function App() {
               (() => {
                 const cloudInfo = getCloudStatusInfo(dashboard.cloudStatus);
                 return (
-                  <div className="status-indicator" style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '20px' }}>
+                  <div className="status-indicator status-indicator-divider">
                     <div className={`pulse-dot ${cloudInfo.className}`} />
                     <span>{cloudInfo.label}</span>
                   </div>
@@ -411,21 +453,14 @@ export default function App() {
               })()
             )}
             
-            <button 
-              onClick={() => { setIsLoading(true); fetchData(); }} 
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--text-secondary)',
-                display: 'flex',
-                alignItems: 'center',
-                borderLeft: '1px solid var(--border-color)',
-                paddingLeft: '20px'
-              }}
+            <button
+              type="button"
+              onClick={() => { setIsLoading(true); fetchData(); }}
+              className="btn-icon"
               title="Force Refresh Data"
+              aria-label="Force refresh data"
             >
-              <RefreshCw size={16} className={isLoading ? 'spin' : ''} style={{ transition: 'transform 0.5s' }} />
+              <RefreshCw size={16} className={isLoading ? 'spin refresh-icon' : 'refresh-icon'} />
             </button>
           </div>
         </header>
@@ -434,19 +469,7 @@ export default function App() {
         <div className="content-area">
           {/* Simulated Cloud Outage Warning Banner */}
           {!isSyncEnabled && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              backgroundColor: '#feebc8',
-              border: '1px solid #ecc94b',
-              color: '#744210',
-              padding: '16px 24px',
-              borderRadius: '8px',
-              marginBottom: '24px',
-              fontWeight: 500,
-              fontSize: '14px'
-            }}>
+            <div className="banner-warning">
               <AlertTriangle size={20} />
               <span>
                 <strong>Simulated Cloud Outage:</strong> Synchronization loop is currently paused. Telemetry packets are building up in the SQLite database queue buffer.
@@ -455,7 +478,7 @@ export default function App() {
           )}
 
           {isLoading && !dashboard ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '40px', fontFamily: 'var(--font-mono)' }}>
+            <div className="loading-center">
               Loading edge statistics...
             </div>
           ) : (
@@ -491,6 +514,7 @@ export default function App() {
                   handleToggleStreamEnabled={handleToggleStreamEnabled}
                   handleDeleteDataPoint={handleDeleteDataPoint}
                   handleDeleteStream={handleDeleteStream}
+                  handleRenameStream={handleRenameStream}
                   fetchData={fetchData}
                   toast={toast}
                 />
@@ -500,6 +524,7 @@ export default function App() {
                 <TagsTab
                   datapoints={datapoints}
                   adapters={adapters}
+                  mqttDevices={mqttDevices}
                   handleDeleteDataPoint={handleDeleteDataPoint}
                   fetchData={fetchData}
                   toast={toast}
@@ -510,6 +535,7 @@ export default function App() {
                 <ProtocolsTab
                   adapters={adapters}
                   datapoints={datapoints}
+                  mqttDevices={mqttDevices}
                   fetchData={fetchData}
                   toast={toast}
                 />
@@ -529,8 +555,6 @@ export default function App() {
                   setCloudEndpoint={setCloudEndpoint}
                   edgeSerial={edgeSerial}
                   setEdgeSerial={setEdgeSerial}
-                  pulseApiKey={pulseApiKey}
-                  setPulseApiKey={setPulseApiKey}
                   handleSaveSettings={handleSaveSettings}
                   pollingInterval={pollingInterval}
                   setPollingInterval={setPollingInterval}

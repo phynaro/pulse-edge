@@ -8,6 +8,7 @@ public class QueueTelemetry
     public string DataSourceId { get; set; } = string.Empty;  // e.g. "DS001"
     public DateTime Timestamp { get; set; }                    // Poll-tick UTC timestamp (ms precision)
     public string MetricsJson { get; set; } = "{}";           // e.g. {"temperature":85.3,"good_count":142}
+    public string QualitiesJson { get; set; } = "{}";         // e.g. {"temperature":"Good","good_count":"Good"}
     public int RetryCount { get; set; }
     public bool IsSending { get; set; }
 }

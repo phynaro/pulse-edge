@@ -16,11 +16,90 @@ using Pulse.Edge.Cloud.Services;
 using Pulse.Edge.Protocols.MqttProtocol;
 using Pulse.Edge.Protocols.Modbus;
 using Microsoft.Extensions.FileProviders;
+using Serilog;
+using Serilog.Events;
+
+// Configure Serilog daily rolling file and console logging
+var appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+var logFolder = OperatingSystem.IsWindows()
+    ? Path.Combine(appDataFolder, "PULSE Edge", "logs")
+    : Path.Combine(AppContext.BaseDirectory, "logs");
+
+Directory.CreateDirectory(logFolder);
+var logPath = Path.Combine(logFolder, "edge-.txt");
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .WriteTo.File(
+        logPath,
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 30,
+        fileSizeLimitBytes: 10 * 1024 * 1024,
+        rollOnFileSizeLimit: true,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}"
+    )
+    .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog();
 
-// Default Kestrel to listen on port 5288 on all network interfaces
-builder.WebHost.UseUrls("http://*:5288");
+// Append custom persistent configuration from ProgramData on Windows
+if (OperatingSystem.IsWindows())
+{
+    var appData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+    var pulseConfigFolder = Path.Combine(appData, "PULSE Edge");
+    var configPath = Path.Combine(pulseConfigFolder, "config.json");
+    var hashPath = Path.Combine(pulseConfigFolder, "config.json.sha256");
+
+    if (File.Exists(configPath))
+    {
+        if (File.Exists(hashPath))
+        {
+            try
+            {
+                using var sha256 = System.Security.Cryptography.SHA256.Create();
+                using var stream = File.OpenRead(configPath);
+                var hashBytes = sha256.ComputeHash(stream);
+                var calculatedHash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+                var expectedHash = File.ReadAllText(hashPath).Trim().ToLowerInvariant();
+
+                if (calculatedHash != expectedHash)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("[CRITICAL SECURITY ALERT] Configuration file 'config.json' has been tampered with or modified unauthorized! Hash verification failed.");
+                    Console.WriteLine($"Expected: {expectedHash}");
+                    Console.WriteLine($"Calculated: {calculatedHash}");
+                    Console.ResetColor();
+                }
+                else
+                {
+                    Console.WriteLine("[INFO] Configuration file integrity check passed successfully.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WARNING] Failed to verify configuration integrity: {ex.Message}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("[WARNING] Configuration integrity signature file 'config.json.sha256' is missing. Security validation skipped.");
+        }
+
+        builder.Configuration.AddJsonFile(configPath, optional: true, reloadOnChange: true);
+    }
+}
+
+// Bind Kestrel port. Priority: Config override -> Default http://*:5288
+var serverUrl = builder.Configuration["serverUrl"] ?? "http://*:5288";
+builder.WebHost.UseUrls(serverUrl);
+
+// Enable running as a Windows Service
+builder.Host.UseWindowsService();
 
 // Enable CORS so the development React UI running on port 8080 can poll the API on port 5244
 builder.Services.AddCors(options =>
@@ -36,6 +115,7 @@ builder.Services.AddCors(options =>
 // Register SQLite storage service and OPC UA driver
 builder.Services.AddSingleton<QueueStorageService>();
 builder.Services.AddSingleton<OpcUaDriver>();
+builder.Services.AddSingleton<CloudClient>();
 
 var hostingMode = builder.Configuration["hostingMode"] ?? "SinglePort";
 var isSinglePort = string.Equals(hostingMode, "SinglePort", StringComparison.OrdinalIgnoreCase);
@@ -43,7 +123,6 @@ var isSinglePort = string.Equals(hostingMode, "SinglePort", StringComparison.Ord
 if (isSinglePort)
 {
     // Register Agent background synchronization & communication protocols
-    builder.Services.AddSingleton<CloudClient>();
     builder.Services.AddSingleton<SyncService>();
     builder.Services.AddSingleton<MqttDriver>();
     builder.Services.AddSingleton<ModbusDriver>();
@@ -72,6 +151,9 @@ if (isSinglePort)
     });
 }
 
+// GET /health - Service health endpoint for installer and monitoring systems
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
+
 // GET /api/dashboard - Returns system status, SQLite db details, and current queues
 app.MapGet("/api/dashboard", async (QueueStorageService storageService) =>
 {
@@ -91,7 +173,7 @@ app.MapGet("/api/dashboard", async (QueueStorageService storageService) =>
         CloudStatus = config?.CloudStatus ?? "PendingApproval",
         BufferStatus = pendingTelemetryCount + pendingEventsCount > 0 ? "Buffering" : "Healthy",
         Version = config?.Version ?? "1.0.0",
-        LastSync = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC"),
+        LastSync = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC", System.Globalization.CultureInfo.InvariantCulture),
         Device = new
         {
             DeviceId = config?.Id ?? "Not Registered",
@@ -288,6 +370,81 @@ app.MapPost("/api/adapters/opcua/browse", async (BrowseNodesRequest request, Opc
     }
 });
 
+// POST /api/adapters/mqtt/browse - Browse seen MQTT topics and their JSON paths
+app.MapPost("/api/adapters/mqtt/browse", async (MqttBrowseRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.AdapterId))
+    {
+        return Results.BadRequest(new { success = false, message = "AdapterId is required." });
+    }
+
+    try
+    {
+        using var db = new QueueDbContext();
+        var adapter = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Id == request.AdapterId);
+        if (adapter == null)
+        {
+            return Results.NotFound(new { success = false, message = "Adapter not found." });
+        }
+
+        if (adapter.Protocol != "MQTT")
+        {
+            return Results.BadRequest(new { success = false, message = "Selected adapter is not an MQTT adapter." });
+        }
+
+        var conn = db.Database.GetDbConnection();
+        bool wasClosed = conn.State == System.Data.ConnectionState.Closed;
+        if (wasClosed) await conn.OpenAsync();
+
+        var topics = new List<MqttBrowseItem>();
+
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT Topic, Payload, LastSeen FROM MqttSeenTopics ORDER BY Topic ASC;";
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                string topic = reader.GetString(0);
+                string payload = reader.GetString(1);
+                string lastSeen = reader.GetString(2);
+
+                var keys = new List<MqttJsonKeyItem>();
+                if (!string.IsNullOrWhiteSpace(payload))
+                {
+                    try
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(payload);
+                        ExtractJsonPaths(doc.RootElement, "", keys);
+                    }
+                    catch
+                    {
+                        // Payload is not JSON or invalid
+                    }
+                }
+
+                // If no JSON keys were extracted, add a default key for the raw payload
+                if (keys.Count == 0)
+                {
+                    keys.Add(new MqttJsonKeyItem("$", "String", payload));
+                }
+
+                topics.Add(new MqttBrowseItem(topic, payload, lastSeen, keys));
+            }
+        }
+        finally
+        {
+            if (wasClosed) await conn.CloseAsync();
+        }
+
+        return Results.Ok(new { success = true, topics });
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new { success = false, message = $"Browse failed: {ex.Message}" });
+    }
+});
+
 // DELETE /api/adapters/{id} - Deletes a connection adapter configuration and its bound data points
 app.MapDelete("/api/adapters/{id}", async (string id) =>
 {
@@ -297,6 +454,13 @@ app.MapDelete("/api/adapters/{id}", async (string id) =>
     
     db.DriverAdapters.Remove(existing);
     
+    // Also cascade delete any bound MQTT devices
+    var boundDevices = await db.MqttDevices.Where(x => x.AdapterId == id).ToListAsync();
+    if (boundDevices.Any())
+    {
+        db.MqttDevices.RemoveRange(boundDevices);
+    }
+
     // Also cascade delete any bound datapoints
     var boundDataPoints = await db.DataPoints.Where(x => x.AdapterId == id).ToListAsync();
     if (boundDataPoints.Any())
@@ -318,10 +482,15 @@ app.MapGet("/api/datasources", async () =>
 });
 
 // POST /api/datasources - Updates or inserts a logical data source
-app.MapPost("/api/datasources", async (DataSource updated) =>
+app.MapPost("/api/datasources", async (DataSource updated, bool? create) =>
 {
     using var db = new QueueDbContext();
     var existing = await db.DataSources.FirstOrDefaultAsync(x => x.Id == updated.Id);
+    if (create == true && existing != null)
+    {
+        return Results.BadRequest(new { error = $"Stream with ID '{updated.Id}' already exists." });
+    }
+
     if (existing == null)
     {
         db.DataSources.Add(updated);
@@ -460,6 +629,7 @@ app.MapPost("/api/datapoints", async (DataPoint updated) =>
     }
     
     existing.AdapterId = updated.AdapterId;
+    existing.MqttDeviceId = updated.MqttDeviceId;
     existing.DataSourceId = updated.DataSourceId;
     existing.Metric = updated.Metric;
     existing.Address = updated.Address;
@@ -502,6 +672,69 @@ app.MapDelete("/api/datapoints/hard/{id}", async (string id) =>
     if (existing == null) return Results.NotFound();
     
     db.DataPoints.Remove(existing);
+    await db.SaveChangesAsync();
+    return Results.Ok(new { success = true });
+});
+
+// GET /api/mqtt-devices - Returns configured MQTT devices
+app.MapGet("/api/mqtt-devices", async () =>
+{
+    using var db = new QueueDbContext();
+    var list = await db.MqttDevices.ToListAsync();
+    return Results.Ok(list);
+});
+
+// POST /api/mqtt-devices - Updates or inserts an MQTT device
+app.MapPost("/api/mqtt-devices", async (MqttDevice updated) =>
+{
+    using var db = new QueueDbContext();
+    if (string.IsNullOrEmpty(updated.Id))
+    {
+        updated.Id = Guid.NewGuid().ToString();
+    }
+    
+    var existing = await db.MqttDevices.FirstOrDefaultAsync(x => x.Id == updated.Id);
+    if (existing == null)
+    {
+        db.MqttDevices.Add(updated);
+    }
+    else
+    {
+        existing.AdapterId = updated.AdapterId;
+        existing.Name = updated.Name;
+        existing.TopicSubscription = updated.TopicSubscription;
+        existing.MqttParseMode = updated.MqttParseMode;
+        existing.IsEnabled = updated.IsEnabled;
+        existing.LwtTopic = updated.LwtTopic;
+        existing.LwtOnlinePayload = updated.LwtOnlinePayload;
+        existing.LwtOfflinePayload = updated.LwtOfflinePayload;
+        existing.Status = updated.Status;
+        existing.LastError = updated.LastError;
+        existing.LastUpdated = updated.LastUpdated;
+        existing.ConsecutiveFailures = updated.ConsecutiveFailures;
+        db.MqttDevices.Update(existing);
+    }
+    
+    await db.SaveChangesAsync();
+    return Results.Created($"/api/mqtt-devices/{updated.Id}", updated);
+});
+
+// DELETE /api/mqtt-devices/{id} - Deletes an MQTT device configuration
+app.MapDelete("/api/mqtt-devices/{id}", async (string id) =>
+{
+    using var db = new QueueDbContext();
+    var existing = await db.MqttDevices.FirstOrDefaultAsync(x => x.Id == id);
+    if (existing == null) return Results.NotFound();
+    
+    // Unbind any data points associated with this device
+    var dps = await db.DataPoints.Where(x => x.MqttDeviceId == id).ToListAsync();
+    foreach (var dp in dps)
+    {
+        dp.MqttDeviceId = null;
+        db.DataPoints.Update(dp);
+    }
+    
+    db.MqttDevices.Remove(existing);
     await db.SaveChangesAsync();
     return Results.Ok(new { success = true });
 });
@@ -555,36 +788,103 @@ app.MapGet("/api/settings", async () =>
     });
 });
 
-// POST /api/settings - Saves updated DeviceConfig (Cloud Endpoint, Serial Number, and API Key) to SQLite database
+// POST /api/settings - Saves updated DeviceConfig (Cloud Endpoint, Serial Number) to SQLite database
 app.MapPost("/api/settings", async (UpdateSettingsRequest request) =>
 {
     using var db = new QueueDbContext();
     var config = await db.DeviceConfigs.FirstOrDefaultAsync();
+    
+    string generateClaimSecret()
+    {
+        var secretBytes = new byte[24];
+        using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+        {
+            rng.GetBytes(secretBytes);
+        }
+        return Convert.ToHexString(secretBytes).ToLowerInvariant();
+    }
+
     if (config == null)
     {
         config = new DeviceConfig
         {
             Id = Guid.NewGuid().ToString(),
+            ClaimSecret = generateClaimSecret(),
             SerialNumber = request.SerialNumber,
             CloudEndpoint = request.CloudEndpoint,
-            ApiKey = request.ApiKey ?? "",
+            ApiKey = "",
             SiteId = "",
             Version = "1.0.0",
-            CloudStatus = string.IsNullOrEmpty(request.ApiKey) ? "PendingApproval" : "Connected"
+            CloudStatus = "PendingApproval"
         };
         db.DeviceConfigs.Add(config);
     }
     else
     {
+        bool resetRequired = config.CloudEndpoint != request.CloudEndpoint || config.SerialNumber != request.SerialNumber;
+        
         config.SerialNumber = request.SerialNumber;
         config.CloudEndpoint = request.CloudEndpoint;
-        config.ApiKey = request.ApiKey ?? "";
-        config.CloudStatus = string.IsNullOrEmpty(config.ApiKey) ? "PendingApproval" : "Connected";
+        
+        if (resetRequired)
+        {
+            config.ApiKey = "";
+            config.SiteId = "";
+            config.SiteName = "";
+            config.CloudStatus = "PendingApproval";
+        }
+        
+        if (string.IsNullOrEmpty(config.ClaimSecret))
+        {
+            config.ClaimSecret = generateClaimSecret();
+        }
         db.DeviceConfigs.Update(config);
     }
     await db.SaveChangesAsync();
     return Results.Ok(config);
 });
+
+// POST /api/settings/validate-cloud - Validates Cloud URL sync registration
+app.MapPost("/api/settings/validate-cloud", async (ValidateCloudRequest request, CloudClient cloudClient) =>
+{
+    if (string.IsNullOrWhiteSpace(request.CloudEndpoint))
+    {
+        return Results.BadRequest(new { error = "Cloud target URL cannot be empty." });
+    }
+
+    if (!request.CloudEndpoint.StartsWith("http://") && !request.CloudEndpoint.StartsWith("https://"))
+    {
+        return Results.BadRequest(new { error = "Target URL must start with http:// or https://" });
+    }
+
+    try
+    {
+        using var httpClient = new HttpClient();
+        httpClient.Timeout = TimeSpan.FromSeconds(5);
+        
+        var baseUri = new Uri(request.CloudEndpoint.TrimEnd('/'));
+        var healthUri = new Uri(baseUri, "/health");
+        
+        var response = await httpClient.GetAsync(healthUri);
+        if (!response.IsSuccessStatusCode)
+        {
+            return Results.BadRequest(new { error = $"Cloud health check returned unsuccessful status code: {response.StatusCode}" });
+        }
+        
+        var content = await response.Content.ReadAsStringAsync();
+        if (string.IsNullOrEmpty(content) || (!content.Contains("postgres") && !content.Contains("influx")))
+        {
+            return Results.BadRequest(new { error = "Target URL responded but is not a valid PULSE Cloud instance." });
+        }
+
+        return Results.Ok(new { success = true });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = $"Connection failed: {ex.Message}" });
+    }
+});
+
 
 // GET /api/buffer/telemetry - Returns list of currently enqueued telemetry records in SQLite
 app.MapGet("/api/buffer/telemetry", async () =>
@@ -624,10 +924,71 @@ if (isSinglePort)
     });
 }
 
-app.Run();
+try
+{
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application host terminated unexpectedly.");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
+
+static void ExtractJsonPaths(System.Text.Json.JsonElement element, string currentPath, List<MqttJsonKeyItem> paths)
+{
+    if (element.ValueKind == System.Text.Json.JsonValueKind.Object)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            string path = string.IsNullOrEmpty(currentPath) ? $"$.{property.Name}" : $"{currentPath}.{property.Name}";
+            
+            string dataType = property.Value.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.Number => property.Value.GetRawText().Contains('.') ? "Float" : "Int32",
+                System.Text.Json.JsonValueKind.True => "Boolean",
+                System.Text.Json.JsonValueKind.False => "Boolean",
+                System.Text.Json.JsonValueKind.String => "String",
+                _ => "String"
+            };
+
+            paths.Add(new MqttJsonKeyItem(path, dataType, property.Value.ValueKind == System.Text.Json.JsonValueKind.String ? property.Value.GetString() ?? "" : property.Value.GetRawText()));
+            ExtractJsonPaths(property.Value, path, paths);
+        }
+    }
+    else if (element.ValueKind == System.Text.Json.JsonValueKind.Array)
+    {
+        int index = 0;
+        foreach (var item in element.EnumerateArray())
+        {
+            string path = $"{currentPath}[{index}]";
+            
+            string dataType = item.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.Number => item.GetRawText().Contains('.') ? "Float" : "Int32",
+                System.Text.Json.JsonValueKind.True => "Boolean",
+                System.Text.Json.JsonValueKind.False => "Boolean",
+                System.Text.Json.JsonValueKind.String => "String",
+                _ => "String"
+            };
+
+            paths.Add(new MqttJsonKeyItem(path, dataType, item.ValueKind == System.Text.Json.JsonValueKind.String ? item.GetString() ?? "" : item.GetRawText()));
+            ExtractJsonPaths(item, path, paths);
+            index++;
+        }
+    }
+}
 
 public record TestConnectionRequest(string Host, int Port);
 public record DiscoverEndpointsRequest(string DiscoveryUrl);
 public record BrowseNodesRequest(string AdapterId, string? NodeId);
-public record UpdateSettingsRequest(string SerialNumber, string CloudEndpoint, string ApiKey);
+public record UpdateSettingsRequest(string SerialNumber, string CloudEndpoint);
+public record ValidateCloudRequest(string CloudEndpoint, string SerialNumber);
+
+public record MqttBrowseRequest(string AdapterId);
+public record MqttBrowseItem(string Topic, string Payload, string LastSeen, List<MqttJsonKeyItem> Keys);
+public record MqttJsonKeyItem(string Path, string DataType, string Value);
+
 

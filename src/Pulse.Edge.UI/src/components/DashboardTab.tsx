@@ -1,11 +1,11 @@
 import { Cpu, Play, Pause, Activity } from 'lucide-react';
 import CustomSelect from './CustomSelect';
-import type { 
-  DiagnosticData, 
-  BufferTelemetryItem, 
-  BufferEventItem, 
-  DriverAdapter, 
-  DataPoint 
+import type {
+  DiagnosticData,
+  BufferTelemetryItem,
+  BufferEventItem,
+  DriverAdapter,
+  DataPoint
 } from '../types';
 
 interface DashboardTabProps {
@@ -49,12 +49,10 @@ export default function DashboardTab({
   maxLiveLogs,
   setMaxLiveLogs
 }: DashboardTabProps) {
-  
-  // Compute live telemetry feed with dynamic filtering and slicing based on configuration
+
   const filteredLiveFeed = liveFeed
     .filter(item => {
       if (telemetryFilterType !== 'All') {
-        // Find if this datasource has any datapoints bound to an adapter of this protocol
         const dps = datapoints.filter(dp => dp.dataSourceId === item.source);
         const hasProtocol = dps.some(dp => {
           const adp = adapters.find(a => a.id === dp.adapterId);
@@ -76,12 +74,32 @@ export default function DashboardTab({
     })
     .slice(0, maxLiveLogs);
 
+  const telemetryDanger = bufferTelemetry.length >= telemetryWarningThreshold;
+  const eventsDanger = bufferEvents.length >= eventWarningThreshold;
+  const totalBuffered = bufferTelemetry.length + bufferEvents.length;
+
+  const bufferStateClass = telemetryDanger || eventsDanger
+    ? 'is-danger'
+    : totalBuffered > 0
+      ? 'is-warning'
+      : 'is-success';
+
+  const bufferStateText = telemetryDanger || eventsDanger
+    ? 'Warning Alert'
+    : totalBuffered > 0
+      ? 'Buffering'
+      : 'Healthy';
+
+  const gridClass = showLiveFeedPanel && showDiagnosticsPanel
+    ? 'dashboard-grid is-split'
+    : 'dashboard-grid is-single';
+
   return (
     <>
       <div className="page-header">
         <div className="page-header-info">
           <h2 className="page-header-title">
-            <Activity size={24} style={{ color: 'var(--primary-color)' }} />
+            <Activity size={24} className="page-header-icon" />
             Edge Node Health Summary
           </h2>
           <p className="page-header-desc">
@@ -90,32 +108,16 @@ export default function DashboardTab({
         </div>
       </div>
 
-      {/* Stats Row */}
       <div className="stats-grid">
         <div className="card">
           <div className="card-title">Cloud Sync Status</div>
-          <div className="card-value" style={{ color: isSyncEnabled ? 'var(--primary-dark)' : 'var(--warning-color)' }}>
+          <div className={`card-value ${isSyncEnabled ? 'is-online' : 'is-paused'}`}>
             {isSyncEnabled ? 'ONLINE' : 'PAUSED'}
           </div>
-          <button 
-            onClick={handleToggleSync} 
-            style={{
-              marginTop: '12px',
-              backgroundColor: isSyncEnabled ? 'rgba(60, 232, 189, 0.15)' : 'rgba(236, 201, 75, 0.15)',
-              color: isSyncEnabled ? '#2bc59e' : '#744210',
-              border: `1px solid ${isSyncEnabled ? 'rgba(60, 232, 189, 0.3)' : 'rgba(236, 201, 75, 0.3)'}`,
-              borderRadius: '6px',
-              padding: '8px 16px',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              width: '100%',
-              justifyContent: 'center',
-              transition: 'all 0.2s'
-            }}
+          <button
+            type="button"
+            onClick={handleToggleSync}
+            className={`sync-toggle-btn ${isSyncEnabled ? 'is-online' : 'is-paused'}`}
           >
             {isSyncEnabled ? <Pause size={14} /> : <Play size={14} />}
             {isSyncEnabled ? 'Simulate Outage' : 'Resume Sync'}
@@ -124,99 +126,64 @@ export default function DashboardTab({
 
         <div className="card">
           <div className="card-title">Telemetry Queue</div>
-          <div className="card-value" style={{ 
-            color: bufferTelemetry.length >= telemetryWarningThreshold ? 'var(--danger-color)' : 'var(--text-primary)',
-            transition: 'color 0.2s'
-          }}>
+          <div className={`card-value ${telemetryDanger ? 'is-danger' : ''}`}>
             {bufferTelemetry.length}
           </div>
           <div className="card-desc">
-            {bufferTelemetry.length >= telemetryWarningThreshold 
-              ? `Alert: Limit exceeded (>= ${telemetryWarningThreshold})` 
+            {telemetryDanger
+              ? `Alert: Limit exceeded (>= ${telemetryWarningThreshold})`
               : 'Pending SQLite records'}
           </div>
         </div>
 
         <div className="card">
           <div className="card-title">Events Queue</div>
-          <div className="card-value" style={{ 
-            color: bufferEvents.length >= eventWarningThreshold ? 'var(--danger-color)' : 'var(--text-primary)',
-            transition: 'color 0.2s'
-          }}>
+          <div className={`card-value ${eventsDanger ? 'is-danger' : ''}`}>
             {bufferEvents.length}
           </div>
           <div className="card-desc">
-            {bufferEvents.length >= eventWarningThreshold 
-              ? `Alert: Limit exceeded (>= ${eventWarningThreshold})` 
+            {eventsDanger
+              ? `Alert: Limit exceeded (>= ${eventWarningThreshold})`
               : 'Buffered state changes'}
           </div>
         </div>
 
         <div className="card">
           <div className="card-title">Buffer State</div>
-          <div className="card-value" style={{ 
-            fontSize: '20px', 
-            textTransform: 'uppercase', 
-            color: (bufferTelemetry.length >= telemetryWarningThreshold || bufferEvents.length >= eventWarningThreshold) 
-              ? 'var(--danger-color)' 
-              : (bufferTelemetry.length + bufferEvents.length > 0) 
-                ? 'var(--warning-color)' 
-                : 'var(--success-color)' 
-          }}>
-            {bufferTelemetry.length >= telemetryWarningThreshold || bufferEvents.length >= eventWarningThreshold 
-              ? 'Warning Alert' 
-              : bufferTelemetry.length + bufferEvents.length > 0 
-                ? 'Buffering' 
-                : 'Healthy'}
+          <div className={`card-value card-value-sm ${bufferStateClass}`}>
+            {bufferStateText}
           </div>
           <div className="card-desc">SQLite Store-and-Forward</div>
         </div>
       </div>
 
-      {/* Info, Live Feed and Diagnostics split */}
       {!showLiveFeedPanel && !showDiagnosticsPanel ? (
-        <div className="panel" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-secondary)' }}>
+        <div className="panel panel-empty-centered">
           All optional dashboard panels are hidden. You can enable them again in the Settings tab.
         </div>
       ) : (
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: showLiveFeedPanel && showDiagnosticsPanel ? '1.2fr 1fr' : '1fr', 
-          gap: '24px' 
-        }}>
-          
-          {/* Live Telemetry Feed (Real-Time monitoring) */}
+        <div className={gridClass}>
           {showLiveFeedPanel && (
-            <div className="panel" style={{ display: 'flex', flexDirection: 'column' }}>
-              <div className="panel-header" style={{ marginBottom: '12px' }}>
+            <div className="panel panel-flex-col live-feed-panel">
+              <div className="panel-header panel-header-tight">
                 <h2 className="panel-title">Real-Time Telemetry Stream Feed</h2>
-                <span className="badge success" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span className="pulse-dot" style={{ width: '6px', height: '6px' }} /> Live
+                <span className="badge success badge-live">
+                  <span className="pulse-dot pulse-dot-sm" /> Live
                 </span>
               </div>
 
-              {/* Quick Interactive Filters */}
-              <div style={{ 
-                display: 'flex', 
-                gap: '12px', 
-                marginBottom: '16px', 
-                paddingBottom: '12px', 
-                borderBottom: '1px dashed var(--border-color)',
-                flexWrap: 'wrap',
-                alignItems: 'center'
-              }}>
-                <div style={{ flex: 1, minWidth: '150px' }}>
-                  <input 
-                    className="form-input" 
-                    style={{ padding: '6px 10px', fontSize: '12px' }}
-                    type="text" 
-                    placeholder="Filter by source or payload..." 
+              <div className="live-feed-filters">
+                <div className="live-feed-filter-input">
+                  <input
+                    className="form-input form-input-compact"
+                    type="text"
+                    placeholder="Filter by source or payload..."
                     value={telemetryFilterQuery}
                     onChange={(e) => setTelemetryFilterQuery(e.target.value)}
                   />
                 </div>
-                <div style={{ width: '130px' }}>
-                  <CustomSelect 
+                <div className="live-feed-filter-select">
+                  <CustomSelect
                     value={telemetryFilterType}
                     onChange={setTelemetryFilterType}
                     options={[
@@ -227,10 +194,10 @@ export default function DashboardTab({
                     ]}
                   />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                <div className="live-feed-limit">
                   <span>Limit:</span>
-                  <div style={{ width: '75px' }}>
-                    <CustomSelect 
+                  <div className="live-feed-limit-select">
+                    <CustomSelect
                       value={maxLiveLogs.toString()}
                       onChange={(val) => setMaxLiveLogs(parseInt(val, 10))}
                       options={[
@@ -245,13 +212,11 @@ export default function DashboardTab({
                 </div>
               </div>
 
-              <div style={{ flex: 1, maxHeight: '280px', overflowY: 'auto' }}>
+              <div className="live-feed-scroll">
                 {filteredLiveFeed.length === 0 ? (
-                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                    No telemetry records matching current filters.
-                  </div>
+                  <div className="table-empty-sm">No telemetry records matching current filters.</div>
                 ) : (
-                  <table className="data-table" style={{ fontSize: '13px' }}>
+                  <table className="data-table is-compact">
                     <thead>
                       <tr>
                         <th>Timestamp</th>
@@ -262,9 +227,9 @@ export default function DashboardTab({
                     <tbody>
                       {filteredLiveFeed.map((item, idx) => (
                         <tr key={idx}>
-                          <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{item.time}</td>
-                          <td style={{ fontWeight: 600, color: 'var(--primary-dark)' }}>{item.source}</td>
-                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--code-color)' }}>{item.payload}</td>
+                          <td className="cell-mono-secondary">{item.time}</td>
+                          <td className="cell-highlight">{item.source}</td>
+                          <td className="cell-mono-code">{item.payload}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -274,35 +239,34 @@ export default function DashboardTab({
             </div>
           )}
 
-          {/* Diagnostics Panel */}
           {showDiagnosticsPanel && (
             <div className="panel">
               <div className="panel-header">
                 <h2 className="panel-title">System Diagnostics</h2>
-                <Cpu size={16} style={{ color: 'var(--text-secondary)' }} />
+                <Cpu size={16} className="text-secondary" />
               </div>
 
               <table className="data-table">
                 <tbody>
                   <tr>
-                    <td style={{ fontWeight: 600 }}>Daemon Uptime</td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{diagnostics?.uptime || 'N/A'}</td>
+                    <td className="cell-bold">Daemon Uptime</td>
+                    <td className="cell-mono">{diagnostics?.uptime || 'N/A'}</td>
                   </tr>
                   <tr>
-                    <td style={{ fontWeight: 600 }}>CPU Usage</td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{diagnostics?.cpuUsage || 'N/A'}</td>
+                    <td className="cell-bold">CPU Usage</td>
+                    <td className="cell-mono">{diagnostics?.cpuUsage || 'N/A'}</td>
                   </tr>
                   <tr>
-                    <td style={{ fontWeight: 600 }}>Memory Footprint</td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{diagnostics?.memoryUsage || 'N/A'}</td>
+                    <td className="cell-bold">Memory Footprint</td>
+                    <td className="cell-mono">{diagnostics?.memoryUsage || 'N/A'}</td>
                   </tr>
                   <tr>
-                    <td style={{ fontWeight: 600 }}>Disk Available</td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{diagnostics?.diskSpace || 'N/A'}</td>
+                    <td className="cell-bold">Disk Available</td>
+                    <td className="cell-mono">{diagnostics?.diskSpace || 'N/A'}</td>
                   </tr>
                   <tr>
-                    <td style={{ fontWeight: 600 }}>Database File</td>
-                    <td style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>~/.pulse/edge.db</td>
+                    <td className="cell-bold">Database File</td>
+                    <td className="cell-mono-xs">~/.pulse/edge.db</td>
                   </tr>
                 </tbody>
               </table>

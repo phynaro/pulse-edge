@@ -44,9 +44,12 @@ public class Worker : BackgroundService
     private DateTime _lastMqttPublish = DateTime.MinValue;
     private DateTime _lastHeartbeat = DateTime.MinValue;
     private DateTime _lastConfigReload = DateTime.MinValue;
+    private string _lastDataSourcesHash = string.Empty;
+    private DateTime _lastDataSourceCheck = DateTime.MinValue;
     private readonly Dictionary<string, DateTime> _lastDbWriteTimes = new();
     private List<DataPoint> _cachedDataPoints = new();
     private List<DriverAdapter> _cachedAdapters = new();
+    private bool _hasInitialConfigSyncRun = false;
 
     private static string? GetJsonValueByPath(string json, string path)
     {
@@ -151,28 +154,19 @@ public class Worker : BackgroundService
 
         if (_deviceConfig == null)
         {
-            _logger.LogWarning("No local configuration found. Initiating first-startup Device Registration Flow...");
-            
-            string serial = _configuration["EdgeSettings:SerialNumber"] ?? "PULSE-EDGE-MOCK-999";
-            string deviceId = Guid.NewGuid().ToString();
-            
-            // Call real Cloud API to register
-            var (edgeId, status) = await _cloudClient.RegisterDeviceAsync(currentBaseUrl, deviceId, Environment.MachineName, "1.0.0");
-
-            _deviceConfig = new DeviceConfig
+            _logger.LogWarning("No local device configuration found. Agent is pausing and waiting for user onboarding via the Web UI...");
+            while (_deviceConfig == null && !stoppingToken.IsCancellationRequested)
             {
-                Id = deviceId,
-                CloudEdgeId = edgeId,
-                SerialNumber = serial,
-                SiteId = "",
-                ApiKey = configApiKey,
-                CloudEndpoint = currentBaseUrl,
-                Version = "1.0.0",
-                CloudStatus = status == "active" ? "Connected" : "PendingApproval"
-            };
+                await Task.Delay(3000, stoppingToken);
+                _deviceConfig = await _storageService.GetDeviceConfigAsync();
+            }
+            
+            if (stoppingToken.IsCancellationRequested)
+                return;
 
-            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
-            _logger.LogInformation("Device registered with cloud. DeviceId: {DeviceId}, CloudEdgeId: {EdgeId}, Status: {Status}", _deviceConfig.Id, _deviceConfig.CloudEdgeId, status);
+            _logger.LogInformation("Device configuration detected! Proceeding with startup registration flow...");
+            currentBaseUrl = _deviceConfig!.CloudEndpoint;
+            configApiKey = _deviceConfig.ApiKey;
         }
         else
         {
@@ -185,37 +179,39 @@ public class Worker : BackgroundService
                 _logger.LogInformation("Imported API key from configuration.");
             }
 
-            if (_configuration["Cloud:BaseUrl"] != null && _deviceConfig.CloudEndpoint != _configuration["Cloud:BaseUrl"])
+            if (!string.IsNullOrEmpty(_configuration["Cloud:BaseUrl"]) && _deviceConfig.CloudEndpoint != _configuration["Cloud:BaseUrl"])
             {
                 _deviceConfig.CloudEndpoint = _configuration["Cloud:BaseUrl"]!;
                 currentBaseUrl = _deviceConfig.CloudEndpoint;
                 await _storageService.SaveDeviceConfigAsync(_deviceConfig);
                 _logger.LogInformation("Updated CloudEndpoint from configuration overrides: {CloudEndpoint}", _deviceConfig.CloudEndpoint);
             }
-        }
 
-        // Check if we have an API Key configured
-        if (string.IsNullOrEmpty(_deviceConfig.ApiKey))
-        {
-            _logger.LogWarning("No API Key configured. Device is pending approval. Please copy the API key from the PULSE Cloud Web UI and add it to config/env.");
-            
-            if (_deviceConfig.CloudStatus != "Revoked")
+            if (!string.IsNullOrEmpty(_configuration["EdgeSettings:SerialNumber"]) && _deviceConfig.SerialNumber != _configuration["EdgeSettings:SerialNumber"])
             {
-                _deviceConfig.CloudStatus = "PendingApproval";
+                _deviceConfig.SerialNumber = _configuration["EdgeSettings:SerialNumber"]!;
                 await _storageService.SaveDeviceConfigAsync(_deviceConfig);
-            }
-
-            // Call register again (it is idempotent) to verify status or update agent version
-            var (edgeId, status) = await _cloudClient.RegisterDeviceAsync(currentBaseUrl, _deviceConfig.Id, Environment.MachineName, "1.0.0");
-            if (!string.IsNullOrEmpty(edgeId) && (_deviceConfig.CloudEdgeId != edgeId || _deviceConfig.CloudStatus != "PendingApproval"))
-            {
-                _deviceConfig.CloudEdgeId = edgeId;
-                await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+                _logger.LogInformation("Updated SerialNumber from configuration overrides: {SerialNumber}", _deviceConfig.SerialNumber);
             }
         }
-        else
+
+        // Generate ClaimSecret if not present
+        if (string.IsNullOrEmpty(_deviceConfig.ClaimSecret))
         {
-            _logger.LogInformation("API Key is present. Fetching configuration from PULSE Cloud...");
+            var secretBytes = new byte[24];
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(secretBytes);
+            }
+            _deviceConfig.ClaimSecret = Convert.ToHexString(secretBytes).ToLowerInvariant();
+            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+            _logger.LogInformation("Generated new ClaimSecret for device: {ClaimSecret}", _deviceConfig.ClaimSecret);
+        }
+
+        // Check if we have an API Key configured at boot
+        if (!string.IsNullOrEmpty(_deviceConfig.ApiKey))
+        {
+            _logger.LogInformation("API Key is present at boot. Fetching configuration from PULSE Cloud...");
             
             var configResult = await _cloudClient.GetConfigAsync(currentBaseUrl, _deviceConfig.ApiKey);
             if (configResult.Success)
@@ -227,13 +223,18 @@ public class Worker : BackgroundService
                 _deviceConfig.SiteName = configResult.SiteName;
                 _deviceConfig.CloudStatus = "Connected";
                 await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+                _hasInitialConfigSyncRun = true;
 
                 // Push logical data sources to cloud control plane
-                await PushDataSourcesToCloudAsync(currentBaseUrl, _deviceConfig.ApiKey);
+                bool success = await PushDataSourcesToCloudAsync(currentBaseUrl, _deviceConfig.ApiKey);
+                if (success)
+                {
+                    _lastDataSourcesHash = await CalculateDataSourcesHashAsync();
+                }
             }
             else if (configResult.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                _logger.LogError("API Key is invalid or has been revoked (401 Unauthorized). Resetting API Key. Re-approval required.");
+                _logger.LogError("API Key is invalid or has been revoked (401 Unauthorized) on startup. Resetting API Key. Re-approval required.");
                 _deviceConfig.ApiKey = "";
                 _deviceConfig.SiteId = "";
                 _deviceConfig.SiteName = "";
@@ -242,11 +243,23 @@ public class Worker : BackgroundService
             }
             else
             {
-                _logger.LogWarning("Failed to fetch configuration from cloud (Status Code: {StatusCode}). Continuing with local cached config.", configResult.StatusCode);
+                _logger.LogWarning("Failed to fetch configuration from cloud (Status Code: {StatusCode}) on startup. Continuing with local cached config.", configResult.StatusCode);
                 _deviceConfig.CloudStatus = "Disconnected";
                 await _storageService.SaveDeviceConfigAsync(_deviceConfig);
             }
         }
+        else
+        {
+            _logger.LogWarning("No API Key configured. Device is pending approval. Register/Claim polling will begin in the background.");
+            if (_deviceConfig.CloudStatus != "Revoked")
+            {
+                _deviceConfig.CloudStatus = "PendingApproval";
+                await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+            }
+        }
+
+        // Start Cloud Provisioning Loop in the background (Non-blocking Task)
+        _ = Task.Run(() => StartCloudProvisioningLoopAsync(stoppingToken), stoppingToken);
 
         // Start Cloud Sync Loop in the background (Non-blocking Task)
         _ = Task.Run(() => _syncService.StartSyncLoopAsync(_deviceConfig.Id, _deviceConfig.ApiKey, stoppingToken), stoppingToken);
@@ -264,139 +277,328 @@ public class Worker : BackgroundService
         _activeMqttPort = mqttAdapter?.Port ?? 1883;
 
         // Find all active MQTT topics
-        var mqttDataPoints = await db.DataPoints
-            .Where(x => x.AdapterId == _mqttAdapterId && x.IsEnabled)
-            .ToListAsync(stoppingToken);
-        _activeMqttTopics = mqttDataPoints
-            .Select(x => x.Address)
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct()
-            .OrderBy(x => x)
-            .ToList();
+        _activeMqttTopics = await GetActiveMqttTopicsAsync(db);
 
         // Whenever MQTT receives a packet, save it directly to SQLite!
         _mqttDriver.MessageReceivedAsync += async (topic, payload) =>
         {
             _logger.LogInformation("[MQTT Link] Telemetry packet intercepted on topic '{Topic}'. Resolving mapping...", topic);
 
-            // Capture ONE timestamp for this entire MQTT message so all DataPoints
-            // mapped to the same topic share the same key and merge into one row.
             var receivedAt = DateTime.UtcNow;
 
             using var dbLookup = new QueueDbContext();
-            var matchingDps = await dbLookup.DataPoints
-                .Where(x => x.AdapterId == _mqttAdapterId && x.IsEnabled && x.Address == topic)
-                .ToListAsync();
 
-            if (matchingDps.Count == 0)
-            {
-                _logger.LogWarning("[MQTT Link] No active data point mapped to topic '{Topic}'. Message ignored.", topic);
-                return;
-            }
-
-            System.Text.Json.JsonDocument? jsonDoc = null;
-            bool anyJson = matchingDps.Any(x => x.MqttParseMode == "JSON");
-            if (anyJson)
-            {
-                try
-                {
-                    jsonDoc = System.Text.Json.JsonDocument.Parse(payload);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "[MQTT Link] Failed to parse payload as JSON on topic '{Topic}': {Payload}", topic, payload);
-                }
-            }
-
+            // Cache the seen topic and payload for browsing support
             try
             {
-                foreach (var dp in matchingDps)
+                await dbLookup.Database.ExecuteSqlRawAsync(
+                    "INSERT INTO MqttSeenTopics (Topic, Payload, LastSeen) VALUES ({0}, {1}, {2}) ON CONFLICT(Topic) DO UPDATE SET Payload = {1}, LastSeen = {2};",
+                    topic, payload ?? string.Empty, receivedAt.ToString("o"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to cache MQTT seen topic '{Topic}' in database", topic);
+            }
+
+            // 1. Process Last Will and Testament (LWT) status updates for devices
+            var lwtDevices = await dbLookup.MqttDevices
+                .Where(x => x.AdapterId == _mqttAdapterId && x.IsEnabled && x.LwtTopic == topic)
+                .ToListAsync();
+
+            foreach (var dev in lwtDevices)
+            {
+                bool isOffline = string.Equals(payload, dev.LwtOfflinePayload, StringComparison.OrdinalIgnoreCase);
+                bool isOnline = string.Equals(payload, dev.LwtOnlinePayload, StringComparison.OrdinalIgnoreCase);
+
+                if (isOffline)
                 {
-                    string? extractedValue = null;
-                    if (dp.MqttParseMode == "JSON")
-                    {
-                        if (jsonDoc == null)
-                        {
-                            dp.LastError = "Failed to parse JSON payload";
-                            dp.ConsecutiveFailures++;
-                            dp.LastUpdated = receivedAt;
-                            dbLookup.DataPoints.Update(dp);
-                            continue;
-                        }
-                        
-                        extractedValue = GetJsonValueByPath(payload, dp.MqttJsonPath ?? string.Empty);
-                        if (extractedValue == null)
-                        {
-                            dp.LastError = $"JSON path '{dp.MqttJsonPath}' not found";
-                            dp.ConsecutiveFailures++;
-                            dp.LastUpdated = receivedAt;
-                            dbLookup.DataPoints.Update(dp);
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        extractedValue = payload;
-                    }
+                    dev.Status = "Offline";
+                    dev.LastError = "Device reported offline via LWT";
+                    dev.LastUpdated = receivedAt;
+                    dev.ConsecutiveFailures++;
+                    dbLookup.MqttDevices.Update(dev);
 
-                    double val;
-                    bool parseSuccess = false;
-                    if (double.TryParse(extractedValue, out val))
-                    {
-                        parseSuccess = true;
-                    }
-                    else if (bool.TryParse(extractedValue, out bool boolVal))
-                    {
-                        val = boolVal ? 1.0 : 0.0;
-                        parseSuccess = true;
-                    }
+                    _logger.LogWarning("[MQTT Device] Device '{DeviceName}' reported offline via LWT on topic '{LwtTopic}'", dev.Name, topic);
 
-                    if (parseSuccess)
+                    // Propagate offline status to all child tags
+                    var childDps = await dbLookup.DataPoints
+                        .Where(x => x.MqttDeviceId == dev.Id && x.IsEnabled)
+                        .ToListAsync();
+
+                    foreach (var dp in childDps)
                     {
-                        double processedVal = (val * dp.ScaleFactor) + dp.Offset;
-                        dp.LastValue = processedVal.ToString("F2");
-                        dp.LastError = null;
-                        dp.ConsecutiveFailures = 0;
+                        dp.LastError = "Device reported offline via LWT";
+                        dp.ConsecutiveFailures = dev.ConsecutiveFailures;
                         dp.LastUpdated = receivedAt;
+                        dbLookup.DataPoints.Update(dp);
 
-                        // Enqueue if stream is mapped and enabled
                         if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
                         {
                             if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
                             {
-                                await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, processedVal);
-                                _logger.LogInformation("[Queue Buffer] Enqueued MQTT telemetry for Stream {Source} | Metric: {Metric} | Val: {Val}", dp.DataSourceId, dp.Metric, processedVal);
-                            }
-                            else
-                            {
-                                _logger.LogInformation("[MQTT Link] Telemetry ignored: Stream {Source} is disabled.", dp.DataSourceId);
+                                await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, null, "CommunicationLost");
                             }
                         }
                     }
-                    else
-                    {
-                        dp.LastError = $"Failed to parse extracted value '{extractedValue}' as double or boolean";
-                        dp.ConsecutiveFailures++;
-                        dp.LastUpdated = receivedAt;
-                    }
-                    
-                    dbLookup.DataPoints.Update(dp);
                 }
-                
+                else if (isOnline)
+                {
+                    dev.Status = "Connected";
+                    dev.LastError = null;
+                    dev.LastUpdated = receivedAt;
+                    dev.ConsecutiveFailures = 0;
+                    dbLookup.MqttDevices.Update(dev);
+
+                    _logger.LogInformation("[MQTT Device] Device '{DeviceName}' reported online via LWT on topic '{LwtTopic}'", dev.Name, topic);
+
+                    // Propagate online status to all child tags (mark as stale until next telemetry)
+                    var childDps = await dbLookup.DataPoints
+                        .Where(x => x.MqttDeviceId == dev.Id && x.IsEnabled)
+                        .ToListAsync();
+
+                    foreach (var dp in childDps)
+                    {
+                        dp.LastError = null;
+                        dp.ConsecutiveFailures = 0;
+                        dp.LastUpdated = receivedAt;
+                        dbLookup.DataPoints.Update(dp);
+
+                        if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                        {
+                            if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                            {
+                                double? lastVal = null;
+                                if (double.TryParse(dp.LastValue, out double parsedVal))
+                                {
+                                    lastVal = parsedVal;
+                                }
+                                await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, lastVal, "Stale");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (lwtDevices.Count > 0)
+            {
                 await dbLookup.SaveChangesAsync();
             }
-            finally
+
+            // 2. Process first-class MqttDevice telemetry
+            var allDevices = await dbLookup.MqttDevices
+                .Where(x => x.AdapterId == _mqttAdapterId && x.IsEnabled)
+                .ToListAsync();
+
+            var matchingDevices = allDevices
+                .Where(x => MqttTopicMatches(x.TopicSubscription, topic))
+                .ToList();
+
+            foreach (var dev in matchingDevices)
             {
-                jsonDoc?.Dispose();
+                // Update device health metrics
+                dev.Status = "Connected";
+                dev.LastError = null;
+                dev.LastUpdated = receivedAt;
+                dev.ConsecutiveFailures = 0;
+                dbLookup.MqttDevices.Update(dev);
+
+                var deviceDps = await dbLookup.DataPoints
+                    .Where(x => x.MqttDeviceId == dev.Id && x.IsEnabled)
+                    .ToListAsync();
+
+                if (dev.MqttParseMode == "JSON")
+                {
+                    System.Text.Json.JsonDocument? jsonDoc = null;
+                    try
+                    {
+                        jsonDoc = System.Text.Json.JsonDocument.Parse(payload);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "[MQTT Device Link] Failed to parse payload as JSON on topic '{Topic}': {Payload}", topic, payload);
+                        dev.Status = "Error";
+                        dev.LastError = "Failed to parse JSON payload";
+                        dev.ConsecutiveFailures++;
+                        dbLookup.MqttDevices.Update(dev);
+
+                        foreach (var dp in deviceDps)
+                        {
+                            dp.LastError = "Failed to parse JSON payload";
+                            dp.ConsecutiveFailures = dev.ConsecutiveFailures;
+                            dp.LastUpdated = receivedAt;
+                            dbLookup.DataPoints.Update(dp);
+
+                            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                            {
+                                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                {
+                                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, null, "DriverError");
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    try
+                    {
+                        foreach (var dp in deviceDps)
+                        {
+                            string? jsonPath = !string.IsNullOrEmpty(dp.MqttJsonPath) ? dp.MqttJsonPath : dp.Address;
+                            string? extractedValue = GetJsonValueByPath(payload, jsonPath ?? string.Empty);
+
+                            if (extractedValue == null)
+                            {
+                                dp.LastError = $"JSON path '{jsonPath}' not found";
+                                dp.ConsecutiveFailures++;
+                                dp.LastUpdated = receivedAt;
+                                dbLookup.DataPoints.Update(dp);
+
+                                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                                {
+                                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                    {
+                                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, null, "DriverError");
+                                    }
+                                }
+                                continue;
+                            }
+
+                            // Process the telemetry value
+                            await ProcessDataPointValueAsync(dbLookup, dp, extractedValue, receivedAt);
+                        }
+                    }
+                    finally
+                    {
+                        jsonDoc?.Dispose();
+                    }
+                }
+                else // Plaintext mode / Wildcard multi-topic
+                {
+                    // Match the incoming topic directly against tag Address
+                    var matchingDps = deviceDps
+                        .Where(x => string.Equals(x.Address, topic, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    foreach (var dp in matchingDps)
+                    {
+                        string? extractedValue = null;
+                        if (dp.MqttParseMode == "JSON")
+                        {
+                            extractedValue = GetJsonValueByPath(payload, dp.MqttJsonPath ?? string.Empty);
+                        }
+                        else
+                        {
+                            extractedValue = payload;
+                        }
+
+                        if (extractedValue == null)
+                        {
+                            dp.LastError = dp.MqttParseMode == "JSON" ? $"JSON path '{dp.MqttJsonPath}' not found" : "Null payload received";
+                            dp.ConsecutiveFailures++;
+                            dp.LastUpdated = receivedAt;
+                            dbLookup.DataPoints.Update(dp);
+
+                            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                            {
+                                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                {
+                                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, null, "DriverError");
+                                }
+                            }
+                            continue;
+                        }
+
+                        await ProcessDataPointValueAsync(dbLookup, dp, extractedValue, receivedAt);
+                    }
+                }
             }
+
+            // 3. Process legacy DataPoints (not associated with any MqttDevice)
+            var legacyMatchingDps = await dbLookup.DataPoints
+                .Where(x => x.AdapterId == _mqttAdapterId && x.IsEnabled && (x.MqttDeviceId == null || x.MqttDeviceId == "") && x.Address == topic)
+                .ToListAsync();
+
+            if (legacyMatchingDps.Count > 0)
+            {
+                System.Text.Json.JsonDocument? jsonDoc = null;
+                bool anyJson = legacyMatchingDps.Any(x => x.MqttParseMode == "JSON");
+                if (anyJson)
+                {
+                    try
+                    {
+                        jsonDoc = System.Text.Json.JsonDocument.Parse(payload);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "[MQTT Legacy Link] Failed to parse payload as JSON on topic '{Topic}': {Payload}", topic, payload);
+                    }
+                }
+
+                try
+                {
+                    foreach (var dp in legacyMatchingDps)
+                    {
+                        string? extractedValue = null;
+                        bool extractedOk = true;
+
+                        if (dp.MqttParseMode == "JSON")
+                        {
+                            if (jsonDoc == null)
+                            {
+                                dp.LastError = "Failed to parse JSON payload";
+                                dp.ConsecutiveFailures++;
+                                dp.LastUpdated = receivedAt;
+                                dbLookup.DataPoints.Update(dp);
+                                extractedOk = false;
+                            }
+                            else
+                            {
+                                extractedValue = GetJsonValueByPath(payload, dp.MqttJsonPath ?? string.Empty);
+                                if (extractedValue == null)
+                                {
+                                    dp.LastError = $"JSON path '{dp.MqttJsonPath}' not found";
+                                    dp.ConsecutiveFailures++;
+                                    dp.LastUpdated = receivedAt;
+                                    dbLookup.DataPoints.Update(dp);
+                                    extractedOk = false;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            extractedValue = payload;
+                        }
+
+                        if (!extractedOk)
+                        {
+                            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                            {
+                                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                {
+                                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, null, "DriverError");
+                                }
+                            }
+                            continue;
+                        }
+
+                        await ProcessDataPointValueAsync(dbLookup, dp, extractedValue, receivedAt);
+                    }
+                }
+                finally
+                {
+                    jsonDoc?.Dispose();
+                }
+            }
+
+            await dbLookup.SaveChangesAsync();
         };
 
-        _activeOpcUaIsEnabled = opcUaAdapter?.IsEnabled ?? true;
-        _activeMqttIsEnabled = mqttAdapter?.IsEnabled ?? true;
+        _activeOpcUaIsEnabled = opcUaAdapter?.IsEnabled ?? false;
+        _activeMqttIsEnabled = mqttAdapter?.IsEnabled ?? false;
 
         var modbusAdapterInit = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Protocol == "MODBUS_TCP", stoppingToken);
         _modbusAdapterId = modbusAdapterInit?.Id ?? "adp-modbus-1";
-        _activeModbusIsEnabled = modbusAdapterInit?.IsEnabled ?? true;
+        _activeModbusIsEnabled = modbusAdapterInit?.IsEnabled ?? false;
 
         if (_activeOpcUaIsEnabled)
         {
@@ -471,6 +673,25 @@ public class Worker : BackgroundService
             loopCount++;
             var now = DateTime.UtcNow;
 
+            // 1b. Check for logical data source metadata changes locally every 5 seconds
+            if ((now - _lastDataSourceCheck).TotalSeconds >= 5)
+            {
+                _lastDataSourceCheck = now;
+                if (_deviceConfig != null && !string.IsNullOrEmpty(_deviceConfig.ApiKey) && _deviceConfig.CloudStatus == "Connected")
+                {
+                    string currentHash = await CalculateDataSourcesHashAsync();
+                    if (currentHash != _lastDataSourcesHash)
+                    {
+                        _logger.LogInformation("Logical data sources or metrics mappings change detected! Syncing with PULSE Cloud...");
+                        bool success = await PushDataSourcesToCloudAsync(_deviceConfig.CloudEndpoint, _deviceConfig.ApiKey);
+                        if (success)
+                        {
+                            _lastDataSourcesHash = currentHash;
+                        }
+                    }
+                }
+            }
+
             // 1. Reload configuration and check adapter updates from SQLite DB every 2 seconds
             if ((now - _lastConfigReload).TotalSeconds >= 2)
             {
@@ -505,7 +726,11 @@ public class Worker : BackgroundService
                                         await _storageService.SaveDeviceConfigAsync(dbConfig);
                                         
                                         // Push logical data sources to cloud control plane
-                                        await PushDataSourcesToCloudAsync(dbConfig.CloudEndpoint, dbConfig.ApiKey);
+                                        bool success = await PushDataSourcesToCloudAsync(dbConfig.CloudEndpoint, dbConfig.ApiKey);
+                                        if (success)
+                                        {
+                                            _lastDataSourcesHash = await CalculateDataSourcesHashAsync();
+                                        }
                                     }
                                     else if (configResult.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                                     {
@@ -546,19 +771,11 @@ public class Worker : BackgroundService
                 string latestOpcUaEndpoint = opcUaAdapterLoop?.Host ?? "opc.tcp://localhost:4840";
                 string latestMqttHost = mqttAdapterLoop?.Host ?? "broker.hivemq.com";
                 int latestMqttPort = mqttAdapterLoop?.Port ?? 1883;
-                bool isMqttEnabled = mqttAdapterLoop?.IsEnabled ?? true;
-                bool isOpcUaEnabled = opcUaAdapterLoop?.IsEnabled ?? true;
+                bool isMqttEnabled = mqttAdapterLoop?.IsEnabled ?? false;
+                bool isOpcUaEnabled = opcUaAdapterLoop?.IsEnabled ?? false;
 
                 // Find active MQTT data points and extract unique topics
-                var mqttDps = await dbLoop.DataPoints
-                    .Where(x => x.AdapterId == _mqttAdapterId && x.IsEnabled)
-                    .ToListAsync(stoppingToken);
-                var latestMqttTopics = mqttDps
-                    .Select(x => x.Address)
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Distinct()
-                    .OrderBy(x => x)
-                    .ToList();
+                var latestMqttTopics = await GetActiveMqttTopicsAsync(dbLoop);
 
                 bool topicsChanged = !latestMqttTopics.SequenceEqual(_activeMqttTopics);
 
@@ -684,7 +901,7 @@ public class Worker : BackgroundService
                 // 2.5 Check for Modbus Adapter configuration changes
                 string latestModbusHost = modbusAdapterLoop?.Host ?? "127.0.0.1";
                 int latestModbusPort = modbusAdapterLoop?.Port ?? 502;
-                bool isModbusEnabled = modbusAdapterLoop?.IsEnabled ?? true;
+                bool isModbusEnabled = modbusAdapterLoop?.IsEnabled ?? false;
 
                 if (modbusAdapterLoop != null && (latestModbusHost != _activeModbusHost || latestModbusPort != _activeModbusPort || isModbusEnabled != _activeModbusIsEnabled))
                 {
@@ -903,6 +1120,15 @@ public class Worker : BackgroundService
                                 dp.ConsecutiveFailures++;
                                 dp.LastUpdated = now;
                                 AddDirtyIfNeeded(dp, now, dirtyDps);
+
+                                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                                {
+                                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                    {
+                                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
+                                    }
+                                }
                             }
 
                             // Also, if the batch read failed completely (exception thrown),
@@ -929,6 +1155,15 @@ public class Worker : BackgroundService
                                 dp.ConsecutiveFailures++;
                                 dp.LastUpdated = now;
                                 AddDirtyIfNeeded(dp, now, dirtyDps);
+
+                                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                                {
+                                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                    {
+                                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
+                                    }
+                                }
                                 continue;
                             }
 
@@ -938,6 +1173,15 @@ public class Worker : BackgroundService
                                 dp.ConsecutiveFailures++;
                                 dp.LastUpdated = now;
                                 AddDirtyIfNeeded(dp, now, dirtyDps);
+
+                                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                                {
+                                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                    {
+                                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
+                                    }
+                                }
                                 continue;
                             }
 
@@ -957,7 +1201,7 @@ public class Worker : BackgroundService
                                     if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
                                     {
                                         // Pass the poll-tick `now` so all tags in the same tick share one row
-                                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal);
+                                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
                                         _logger.LogInformation("[Queue Buffer] Enqueued OPC UA telemetry | Stream: {Source} Metric: {Metric}", dp.DataSourceId, dp.Metric);
                                     }
                                 }
@@ -1000,7 +1244,7 @@ public class Worker : BackgroundService
                             if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
                             {
                                 if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal);
+                                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
                             }
                         }
                         catch (Exception ex)
@@ -1010,6 +1254,15 @@ public class Worker : BackgroundService
                             dp.ConsecutiveFailures++;
                             dp.LastUpdated = now;
                             updated = true;
+
+                            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                            {
+                                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                {
+                                    string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
+                                }
+                            }
                         }
                     }
 
@@ -1271,7 +1524,7 @@ public class Worker : BackgroundService
                                     if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
                                     {
                                         await _storageService.EnqueueTelemetryAsync(
-                                            dp.DataSourceId, now, dp.Metric, processedVal);
+                                            dp.DataSourceId, now, dp.Metric, processedVal, "Good");
                                     }
                                 }
                             }
@@ -1288,6 +1541,16 @@ public class Worker : BackgroundService
                             dp.LastError = lastOpError;
                             dp.ConsecutiveFailures++;
                             dp.LastUpdated = now;
+
+                            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                            {
+                                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                {
+                                    string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                                    await _storageService.EnqueueTelemetryAsync(
+                                        dp.DataSourceId, now, dp.Metric, null, quality);
+                                }
+                            }
                         }
 
                         AddDirtyIfNeeded(dp, now, dirtyDps);
@@ -1325,7 +1588,7 @@ public class Worker : BackgroundService
                             {
                                 // Pass the block-read `now` so contiguous Modbus tags merge into one row
                                 await _storageService.EnqueueTelemetryAsync(
-                                    meta.Dp.DataSourceId, now, meta.Dp.Metric, processedVal);
+                                    meta.Dp.DataSourceId, now, meta.Dp.Metric, processedVal, "Good");
                                 _logger.LogInformation(
                                     "[Queue Buffer] Enqueued Modbus telemetry | Stream: {Source} Metric: {Metric}",
                                     meta.Dp.DataSourceId, meta.Dp.Metric);
@@ -1338,6 +1601,15 @@ public class Worker : BackgroundService
                         meta.Dp.LastError  = ex.Message;
                         meta.Dp.ConsecutiveFailures++;
                         meta.Dp.LastUpdated = now;
+
+                        if (!string.IsNullOrEmpty(meta.Dp.DataSourceId) && !string.IsNullOrEmpty(meta.Dp.Metric))
+                        {
+                            if (await _storageService.IsDataSourceEnabledAsync(meta.Dp.DataSourceId))
+                            {
+                                await _storageService.EnqueueTelemetryAsync(
+                                    meta.Dp.DataSourceId, now, meta.Dp.Metric, null, "DriverError");
+                            }
+                        }
                     }
 
                     AddDirtyIfNeeded(meta.Dp, now, dirtyDps);
@@ -1352,7 +1624,6 @@ public class Worker : BackgroundService
         System.Collections.Concurrent.ConcurrentBag<DataPoint> dirtyDps,
         CancellationToken ct)
     {
-        string? prevError = dp.LastError;
         int maxRetries = 3;
         double rawVal = 0;
         bool readSuccess = false;
@@ -1380,28 +1651,38 @@ public class Worker : BackgroundService
             {
                 double processedVal = (rawVal * dp.ScaleFactor) + dp.Offset;
                 _logger.LogDebug("[Modbus] {Addr} Raw:{Raw} → Processed:{Proc}", dp.Address, rawVal, processedVal);
-                dp.LastValue  = processedVal.ToString("F2");
-                dp.LastError  = null;
+                dp.LastValue = processedVal.ToString("F2");
+                dp.LastError = null;
                 dp.ConsecutiveFailures = 0;
                 dp.LastUpdated = now;
 
                 if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
                 {
                     if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal);
+                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[Modbus] Error enqueuing telemetry for {Addr}", dp.Address);
+                dp.LastError = ex.Message;
             }
         }
         else
         {
             _logger.LogError("[Modbus] Single read failed for {Addr} after {Retries} retries. Last error: {Error}", dp.Address, maxRetries, lastOpError);
-            dp.LastError  = lastOpError;
+            dp.LastError = lastOpError;
             dp.ConsecutiveFailures++;
             dp.LastUpdated = now;
+
+            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+            {
+                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                {
+                    string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
+                }
+            }
         }
         AddDirtyIfNeeded(dp, now, dirtyDps);
     }
@@ -1492,7 +1773,31 @@ public class Worker : BackgroundService
         });
     }
 
-    private async Task PushDataSourcesToCloudAsync(string baseUrl, string apiKey)
+    private async Task<string> CalculateDataSourcesHashAsync()
+    {
+        try
+        {
+            using var db = new QueueDbContext();
+            var dataSources = await db.DataSources.OrderBy(x => x.Id).ToListAsync();
+            var dataPoints = await db.DataPoints.OrderBy(x => x.Id).ToListAsync();
+            var adapters = await db.DriverAdapters.OrderBy(x => x.Id).ToListAsync();
+            var adaptersById = adapters.ToDictionary(a => a.Id, StringComparer.Ordinal);
+
+            var canonical = DataSourceDeclarationBuilder.ComputeDeclarationHash(dataSources, dataPoints, adaptersById);
+
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var bytes = System.Text.Encoding.UTF8.GetBytes(canonical);
+            var hashBytes = sha256.ComputeHash(bytes);
+            return Convert.ToHexString(hashBytes);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error while calculating data sources hash");
+            return string.Empty;
+        }
+    }
+
+    private async Task<bool> PushDataSourcesToCloudAsync(string baseUrl, string apiKey)
     {
         try
         {
@@ -1500,28 +1805,13 @@ public class Worker : BackgroundService
             var dataSources = await db.DataSources.ToListAsync();
             var dataPoints = await db.DataPoints.ToListAsync();
             var adapters = await db.DriverAdapters.ToListAsync();
+            var adaptersById = adapters.ToDictionary(a => a.Id, StringComparer.Ordinal);
 
             var dtoList = new List<CloudClient.DeclareDataSourceRequest>();
             foreach (var ds in dataSources)
             {
-                var metrics = dataPoints
-                    .Where(dp => dp.DataSourceId == ds.Id && !string.IsNullOrEmpty(dp.Metric))
-                    .Select(dp => dp.Metric!)
-                    .Distinct()
-                    .ToArray();
-
-                string? protocol = null;
-                var dpSample = dataPoints.FirstOrDefault(dp => dp.DataSourceId == ds.Id);
-                if (dpSample != null)
-                {
-                    var adp = adapters.FirstOrDefault(a => a.Id == dpSample.AdapterId);
-                    if (adp != null)
-                    {
-                        protocol = adp.Protocol.ToLower().Replace("_", "");
-                    }
-                }
-
-                dtoList.Add(new CloudClient.DeclareDataSourceRequest(ds.Id, ds.Name, metrics, protocol));
+                var metrics = DataSourceDeclarationBuilder.BuildMetricsForDataSource(ds.Id, dataPoints, adaptersById);
+                dtoList.Add(new CloudClient.DeclareDataSourceRequest(ds.Id, ds.Name, metrics.ToArray()));
             }
 
             if (dtoList.Any() && !string.IsNullOrEmpty(apiKey))
@@ -1531,17 +1821,378 @@ public class Worker : BackgroundService
                 if (success)
                 {
                     _logger.LogInformation("Successfully declared data sources to cloud.");
+                    return true;
                 }
                 else
                 {
                     _logger.LogWarning("Failed to declare data sources to cloud.");
+                    return false;
                 }
             }
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error while pushing data sources to cloud");
+            return false;
         }
     }
+
+    private async Task StartCloudProvisioningLoopAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("PULSE Cloud Provisioning Loop started.");
+        
+        int claimPollSeconds = 20;
+        if (int.TryParse(_configuration["Cloud:ClaimPollSeconds"], out int parsedSeconds))
+        {
+            claimPollSeconds = parsedSeconds;
+        }
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                // Reload config from database in case it was updated by user via UI settings
+                var dbConfig = await _storageService.GetDeviceConfigAsync();
+                if (dbConfig != null)
+                {
+                    _deviceConfig = dbConfig;
+                }
+
+                if (_deviceConfig == null)
+                {
+                    await Task.Delay(3000, stoppingToken);
+                    continue;
+                }
+
+                string currentBaseUrl = _deviceConfig.CloudEndpoint;
+
+                if (string.IsNullOrEmpty(_deviceConfig.ApiKey))
+                {
+                    // 1. Register device (idempotent)
+                    _logger.LogInformation("[Cloud Provisioning] Registering device...");
+                    var (edgeId, status) = await _cloudClient.RegisterDeviceAsync(
+                        currentBaseUrl,
+                        _deviceConfig.Id,
+                        _deviceConfig.SerialNumber,
+                        _deviceConfig.Version,
+                        _deviceConfig.ClaimSecret
+                    );
+
+                    if (!string.IsNullOrEmpty(edgeId))
+                    {
+                        bool changed = false;
+                        if (_deviceConfig.CloudEdgeId != edgeId)
+                        {
+                            _deviceConfig.CloudEdgeId = edgeId;
+                            changed = true;
+                        }
+                        
+                        // 2. Poll claim endpoint
+                        _logger.LogInformation("[Cloud Provisioning] Device registered with status: {Status}. Polling claim endpoint...", status);
+                        var (claimStatus, apiKey) = await _cloudClient.ClaimKeyAsync(currentBaseUrl, _deviceConfig.Id, _deviceConfig.ClaimSecret);
+                        
+                        if (claimStatus == "active" && !string.IsNullOrEmpty(apiKey))
+                        {
+                            _logger.LogInformation("[Cloud Provisioning] API Key successfully claimed!");
+                            _deviceConfig.ApiKey = apiKey;
+                            _deviceConfig.CloudStatus = "Connected";
+                            changed = true;
+
+                            // Immediately pull config & push data sources
+                            var configResult = await _cloudClient.GetConfigAsync(currentBaseUrl, apiKey);
+                            if (configResult.Success)
+                            {
+                                _deviceConfig.SiteId = configResult.SiteId;
+                                _deviceConfig.SiteName = configResult.SiteName;
+                            }
+                            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+                            
+                            bool success = await PushDataSourcesToCloudAsync(currentBaseUrl, apiKey);
+                            if (success)
+                            {
+                                _lastDataSourcesHash = await CalculateDataSourcesHashAsync();
+                            }
+                        }
+                        else if (claimStatus == "revoked")
+                        {
+                            _logger.LogError("[Cloud Provisioning] Device has been revoked. Operator re-approval required.");
+                            if (_deviceConfig.CloudStatus != "Revoked")
+                            {
+                                _deviceConfig.CloudStatus = "Revoked";
+                                changed = true;
+                            }
+                        }
+                        else
+                        {
+                            // Status is "pending" or other. Update status to PendingApproval
+                            if (_deviceConfig.CloudStatus != "PendingApproval" && _deviceConfig.CloudStatus != "Revoked")
+                            {
+                                _deviceConfig.CloudStatus = "PendingApproval";
+                                changed = true;
+                            }
+                        }
+
+                        if (changed)
+                        {
+                            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("[Cloud Provisioning] Registration failed. Retrying in 10 seconds...");
+                        await Task.Delay(10000, stoppingToken);
+                        continue;
+                    }
+                }
+                else
+                {
+                    // ApiKey is present. If we are in "PendingApproval" or "Revoked" or "Disconnected", we should fetch config.
+                    // Or if we haven't fetched config yet, fetch it.
+                    if (!_hasInitialConfigSyncRun || _deviceConfig.CloudStatus != "Connected")
+                    {
+                        _logger.LogInformation("[Cloud Provisioning] API Key is present. Fetching configuration...");
+                        var configResult = await _cloudClient.GetConfigAsync(currentBaseUrl, _deviceConfig.ApiKey);
+                        if (configResult.Success)
+                        {
+                            _logger.LogInformation("[Cloud Provisioning] Successfully retrieved config. Site: {SiteName}", configResult.SiteName);
+                            _deviceConfig.SiteId = configResult.SiteId;
+                            _deviceConfig.SiteName = configResult.SiteName;
+                            _deviceConfig.CloudStatus = "Connected";
+                            _hasInitialConfigSyncRun = true;
+                            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+
+                            bool success = await PushDataSourcesToCloudAsync(currentBaseUrl, _deviceConfig.ApiKey);
+                            if (success)
+                            {
+                                _lastDataSourcesHash = await CalculateDataSourcesHashAsync();
+                            }
+                        }
+                        else if (configResult.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                        {
+                            _logger.LogError("[Cloud Provisioning] API Key is invalid or has been revoked (401 Unauthorized). Resetting API Key.");
+                            _deviceConfig.ApiKey = "";
+                            _deviceConfig.SiteId = "";
+                            _deviceConfig.SiteName = "";
+                            _deviceConfig.CloudStatus = "Revoked";
+                            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("[Cloud Provisioning] Failed to fetch configuration (Status: {StatusCode}). Will retry.", configResult.StatusCode);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in Cloud Provisioning loop.");
+            }
+
+            // Wait before next check/poll
+            await Task.Delay(claimPollSeconds * 1000, stoppingToken);
+        }
+    }
+
+    private async Task ProcessDataPointValueAsync(QueueDbContext dbLookup, DataPoint dp, string? extractedValue, DateTime receivedAt)
+    {
+        bool isOfflineSignal = false;
+        if (extractedValue == null)
+        {
+            isOfflineSignal = true;
+        }
+        else
+        {
+            var trimmed = extractedValue.Trim();
+            if (string.Equals(trimmed, "null", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "offline", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "timeout", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "none", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "", StringComparison.OrdinalIgnoreCase))
+            {
+                isOfflineSignal = true;
+            }
+        }
+
+        if (isOfflineSignal)
+        {
+            dp.LastError = "Device reported offline / timeout via MQTT payload";
+            dp.ConsecutiveFailures++;
+            dp.LastUpdated = receivedAt;
+            dbLookup.DataPoints.Update(dp);
+
+            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+            {
+                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                {
+                    string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, null, quality);
+                    _logger.LogWarning("[MQTT Link] Enqueued offline status for Stream {Source} | Metric: {Metric} | Quality: {Quality}", dp.DataSourceId, dp.Metric, quality);
+
+                    // Propagate LWT offline status to all other MQTT tags of the same DataSource (legacy fallback)
+                    if (string.IsNullOrEmpty(dp.MqttDeviceId))
+                    {
+                        var otherMqttDps = await dbLookup.DataPoints
+                            .Where(x => x.AdapterId == _mqttAdapterId && x.IsEnabled && x.DataSourceId == dp.DataSourceId && x.Id != dp.Id && (x.MqttDeviceId == null || x.MqttDeviceId == ""))
+                            .ToListAsync();
+
+                        foreach (var otherDp in otherMqttDps)
+                        {
+                            if (string.IsNullOrEmpty(otherDp.DataSourceId) || string.IsNullOrEmpty(otherDp.Metric))
+                                continue;
+
+                            otherDp.LastError = $"Device reported offline via LWT heartbeat on topic '{dp.Address}'";
+                            otherDp.ConsecutiveFailures = dp.ConsecutiveFailures;
+                            otherDp.LastUpdated = receivedAt;
+                            dbLookup.DataPoints.Update(otherDp);
+
+                            await _storageService.EnqueueTelemetryAsync(otherDp.DataSourceId, receivedAt, otherDp.Metric, null, quality);
+                            _logger.LogWarning("[MQTT Link] Propagated LWT offline status to legacy tag | Stream: {Source} | Metric: {Metric} | Quality: {Quality}", otherDp.DataSourceId, otherDp.Metric, quality);
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
+        double val;
+        bool parseSuccess = false;
+        if (double.TryParse(extractedValue, out val))
+        {
+            parseSuccess = true;
+        }
+        else if (bool.TryParse(extractedValue, out bool boolVal))
+        {
+            val = boolVal ? 1.0 : 0.0;
+            parseSuccess = true;
+        }
+
+        if (parseSuccess)
+        {
+            double processedVal = (val * dp.ScaleFactor) + dp.Offset;
+            dp.LastValue = processedVal.ToString("F2");
+            dp.LastError = null;
+            dp.ConsecutiveFailures = 0;
+            dp.LastUpdated = receivedAt;
+            dbLookup.DataPoints.Update(dp);
+
+            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+            {
+                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                {
+                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, processedVal, "Good");
+                    _logger.LogInformation("[Queue Buffer] Enqueued MQTT telemetry for Stream {Source} | Metric: {Metric} | Val: {Val}", dp.DataSourceId, dp.Metric, processedVal);
+
+                    // If this is a heartbeat/status tag, restore sibling MQTT tags on the same DataSource back to online (legacy fallback)
+                    bool isStatusTag = string.Equals(dp.Metric, "heartbeat", StringComparison.OrdinalIgnoreCase) ||
+                                       string.Equals(dp.Metric, "status", StringComparison.OrdinalIgnoreCase);
+
+                    if (isStatusTag && string.IsNullOrEmpty(dp.MqttDeviceId))
+                    {
+                        var otherMqttDps = await dbLookup.DataPoints
+                            .Where(x => x.AdapterId == _mqttAdapterId && x.IsEnabled && x.DataSourceId == dp.DataSourceId && x.Id != dp.Id && (x.MqttDeviceId == null || x.MqttDeviceId == ""))
+                            .ToListAsync();
+
+                        foreach (var otherDp in otherMqttDps)
+                        {
+                            if (string.IsNullOrEmpty(otherDp.DataSourceId) || string.IsNullOrEmpty(otherDp.Metric))
+                                continue;
+
+                            if (otherDp.ConsecutiveFailures > 0)
+                            {
+                                otherDp.LastError = null;
+                                otherDp.ConsecutiveFailures = 0;
+                                otherDp.LastUpdated = receivedAt;
+                                dbLookup.DataPoints.Update(otherDp);
+
+                                double? lastValNode = null;
+                                if (double.TryParse(otherDp.LastValue, out double parsedLast))
+                                {
+                                    lastValNode = parsedLast;
+                                }
+
+                                await _storageService.EnqueueTelemetryAsync(otherDp.DataSourceId, receivedAt, otherDp.Metric, lastValNode, "Stale");
+                                _logger.LogInformation("[MQTT Link] Restored other MQTT tag to online | Stream: {Source} | Metric: {Metric} | LastVal: {LastVal}", otherDp.DataSourceId, otherDp.Metric, lastValNode);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            dp.LastError = $"Failed to parse extracted value '{extractedValue}' as double or boolean";
+            dp.ConsecutiveFailures++;
+            dp.LastUpdated = receivedAt;
+            dbLookup.DataPoints.Update(dp);
+
+            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+            {
+                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                {
+                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, null, "DriverError");
+                }
+            }
+        }
+    }
+
+    public static bool MqttTopicMatches(string filter, string topic)
+    {
+        if (string.Equals(filter, topic)) return true;
+        if (filter == "#") return true;
+
+        var filterParts = filter.Split('/');
+        var topicParts = topic.Split('/');
+
+        for (int i = 0; i < filterParts.Length; i++)
+        {
+            if (filterParts[i] == "#")
+                return true;
+
+            if (filterParts[i] == "+")
+            {
+                if (i >= topicParts.Length)
+                    return false;
+                continue;
+            }
+
+            if (i >= topicParts.Length || !string.Equals(filterParts[i], topicParts[i]))
+                return false;
+        }
+
+        return topicParts.Length == filterParts.Length;
+    }
+
+    private async Task<List<string>> GetActiveMqttTopicsAsync(QueueDbContext db)
+    {
+        var topics = new List<string>();
+
+        // 1. Load active MQTT devices
+        var activeDevices = await db.MqttDevices
+            .Where(x => x.AdapterId == _mqttAdapterId && x.IsEnabled)
+            .ToListAsync();
+
+        foreach (var dev in activeDevices)
+        {
+            if (!string.IsNullOrWhiteSpace(dev.TopicSubscription))
+                topics.Add(dev.TopicSubscription);
+            if (!string.IsNullOrWhiteSpace(dev.LwtTopic))
+                topics.Add(dev.LwtTopic);
+        }
+
+        // 2. Load active legacy MQTT data points (no MqttDeviceId)
+        var legacyDps = await db.DataPoints
+            .Where(x => x.AdapterId == _mqttAdapterId && x.IsEnabled && (x.MqttDeviceId == null || x.MqttDeviceId == ""))
+            .ToListAsync();
+
+        foreach (var dp in legacyDps)
+        {
+            if (!string.IsNullOrWhiteSpace(dp.Address))
+                topics.Add(dp.Address);
+        }
+
+        return topics.Distinct().OrderBy(x => x).ToList();
+    }
 }
+
 

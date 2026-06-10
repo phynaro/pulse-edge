@@ -41,6 +41,7 @@ export interface DataSource {
 export interface DataPoint {
   id: string;
   adapterId: string;
+  mqttDeviceId: string | null;
   dataSourceId: string | null;
   metric: string | null;
   address: string; // tag / register / topic
@@ -57,6 +58,22 @@ export interface DataPoint {
   lastError?: string | null;
   lastUpdated?: string | null;
   consecutiveFailures?: number;
+}
+
+export interface MqttDevice {
+  id: string;
+  adapterId: string;
+  name: string;
+  topicSubscription: string;
+  mqttParseMode: string; // "Plaintext" | "JSON"
+  isEnabled: boolean;
+  lwtTopic: string | null;
+  lwtOnlinePayload: string;
+  lwtOfflinePayload: string;
+  status: string; // "Connected", "Offline", "Error"
+  lastError: string | null;
+  lastUpdated: string | null;
+  consecutiveFailures: number;
 }
 
 export interface DiagnosticData {

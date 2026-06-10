@@ -7,6 +7,22 @@ echo "============================================="
 echo "  🚀 Starting PULSE Edge IoT Stack..."
 echo "============================================="
 
+# Check for 'initial' argument to reset database for onboarding tests
+RESET_DB=false
+for arg in "$@"; do
+  if [ "$arg" == "initial" ]; then
+    RESET_DB=true
+  fi
+done
+
+if [ "$RESET_DB" == "true" ]; then
+  echo "🧹 Resetting local database for initial onboarding test..."
+  rm -f "$HOME/.pulse/edge.db"*
+  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    rm -f "/c/ProgramData/PULSE Edge/edge.db"* 2>/dev/null || true
+  fi
+fi
+
 # Trap Ctrl+C (SIGINT) and exit signals to kill all child processes automatically
 trap "echo -e '\n🛑 Stopping all services...'; kill 0" EXIT
 

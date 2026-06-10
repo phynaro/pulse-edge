@@ -11,13 +11,23 @@ public class QueueDbContext : DbContext
     public DbSet<DriverAdapter> DriverAdapters => Set<DriverAdapter>();
     public DbSet<DataSource> DataSources => Set<DataSource>();
     public DbSet<DataPoint> DataPoints => Set<DataPoint>();
+    public DbSet<MqttDevice> MqttDevices => Set<MqttDevice>();
     public DbSet<StreamTemplate> StreamTemplates => Set<StreamTemplate>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        // Save database under a centralized user folder (~/.pulse/edge.db) so Agent and API share the same DB
-        var userFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var pulseFolder = Path.Combine(userFolder, ".pulse");
+        string pulseFolder;
+        if (OperatingSystem.IsWindows())
+        {
+            var appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            pulseFolder = Path.Combine(appDataFolder, "PULSE Edge");
+        }
+        else
+        {
+            var userFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            pulseFolder = Path.Combine(userFolder, ".pulse");
+        }
+        
         Directory.CreateDirectory(pulseFolder); // Ensure the folder exists
         var dbPath = Path.Combine(pulseFolder, "edge.db");
         
