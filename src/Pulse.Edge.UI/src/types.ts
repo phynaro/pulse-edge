@@ -12,6 +12,12 @@ export interface DashboardData {
     siteName: string;
     apiKey: string;
     cloudEndpoint: string;
+    pairingToken?: string;
+    pairingShortCode?: string;
+    pairingExpiresAt?: string | null;
+    pairingBaseUrl?: string;
+    organizationId?: string;
+    organizationName?: string;
   };
   queue: {
     pendingTelemetry: number;

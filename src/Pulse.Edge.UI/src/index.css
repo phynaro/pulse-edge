@@ -61,3 +61,36 @@ body {
 .sidebar.collapsed .sidebar-toggle-btn {
   margin-left: 0;
 }
+
+/* Topbar Badge Group Horizontal Alignment */
+.topbar-badge-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Refresh Button Custom Theme Styling */
+.refresh-btn {
+  background: transparent !important;
+  border: none !important;
+  color: var(--text-secondary) !important;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 50%;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  color: var(--primary-color) !important;
+  background: rgba(60, 232, 189, 0.08) !important;
+  box-shadow: 0 0 10px rgba(60, 232, 189, 0.15) !important;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

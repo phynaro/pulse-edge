@@ -450,10 +450,12 @@ export default function App() {
         {/* Sticky 60px Topbar */}
         <header className="topbar">
           <div className="topbar-badge-group">
-            <div className="topbar-node-badge">
-              <span className="badge-label">NODE</span>
-              <span className="badge-value">{edgeSerial}</span>
-            </div>
+            {dashboard?.device.organizationName && dashboard.device.organizationName !== 'N/A' && (
+              <div className="topbar-node-badge">
+                <span className="badge-label">ORG</span>
+                <span className="badge-value">{dashboard.device.organizationName}</span>
+              </div>
+            )}
 
             {dashboard?.device.siteName && dashboard.device.siteName !== 'N/A' && (
               <div className="topbar-node-badge">
@@ -461,6 +463,11 @@ export default function App() {
                 <span className="badge-value">{dashboard.device.siteName}</span>
               </div>
             )}
+
+            <div className="topbar-node-badge">
+              <span className="badge-label">NODE</span>
+              <span className="badge-value">{edgeSerial}</span>
+            </div>
           </div>
           
           <div className="topbar-status">
@@ -486,7 +493,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => { setIsLoading(true); fetchData(); }}
-              className="btn-icon"
+              className="refresh-btn"
               title="Force Refresh Data"
               aria-label="Force refresh data"
             >
