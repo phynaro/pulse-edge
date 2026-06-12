@@ -25,6 +25,11 @@ public class OpcUaDriver : IDisposable
 
     public void Connect(string endpointUrl)
     {
+        ConnectAsync(endpointUrl).GetAwaiter().GetResult();
+    }
+
+    public async Task ConnectAsync(string endpointUrl)
+    {
         string formattedUrl = endpointUrl;
         if (!formattedUrl.StartsWith("opc.tcp://", StringComparison.OrdinalIgnoreCase))
         {
@@ -49,7 +54,7 @@ public class OpcUaDriver : IDisposable
         {
             _activeEndpoint = formattedUrl;
             _logger.LogInformation("OPC UA Driver: Connecting to OPC UA Endpoint at {Endpoint}...", formattedUrl);
-            ConnectAsync(formattedUrl).GetAwaiter().GetResult();
+            await ConnectInternalAsync(formattedUrl);
         }
         catch (Exception ex)
         {
@@ -59,7 +64,7 @@ public class OpcUaDriver : IDisposable
     }
 
     #pragma warning disable CS0618
-    private async Task ConnectAsync(string endpointUrl)
+    private async Task ConnectInternalAsync(string endpointUrl)
     {
         string baseDir = AppContext.BaseDirectory;
         string certsDir = Path.Combine(baseDir, "certs");
@@ -134,10 +139,63 @@ public class OpcUaDriver : IDisposable
     }
     #pragma warning disable CS0618 // Disable obsolete warnings for Session.Create, browser.Browse, SelectEndpoint, ReadValue, and Close
 
-    /// <summary>
-    /// Reads multiple OPC UA nodes in a single batched Read service call.
-    /// Returns a dictionary keyed by nodeId with the read result (including value, success status and error message).
-    /// </summary>
+    public async Task<Dictionary<string, OpcUaReadResult>> ReadMetricsBatchAsync(IReadOnlyList<string> nodeIds, CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<string, OpcUaReadResult>(nodeIds.Count);
+
+        if (_session == null || !_session.Connected)
+        {
+            throw new InvalidOperationException("OPC UA Driver is not connected.");
+        }
+
+        try
+        {
+            var nodesToRead = new ReadValueIdCollection(nodeIds.Count);
+            foreach (var id in nodeIds)
+            {
+                nodesToRead.Add(new ReadValueId
+                {
+                    NodeId = new NodeId(id),
+                    AttributeId = Attributes.Value
+                });
+            }
+
+            var readResponse = await _session.ReadAsync(
+                null,
+                0,
+                TimestampsToReturn.Neither,
+                nodesToRead,
+                cancellationToken);
+
+            var values = readResponse.Results;
+
+            for (int i = 0; i < nodeIds.Count; i++)
+            {
+                var id = nodeIds[i];
+                var dv = values[i];
+
+                if (StatusCode.IsGood(dv.StatusCode) && dv.Value != null)
+                {
+                    double rawVal = dv.Value is bool b ? (b ? 1.0 : 0.0) : Convert.ToDouble(dv.Value);
+                    result[id] = new OpcUaReadResult { Value = rawVal, Success = true };
+                }
+                else
+                {
+                    string errMsg = dv.Value == null ? "Node value is null" : $"Bad status: {dv.StatusCode}";
+                    _logger.LogWarning("OPC UA Driver: Bad status {Status} for node {NodeId}", dv.StatusCode, id);
+                    result[id] = new OpcUaReadResult { Value = 0.0, Success = false, ErrorMessage = errMsg };
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "OPC UA Driver: Batch read failed.");
+            throw;
+        }
+
+        return result;
+    }
+
     public Dictionary<string, OpcUaReadResult> ReadMetricsBatch(IReadOnlyList<string> nodeIds)
     {
         var result = new Dictionary<string, OpcUaReadResult>(nodeIds.Count);
@@ -445,7 +503,7 @@ public class OpcUaDriver : IDisposable
                     ContinueUntilDone = true
                 };
 
-                var references = browser.Browse(startNode);
+                var references = await Task.Run(() => browser.Browse(startNode));
 
                 var variables = references.Where(r => r.NodeClass == NodeClass.Variable).ToList();
                 var dataTypes = new Dictionary<string, string>();
@@ -464,13 +522,13 @@ public class OpcUaDriver : IDisposable
                             });
                         }
 
-                        session.Read(
+                        var readResponse = await session.ReadAsync(
                             null,
                             0,
                             TimestampsToReturn.Neither,
                             nodesToRead,
-                            out DataValueCollection results,
-                            out DiagnosticInfoCollection diagnostics);
+                            default);
+                        var results = readResponse.Results;
 
                         for (int i = 0; i < variables.Count; i++)
                         {

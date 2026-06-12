@@ -32,7 +32,13 @@ public class QueueStorageService
                     Id TEXT PRIMARY KEY,
                     CloudEdgeId TEXT NOT NULL DEFAULT '',
                     ClaimSecret TEXT NOT NULL DEFAULT '',
+                    PairingToken TEXT NOT NULL DEFAULT '',
+                    PairingShortCode TEXT NOT NULL DEFAULT '',
+                    PairingExpiresAt TEXT,
+                    PairingBaseUrl TEXT NOT NULL DEFAULT '',
                     SerialNumber TEXT NOT NULL DEFAULT '',
+                    OrganizationId TEXT NOT NULL DEFAULT '',
+                    OrganizationName TEXT NOT NULL DEFAULT '',
                     SiteId TEXT NOT NULL DEFAULT '',
                     SiteName TEXT NOT NULL DEFAULT '',
                     ApiKey TEXT NOT NULL DEFAULT '',
@@ -127,6 +133,43 @@ public class QueueStorageService
         {
             // Column already exists, ignore exception
         }
+
+        // Auto-migrate schema: add new pairing and organization columns to existing databases if missing
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE DeviceConfigs ADD COLUMN PairingToken TEXT NOT NULL DEFAULT '';");
+        }
+        catch {}
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE DeviceConfigs ADD COLUMN PairingShortCode TEXT NOT NULL DEFAULT '';");
+        }
+        catch {}
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE DeviceConfigs ADD COLUMN PairingExpiresAt TEXT;");
+        }
+        catch {}
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE DeviceConfigs ADD COLUMN PairingBaseUrl TEXT NOT NULL DEFAULT '';");
+        }
+        catch {}
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE DeviceConfigs ADD COLUMN OrganizationId TEXT NOT NULL DEFAULT '';");
+        }
+        catch {}
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE DeviceConfigs ADD COLUMN OrganizationName TEXT NOT NULL DEFAULT '';");
+        }
+        catch {}
 
         // Create DriverAdapters table if missing
         try
@@ -408,6 +451,12 @@ public class QueueStorageService
             existing.CloudEdgeId = config.CloudEdgeId;
             existing.ClaimSecret = config.ClaimSecret;
             existing.CloudStatus = config.CloudStatus;
+            existing.PairingToken = config.PairingToken;
+            existing.PairingShortCode = config.PairingShortCode;
+            existing.PairingExpiresAt = config.PairingExpiresAt;
+            existing.PairingBaseUrl = config.PairingBaseUrl;
+            existing.OrganizationId = config.OrganizationId;
+            existing.OrganizationName = config.OrganizationName;
             db.DeviceConfigs.Update(existing);
         }
         else

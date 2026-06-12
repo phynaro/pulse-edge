@@ -15,6 +15,7 @@ using Pulse.Edge.Agent;
 using Pulse.Edge.Cloud.Services;
 using Pulse.Edge.Protocols.MqttProtocol;
 using Pulse.Edge.Protocols.Modbus;
+using Pulse.Edge.Protocols.LibPlcTag;
 using Microsoft.Extensions.FileProviders;
 using Serilog;
 using Serilog.Events;
@@ -115,6 +116,7 @@ builder.Services.AddCors(options =>
 // Register SQLite storage service and OPC UA driver
 builder.Services.AddSingleton<QueueStorageService>();
 builder.Services.AddSingleton<OpcUaDriver>();
+builder.Services.AddSingleton<LibPlcTagDriver>();
 builder.Services.AddSingleton<CloudClient>();
 
 var hostingMode = builder.Configuration["hostingMode"] ?? "SinglePort";
@@ -179,6 +181,12 @@ app.MapGet("/api/dashboard", async (QueueStorageService storageService) =>
             DeviceId = config?.Id ?? "Not Registered",
             CloudEdgeId = config?.CloudEdgeId ?? "Not Registered",
             SerialNumber = config?.SerialNumber ?? "N/A",
+            PairingToken = config?.PairingToken ?? "",
+            PairingShortCode = config?.PairingShortCode ?? "",
+            PairingExpiresAt = config?.PairingExpiresAt,
+            PairingBaseUrl = config?.PairingBaseUrl ?? "",
+            OrganizationId = config?.OrganizationId ?? "N/A",
+            OrganizationName = config?.OrganizationName ?? "N/A",
             SiteId = config?.SiteId ?? "N/A",
             SiteName = config?.SiteName ?? "N/A",
             ApiKey = !string.IsNullOrEmpty(config?.ApiKey) ? "••••••••" + config.ApiKey[Math.Max(0, config.ApiKey.Length - 6)..] : "None",
@@ -443,6 +451,393 @@ app.MapPost("/api/adapters/mqtt/browse", async (MqttBrowseRequest request) =>
     {
         return Results.Ok(new { success = false, message = $"Browse failed: {ex.Message}" });
     }
+});
+
+// POST /api/adapters/webhook/browse - Browse webhook last payload keys
+app.MapPost("/api/adapters/webhook/browse", async (WebhookBrowseRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.AdapterId))
+    {
+        return Results.BadRequest(new { success = false, message = "AdapterId is required." });
+    }
+
+    try
+    {
+        using var db = new QueueDbContext();
+        var adapter = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Id == request.AdapterId);
+        if (adapter == null)
+        {
+            return Results.NotFound(new { success = false, message = "Adapter not found." });
+        }
+
+        if (adapter.Protocol != "WEBHOOK")
+        {
+            return Results.BadRequest(new { success = false, message = "Selected adapter is not a Webhook adapter." });
+        }
+
+        string lastPayload = "";
+        string lastSeen = "";
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(adapter.ConfigJson ?? "{}");
+            if (doc.RootElement.TryGetProperty("LastPayload", out var payloadProp))
+            {
+                lastPayload = payloadProp.GetString() ?? "";
+            }
+            if (doc.RootElement.TryGetProperty("LastSeen", out var seenProp))
+            {
+                lastSeen = seenProp.GetString() ?? "";
+            }
+        }
+        catch {}
+
+        var keys = new List<MqttJsonKeyItem>();
+        if (!string.IsNullOrWhiteSpace(lastPayload))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(lastPayload);
+                ExtractJsonPaths(doc.RootElement, "", keys);
+            }
+            catch
+            {
+                // Payload is not JSON or invalid
+            }
+        }
+
+        // If no JSON keys were extracted, add a default key for the raw payload
+        if (keys.Count == 0)
+        {
+            keys.Add(new MqttJsonKeyItem("$", "String", lastPayload));
+        }
+
+        var topics = new List<MqttBrowseItem>
+        {
+            new MqttBrowseItem("webhook-payload", lastPayload, lastSeen, keys)
+        };
+
+        return Results.Ok(new { success = true, topics });
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new { success = false, message = $"Browse failed: {ex.Message}" });
+    }
+});
+
+// POST /api/adapters/ethernetip/browse - Browse Ethernet/IP PLC tags
+app.MapPost("/api/adapters/ethernetip/browse", async (EthernetIpBrowseRequest request, LibPlcTagDriver libPlcTagDriver, CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.AdapterId))
+    {
+        return Results.BadRequest(new { success = false, message = "AdapterId is required." });
+    }
+
+    try
+    {
+        using var db = new QueueDbContext();
+        var adapter = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Id == request.AdapterId);
+        if (adapter == null)
+        {
+            return Results.NotFound(new { success = false, message = "Adapter not found." });
+        }
+
+        if (adapter.Protocol != "Ethernet/IP")
+        {
+            return Results.BadRequest(new { success = false, message = "Selected adapter is not an Ethernet/IP adapter." });
+        }
+
+        string plcType = "ControlLogix";
+        string protocol = "ab_eip";
+        string path = "1,0";
+        int timeoutMs = 5000;
+
+        if (!string.IsNullOrWhiteSpace(adapter.ConfigJson))
+        {
+            try
+            {
+                var doc = System.Text.Json.JsonDocument.Parse(adapter.ConfigJson);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("PlcType", out var ptProp)) plcType = ptProp.GetString() ?? plcType;
+                if (root.TryGetProperty("Protocol", out var protoProp)) protocol = protoProp.GetString() ?? protocol;
+                if (root.TryGetProperty("Path", out var pathProp)) path = pathProp.GetString() ?? path;
+                if (root.TryGetProperty("TimeoutMs", out var toProp)) timeoutMs = toProp.GetInt32();
+            }
+            catch (Exception) { }
+        }
+
+        if (!libPlcTagDriver.IsConnected)
+        {
+            libPlcTagDriver.Connect(adapter.Host, plcType, protocol, path, timeoutMs);
+        }
+
+        var tags = await libPlcTagDriver.BrowseTagsAsync(cancellationToken);
+        return Results.Ok(new { success = true, tags });
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new { success = false, message = $"Browse failed: {ex.Message}" });
+    }
+});
+
+// POST /api/webhooks/receive/{adapterId} - Receive REST Webhook payloads from clients
+app.MapPost("/api/webhooks/receive/{adapterId}", async (
+    string adapterId,
+    [Microsoft.AspNetCore.Mvc.FromQuery] string token,
+    Microsoft.AspNetCore.Http.HttpRequest request,
+    QueueStorageService storageService) =>
+{
+    using var reader = new StreamReader(request.Body);
+    string payload = await reader.ReadToEndAsync();
+
+    // Check if adapter exists
+    using var db = new QueueDbContext();
+    var adapter = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Id == adapterId);
+    if (adapter == null)
+    {
+        return Results.Json(new { success = false, message = "Adapter not found." }, statusCode: 404);
+    }
+
+    if (adapter.Protocol != "WEBHOOK")
+    {
+        return Results.Json(new { success = false, message = "Selected adapter is not a WEBHOOK adapter." }, statusCode: 400);
+    }
+
+    if (!adapter.IsEnabled)
+    {
+        return Results.Json(new { success = false, message = "Adapter is disabled." }, statusCode: 400);
+    }
+
+    // Parse ConfigJson to validate Token
+    string configToken = "";
+    try
+    {
+        using var configDoc = System.Text.Json.JsonDocument.Parse(adapter.ConfigJson ?? "{}");
+        if (configDoc.RootElement.TryGetProperty("Token", out var tokenProp))
+        {
+            configToken = tokenProp.GetString() ?? "";
+        }
+    }
+    catch {}
+
+    if (string.IsNullOrEmpty(configToken) || configToken != token)
+    {
+        return Results.Json(new { success = false, message = "Unauthorized: invalid token." }, statusCode: 401);
+    }
+
+    // Update last payload/seen in ConfigJson
+    try
+    {
+        var configObj = new Dictionary<string, string>();
+        try
+        {
+            if (!string.IsNullOrEmpty(adapter.ConfigJson))
+            {
+                configObj = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(adapter.ConfigJson) ?? new Dictionary<string, string>();
+            }
+        }
+        catch {}
+
+        configObj["LastPayload"] = payload;
+        configObj["LastSeen"] = DateTime.UtcNow.ToString("o");
+
+        adapter.ConfigJson = System.Text.Json.JsonSerializer.Serialize(configObj);
+        adapter.Status = "Connected"; // Mark as connected since we received data
+        db.DriverAdapters.Update(adapter);
+        await db.SaveChangesAsync();
+    }
+    catch {}
+
+    // Parse payload to check for ts/timestamp
+    try
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(payload);
+        var root = doc.RootElement;
+
+        var elements = new List<System.Text.Json.JsonElement>();
+        if (root.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var item in root.EnumerateArray())
+            {
+                if (item.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    elements.Add(item);
+                }
+            }
+        }
+        else if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            elements.Add(root);
+        }
+        else
+        {
+            return Results.BadRequest(new { success = false, message = "Invalid JSON structure. Root must be a JSON object or JSON array of objects." });
+        }
+
+        // Find bound datapoints for this adapter
+        var dps = await db.DataPoints
+            .Where(x => x.AdapterId == adapterId && x.IsEnabled)
+            .ToListAsync();
+
+        foreach (var element in elements)
+        {
+            DateTime receivedAt = DateTime.UtcNow;
+            bool hasPayloadTime = false;
+
+            // 1. Try "ts"
+            if (element.TryGetProperty("ts", out var tsProp))
+            {
+                if (tsProp.ValueKind == System.Text.Json.JsonValueKind.Number && tsProp.TryGetDouble(out double tsVal))
+                {
+                    receivedAt = tsVal > 9999999999 ? DateTimeOffset.FromUnixTimeMilliseconds((long)tsVal).UtcDateTime : DateTimeOffset.FromUnixTimeSeconds((long)tsVal).UtcDateTime;
+                    hasPayloadTime = true;
+                }
+                else if (tsProp.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    string tsStr = tsProp.GetString() ?? "";
+                    if (double.TryParse(tsStr, out double tsParsedVal))
+                    {
+                        receivedAt = tsParsedVal > 9999999999 ? DateTimeOffset.FromUnixTimeMilliseconds((long)tsParsedVal).UtcDateTime : DateTimeOffset.FromUnixTimeSeconds((long)tsParsedVal).UtcDateTime;
+                        hasPayloadTime = true;
+                    }
+                    else if (DateTime.TryParse(tsStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime parsedDt))
+                    {
+                        receivedAt = parsedDt.ToUniversalTime();
+                        hasPayloadTime = true;
+                    }
+                }
+            }
+
+            // 2. Try "timestamp" if "ts" not found/parsed
+            if (!hasPayloadTime && element.TryGetProperty("timestamp", out var timestampProp))
+            {
+                if (timestampProp.ValueKind == System.Text.Json.JsonValueKind.Number && timestampProp.TryGetDouble(out double tsVal2))
+                {
+                    receivedAt = tsVal2 > 9999999999 ? DateTimeOffset.FromUnixTimeMilliseconds((long)tsVal2).UtcDateTime : DateTimeOffset.FromUnixTimeSeconds((long)tsVal2).UtcDateTime;
+                    hasPayloadTime = true;
+                }
+                else if (timestampProp.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    string tsStr = timestampProp.GetString() ?? "";
+                    if (double.TryParse(tsStr, out double tsParsedVal2))
+                    {
+                        receivedAt = tsParsedVal2 > 9999999999 ? DateTimeOffset.FromUnixTimeMilliseconds((long)tsParsedVal2).UtcDateTime : DateTimeOffset.FromUnixTimeSeconds((long)tsParsedVal2).UtcDateTime;
+                        hasPayloadTime = true;
+                    }
+                    else if (DateTime.TryParse(tsStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime parsedDt))
+                    {
+                        receivedAt = parsedDt.ToUniversalTime();
+                        hasPayloadTime = true;
+                    }
+                }
+            }
+
+            foreach (var dp in dps)
+            {
+                string? jsonPath = !string.IsNullOrEmpty(dp.MqttJsonPath) ? dp.MqttJsonPath : dp.Address;
+                string? extractedValue = GetJsonValueByElement(element, jsonPath ?? string.Empty);
+
+                if (extractedValue == null)
+                {
+                    dp.LastError = $"JSON path '{jsonPath}' not found";
+                    dp.ConsecutiveFailures++;
+                    dp.LastUpdated = DateTime.UtcNow; // Log when error occurred
+                    db.DataPoints.Update(dp);
+
+                    if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                    {
+                        if (await storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                        {
+                            await storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, null, "DriverError");
+                        }
+                    }
+                    continue;
+                }
+
+                // Parse value
+                bool isOfflineSignal = false;
+                var trimmed = extractedValue.Trim();
+                if (string.Equals(trimmed, "null", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(trimmed, "offline", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(trimmed, "timeout", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(trimmed, "none", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(trimmed, "", StringComparison.OrdinalIgnoreCase))
+                {
+                    isOfflineSignal = true;
+                }
+
+                if (isOfflineSignal)
+                {
+                    dp.LastError = "Device reported offline / timeout via Webhook payload";
+                    dp.ConsecutiveFailures++;
+                    dp.LastUpdated = DateTime.UtcNow;
+                    db.DataPoints.Update(dp);
+
+                    if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                    {
+                        if (await storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                        {
+                            string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                            await storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, null, quality);
+                        }
+                    }
+                    continue;
+                }
+
+                double val;
+                bool parseSuccess = false;
+                if (double.TryParse(extractedValue, out val))
+                {
+                    parseSuccess = true;
+                }
+                else if (bool.TryParse(extractedValue, out bool boolVal))
+                {
+                    val = boolVal ? 1.0 : 0.0;
+                    parseSuccess = true;
+                }
+
+                if (parseSuccess)
+                {
+                    double processedVal = (val * dp.ScaleFactor) + dp.Offset;
+                    dp.LastValue = processedVal.ToString("F2");
+                    dp.LastError = null;
+                    dp.ConsecutiveFailures = 0;
+                    dp.LastUpdated = DateTime.UtcNow;
+                    db.DataPoints.Update(dp);
+
+                    if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                    {
+                        if (await storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                        {
+                            await storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, processedVal, "Good");
+                        }
+                    }
+                }
+                else
+                {
+                    dp.LastError = $"Failed to parse extracted value '{extractedValue}' as double or boolean";
+                    dp.ConsecutiveFailures++;
+                    dp.LastUpdated = DateTime.UtcNow;
+                    db.DataPoints.Update(dp);
+
+                    if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                    {
+                        if (await storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                        {
+                            await storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, null, "DriverError");
+                        }
+                    }
+                }
+            }
+        }
+
+        await db.SaveChangesAsync();
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { success = false, message = $"Failed to process JSON payload: {ex.Message}" });
+    }
+
+    return Results.Ok(new { success = true, message = "Payload processed successfully." });
 });
 
 // DELETE /api/adapters/{id} - Deletes a connection adapter configuration and its bound data points
@@ -810,10 +1205,17 @@ app.MapPost("/api/settings", async (UpdateSettingsRequest request) =>
         {
             Id = Guid.NewGuid().ToString(),
             ClaimSecret = generateClaimSecret(),
+            PairingToken = generateClaimSecret(),
             SerialNumber = request.SerialNumber,
             CloudEndpoint = request.CloudEndpoint,
             ApiKey = "",
             SiteId = "",
+            SiteName = "",
+            OrganizationId = "",
+            OrganizationName = "",
+            PairingShortCode = "",
+            PairingExpiresAt = null,
+            PairingBaseUrl = "",
             Version = "1.0.0",
             CloudStatus = "PendingApproval"
         };
@@ -831,12 +1233,21 @@ app.MapPost("/api/settings", async (UpdateSettingsRequest request) =>
             config.ApiKey = "";
             config.SiteId = "";
             config.SiteName = "";
+            config.OrganizationId = "";
+            config.OrganizationName = "";
+            config.PairingShortCode = "";
+            config.PairingExpiresAt = null;
+            config.PairingBaseUrl = "";
             config.CloudStatus = "PendingApproval";
         }
         
         if (string.IsNullOrEmpty(config.ClaimSecret))
         {
             config.ClaimSecret = generateClaimSecret();
+        }
+        if (string.IsNullOrEmpty(config.PairingToken))
+        {
+            config.PairingToken = generateClaimSecret();
         }
         db.DeviceConfigs.Update(config);
     }
@@ -937,6 +1348,135 @@ finally
     Log.CloseAndFlush();
 }
 
+static string? GetJsonValueByElement(System.Text.Json.JsonElement element, string path)
+{
+    if (string.IsNullOrWhiteSpace(path))
+        return null;
+
+    try
+    {
+        var cleanPath = path;
+        if (cleanPath.StartsWith("$.")) cleanPath = cleanPath[2..];
+        else if (cleanPath.StartsWith("$")) cleanPath = cleanPath[1..];
+        
+        var parts = cleanPath.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var part in parts)
+        {
+            var cleanPart = part;
+            int arrayIndex = -1;
+            
+            if (part.EndsWith("]") && part.Contains("["))
+            {
+                int openBracket = part.IndexOf("[");
+                cleanPart = part[..openBracket];
+                string indexStr = part[(openBracket + 1)..^1];
+                int.TryParse(indexStr, out arrayIndex);
+            }
+
+            if (element.ValueKind == System.Text.Json.JsonValueKind.Object && element.TryGetProperty(cleanPart, out var child))
+            {
+                element = child;
+            }
+            else
+            {
+                return null;
+            }
+
+            if (arrayIndex >= 0)
+            {
+                if (element.ValueKind == System.Text.Json.JsonValueKind.Array && arrayIndex < element.GetArrayLength())
+                {
+                    element = element[arrayIndex];
+                }
+                else
+                {
+                    return null;
+                }
+            }
+        }
+        
+        return element.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.String => element.GetString(),
+            System.Text.Json.JsonValueKind.Number => element.GetRawText(),
+            System.Text.Json.JsonValueKind.True => "true",
+            System.Text.Json.JsonValueKind.False => "false",
+            System.Text.Json.JsonValueKind.Null => null,
+            _ => element.GetRawText()
+        };
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+static string? GetJsonValueByPath(string json, string path)
+{
+    if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(path))
+        return null;
+
+    try
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var element = doc.RootElement;
+        
+        var cleanPath = path;
+        if (cleanPath.StartsWith("$.")) cleanPath = cleanPath[2..];
+        else if (cleanPath.StartsWith("$")) cleanPath = cleanPath[1..];
+        
+        var parts = cleanPath.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var part in parts)
+        {
+            var cleanPart = part;
+            int arrayIndex = -1;
+            
+            if (part.EndsWith("]") && part.Contains("["))
+            {
+                int openBracket = part.IndexOf("[");
+                cleanPart = part[..openBracket];
+                string indexStr = part[(openBracket + 1)..^1];
+                int.TryParse(indexStr, out arrayIndex);
+            }
+
+            if (element.ValueKind == System.Text.Json.JsonValueKind.Object && element.TryGetProperty(cleanPart, out var child))
+            {
+                element = child;
+            }
+            else
+            {
+                return null;
+            }
+
+            if (arrayIndex >= 0)
+            {
+                if (element.ValueKind == System.Text.Json.JsonValueKind.Array && arrayIndex < element.GetArrayLength())
+                {
+                    element = element[arrayIndex];
+                }
+                else
+                {
+                    return null;
+                }
+            }
+        }
+        
+        return element.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.String => element.GetString(),
+            System.Text.Json.JsonValueKind.Number => element.GetRawText(),
+            System.Text.Json.JsonValueKind.True => "true",
+            System.Text.Json.JsonValueKind.False => "false",
+            System.Text.Json.JsonValueKind.Null => null,
+            _ => element.GetRawText()
+        };
+    }
+    catch
+    {
+        return null;
+    }
+}
+
 static void ExtractJsonPaths(System.Text.Json.JsonElement element, string currentPath, List<MqttJsonKeyItem> paths)
 {
     if (element.ValueKind == System.Text.Json.JsonValueKind.Object)
@@ -990,5 +1530,7 @@ public record ValidateCloudRequest(string CloudEndpoint, string SerialNumber);
 public record MqttBrowseRequest(string AdapterId);
 public record MqttBrowseItem(string Topic, string Payload, string LastSeen, List<MqttJsonKeyItem> Keys);
 public record MqttJsonKeyItem(string Path, string DataType, string Value);
+public record WebhookBrowseRequest(string AdapterId);
+public record EthernetIpBrowseRequest(string AdapterId);
 
 

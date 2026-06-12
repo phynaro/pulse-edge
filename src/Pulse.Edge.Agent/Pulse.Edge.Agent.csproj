@@ -19,5 +19,6 @@
     <ProjectReference Include="..\Pulse.Edge.Protocols.OpcUa\Pulse.Edge.Protocols.OpcUa.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Protocols.MqttProtocol\Pulse.Edge.Protocols.MqttProtocol.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Protocols.Modbus\Pulse.Edge.Protocols.Modbus.csproj" />
+    <ProjectReference Include="..\Pulse.Edge.Protocols.LibPlcTag\Pulse.Edge.Protocols.LibPlcTag.csproj" />
   </ItemGroup>
 </Project>

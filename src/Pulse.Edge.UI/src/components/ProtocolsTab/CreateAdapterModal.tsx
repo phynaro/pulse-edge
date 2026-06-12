@@ -25,6 +25,9 @@ export default function CreateAdapterModal({
   const [newModbusTimeout, setNewModbusTimeout] = useState<number>(1000);
   const [newModbusRetries, setNewModbusRetries] = useState<number>(3);
   const [newOpcSecurityMode, setNewOpcSecurityMode] = useState<string>('None');
+  const [newModbusRtuParity, setNewModbusRtuParity] = useState<string>('None');
+  const [newModbusRtuStopBits, setNewModbusRtuStopBits] = useState<string>('One');
+  const [newModbusRtuHandshake, setNewModbusRtuHandshake] = useState<string>('None');
   const [newOpcSecurityPolicy, setNewOpcSecurityPolicy] = useState<string>('None');
   const [newOpcUsername, setNewOpcUsername] = useState<string>('');
   const [newOpcPassword, setNewOpcPassword] = useState<string>('');
@@ -35,8 +38,14 @@ export default function CreateAdapterModal({
   const [createTestStatus, setCreateTestStatus] = useState<'idle' | 'testing' | 'passed' | 'failed'>('idle');
   const [createTestMessage, setCreateTestMessage] = useState('');
   const [opcEndpoints, setOpcEndpoints] = useState<any[]>([]);
+  const [webhookToken, setWebhookToken] = useState('');
   const [opcDiscoverStatus, setOpcDiscoverStatus] = useState<'idle' | 'discovering' | 'success' | 'error'>('idle');
   const [opcDiscoverMessage, setOpcDiscoverMessage] = useState('');
+  
+  const [newPlcType, setNewPlcType] = useState<string>('ControlLogix');
+  const [newPlcProtocol, setNewPlcProtocol] = useState<string>('ab_eip');
+  const [newPlcPath, setNewPlcPath] = useState<string>('1,0');
+  const [newPlcTimeoutMs, setNewPlcTimeoutMs] = useState<number>(5000);
 
   const handleDiscoverOpcUa = async (host: string, port: number) => {
     if (!host) { toast.warning('Please enter a Connection Host/IP before discovering.'); return; }
@@ -99,7 +108,7 @@ export default function CreateAdapterModal({
       toast.warning('Please fill in all required fields.');
       return;
     }
-    if (createTestStatus !== 'passed') {
+    if (newAdapterProtocol !== 'WEBHOOK' && createTestStatus !== 'passed') {
       const reason = createTestStatus === 'failed' ? `\nReason: ${createTestMessage}` : '\nNo connection test was run.';
       if (!window.confirm(`Warning: The connection test to ${newAdapterHost}:${newAdapterPort} did not pass.${reason}\n\nAre you sure you want to create this adapter anyway?`)) return;
     }
@@ -107,10 +116,16 @@ export default function CreateAdapterModal({
       let configJson = '{}';
       if (newAdapterProtocol === 'MODBUS_TCP') {
         configJson = JSON.stringify({ UnitId: Number(newModbusUnitId), TimeoutMs: Number(newModbusTimeout), Retries: Number(newModbusRetries) });
+      } else if (newAdapterProtocol === 'MODBUS_RTU') {
+        configJson = JSON.stringify({ UnitId: Number(newModbusUnitId), Parity: newModbusRtuParity, StopBits: newModbusRtuStopBits, Handshake: newModbusRtuHandshake });
       } else if (newAdapterProtocol === 'OPC_UA') {
         configJson = JSON.stringify({ SecurityMode: newOpcSecurityMode, SecurityPolicy: newOpcSecurityPolicy, Username: newOpcUsername, Password: newOpcPassword });
       } else if (newAdapterProtocol === 'MQTT') {
         configJson = JSON.stringify({ ClientId: newMqttClientId, TopicPrefix: newMqttTopicPrefix, Username: newMqttUsername, Password: newMqttPassword });
+      } else if (newAdapterProtocol === 'WEBHOOK') {
+        configJson = JSON.stringify({ Token: webhookToken, LastPayload: '', LastSeen: '' });
+      } else if (newAdapterProtocol === 'Ethernet/IP') {
+        configJson = JSON.stringify({ PlcType: newPlcType, Protocol: newPlcProtocol, Path: newPlcPath, TimeoutMs: Number(newPlcTimeoutMs) });
       }
       const res = await fetch('/api/adapters', {
         method: 'POST',
@@ -149,55 +164,85 @@ export default function CreateAdapterModal({
 
             <div className="form-group form-group-flush">
               <label className="form-label form-label-bold">Protocol Type</label>
-              <CustomSelect value={newAdapterProtocol} onChange={(nextProtocol) => {
+             <CustomSelect value={newAdapterProtocol} onChange={(nextProtocol) => {
                 setNewAdapterProtocol(nextProtocol);
                 if (nextProtocol === 'OPC_UA') { setNewAdapterPort(4840); setNewOpcSecurityMode('None'); setNewOpcSecurityPolicy('None'); setNewOpcUsername(''); setNewOpcPassword(''); }
                 else if (nextProtocol === 'MQTT') { setNewAdapterPort(1883); setNewMqttClientId('pulse-edge-agent'); setNewMqttTopicPrefix(''); setNewMqttUsername(''); setNewMqttPassword(''); }
                 else if (nextProtocol === 'MODBUS_TCP') { setNewAdapterPort(502); setNewModbusUnitId(1); setNewModbusTimeout(1000); setNewModbusRetries(3); }
+                else if (nextProtocol === 'MODBUS_RTU') { setNewAdapterHost('/dev/ttyUSB0'); setNewAdapterPort(9600); setNewModbusUnitId(1); setNewModbusRtuParity('None'); setNewModbusRtuStopBits('One'); setNewModbusRtuHandshake('None'); }
+                else if (nextProtocol === 'Ethernet/IP') {
+                  setNewAdapterPort(44818);
+                  setNewPlcType('ControlLogix');
+                  setNewPlcProtocol('ab_eip');
+                  setNewPlcPath('1,0');
+                  setNewPlcTimeoutMs(5000);
+                }
+                else if (nextProtocol === 'WEBHOOK') {
+                  setNewAdapterHost('localhost');
+                  setNewAdapterPort(80);
+                  setWebhookToken('wh_tok_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+                }
               }} options={[
                 { value: 'OPC_UA', label: 'OPC UA' },
                 { value: 'MQTT', label: 'MQTT Broker' },
-                { value: 'MODBUS_TCP', label: 'Modbus TCP Node' }
+                { value: 'MODBUS_TCP', label: 'Modbus TCP Node' },
+                { value: 'MODBUS_RTU', label: 'Modbus RTU (Serial)' },
+                { value: 'Ethernet/IP', label: 'Ethernet/IP PLC' },
+                { value: 'WEBHOOK', label: 'REST Webhook' }
               ]} />
             </div>
 
-            <div className="form-group form-group-flush">
-              <label className="form-label form-label-bold">Connection Host / IP</label>
-              <input type="text" className="form-input" placeholder="e.g. 192.168.1.50 or localhost"
-                value={newAdapterHost} onChange={(e) => { setNewAdapterHost(e.target.value); setCreateTestStatus('idle'); setCreateTestMessage(''); }} required />
-            </div>
-
-            <div className="form-group form-group-flush">
-              <label className="form-label form-label-bold">Port Number</label>
-              <input type="number" className="form-input" value={newAdapterPort}
-                onChange={(e) => { setNewAdapterPort(Number(e.target.value)); setCreateTestStatus('idle'); setCreateTestMessage(''); }} required />
-            </div>
-
-            <div className="conn-test-section">
-              <button type="button" onClick={() => handleTestConnection(newAdapterHost, newAdapterPort)}
-                disabled={createTestStatus === 'testing'} className="btn-conn-test">
-                <RefreshCw size={14} className={createTestStatus === 'testing' ? 'spin' : ''} />
-                {createTestStatus === 'testing' ? 'Testing...' : 'Test Connection'}
-              </button>
-              {createTestStatus !== 'idle' && (
-                <div className={`conn-test-result is-${createTestStatus}`}>
-                  <div className="conn-test-result-header">
-                    {createTestStatus === 'testing' && <RefreshCw size={14} className="spin" />}
-                    {createTestStatus === 'passed' && <span>✓ Connection Pass</span>}
-                    {createTestStatus === 'failed' && <span>⚠️ Connection Failed</span>}
-                    {createTestStatus === 'testing' && <span>Testing connection...</span>}
-                  </div>
-                  {createTestMessage && <span className="conn-test-result-msg">{createTestMessage}</span>}
+            {newAdapterProtocol !== 'WEBHOOK' && (
+              <>
+                <div className="form-group form-group-flush">
+                  <label className="form-label form-label-bold">
+                    {newAdapterProtocol === 'MODBUS_RTU' ? 'Serial Port' : 'Connection Host / IP'}
+                  </label>
+                  <input type="text" className="form-input" 
+                    placeholder={newAdapterProtocol === 'MODBUS_RTU' ? 'e.g. COM3 or /dev/ttyUSB0' : 'e.g. 192.168.1.50 or localhost'}
+                    value={newAdapterHost} onChange={(e) => { setNewAdapterHost(e.target.value); setCreateTestStatus('idle'); setCreateTestMessage(''); }} required />
                 </div>
-              )}
-            </div>
+
+                <div className="form-group form-group-flush">
+                  <label className="form-label form-label-bold">
+                    {newAdapterProtocol === 'MODBUS_RTU' ? 'Baud Rate' : 'Port Number'}
+                  </label>
+                  <input type="number" className="form-input" value={newAdapterPort}
+                    onChange={(e) => { setNewAdapterPort(Number(e.target.value)); setCreateTestStatus('idle'); setCreateTestMessage(''); }} required />
+                </div>
+
+                {newAdapterProtocol !== 'MODBUS_RTU' && (
+                  <div className="conn-test-section">
+                    <button type="button" onClick={() => handleTestConnection(newAdapterHost, newAdapterPort)}
+                      disabled={createTestStatus === 'testing'} className="btn-conn-test">
+                      <RefreshCw size={14} className={createTestStatus === 'testing' ? 'spin' : ''} />
+                      {createTestStatus === 'testing' ? 'Testing...' : 'Test Connection'}
+                    </button>
+                    {createTestStatus !== 'idle' && (
+                      <div className={`conn-test-result is-${createTestStatus}`}>
+                        <div className="conn-test-result-header">
+                          {createTestStatus === 'testing' && <RefreshCw size={14} className="spin" />}
+                          {createTestStatus === 'passed' && <span>✓ Connection Pass</span>}
+                          {createTestStatus === 'failed' && <span>⚠️ Connection Failed</span>}
+                          {createTestStatus === 'testing' && <span>Testing connection...</span>}
+                        </div>
+                        {createTestMessage && <span className="conn-test-result-msg">{createTestMessage}</span>}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <div className="adapter-form-col">
             <h4 className="section-header-sm">
               {newAdapterProtocol === 'MODBUS_TCP' && 'Modbus TCP Settings'}
+              {newAdapterProtocol === 'MODBUS_RTU' && 'Modbus RTU Settings'}
+              {newAdapterProtocol === 'Ethernet/IP' && 'Ethernet/IP Settings'}
               {newAdapterProtocol === 'OPC_UA' && 'OPC UA Security Settings'}
               {newAdapterProtocol === 'MQTT' && 'MQTT Client Settings'}
+              {newAdapterProtocol === 'WEBHOOK' && 'REST Webhook Settings'}
             </h4>
 
             {newAdapterProtocol === 'MODBUS_TCP' && (
@@ -216,6 +261,70 @@ export default function CreateAdapterModal({
                   <label className="form-label">Max Retries</label>
                   <input type="number" min="0" max="10" className="form-input" value={newModbusRetries}
                     onChange={(e) => setNewModbusRetries(Math.max(0, Math.min(10, Number(e.target.value) || 0)))} required />
+                </div>
+              </div>
+            )}
+
+            {newAdapterProtocol === 'MODBUS_RTU' && (
+              <div className="form-grid-half">
+                <div className="form-group form-group-flush">
+                  <label className="form-label">Unit ID (1 - 255)</label>
+                  <input type="number" min="1" max="255" className="form-input" value={newModbusUnitId}
+                    onChange={(e) => setNewModbusUnitId(Math.max(1, Math.min(255, Number(e.target.value) || 1)))} required />
+                </div>
+                <div className="form-group form-group-flush">
+                  <label className="form-label">Parity</label>
+                  <CustomSelect value={newModbusRtuParity} onChange={setNewModbusRtuParity} options={[
+                    { value: 'None', label: 'None' },
+                    { value: 'Odd', label: 'Odd' },
+                    { value: 'Even', label: 'Even' },
+                    { value: 'Mark', label: 'Mark' },
+                    { value: 'Space', label: 'Space' }
+                  ]} />
+                </div>
+                <div className="form-group form-group-flush">
+                  <label className="form-label">Stop Bits</label>
+                  <CustomSelect value={newModbusRtuStopBits} onChange={setNewModbusRtuStopBits} options={[
+                    { value: 'One', label: 'One' },
+                    { value: 'Two', label: 'Two' },
+                    { value: 'OnePointFive', label: 'OnePointFive' },
+                    { value: 'None', label: 'None' }
+                  ]} />
+                </div>
+                <div className="form-group form-group-flush">
+                  <label className="form-label">Handshake</label>
+                  <CustomSelect value={newModbusRtuHandshake} onChange={setNewModbusRtuHandshake} options={[
+                    { value: 'None', label: 'None' },
+                    { value: 'XOnXOff', label: 'XOnXOff' },
+                    { value: 'RequestToSend', label: 'RequestToSend' },
+                    { value: 'RequestToSendXOnXOff', label: 'RequestToSendXOnXOff' }
+                  ]} />
+                </div>
+              </div>
+            )}
+
+            {newAdapterProtocol === 'Ethernet/IP' && (
+              <div className="form-stack-sm">
+                <div className="form-group form-group-flush">
+                  <label className="form-label">PLC Type</label>
+                  <CustomSelect value={newPlcType} onChange={setNewPlcType} options={[
+                    { value: 'ControlLogix', label: 'ControlLogix' },
+                    { value: 'CompactLogix', label: 'CompactLogix' },
+                    { value: 'Micro800', label: 'Micro800' },
+                    { value: 'PLC5', label: 'PLC5' },
+                    { value: 'SLC500', label: 'SLC500' },
+                    { value: 'MicroLogix', label: 'MicroLogix' }
+                  ]} />
+                </div>
+                <div className="form-group form-group-flush">
+                  <label className="form-label">CPU Path / Slot</label>
+                  <input type="text" className="form-input" value={newPlcPath}
+                    onChange={(e) => setNewPlcPath(e.target.value)} required />
+                </div>
+                <div className="form-group form-group-flush">
+                  <label className="form-label">Timeout (ms)</label>
+                  <input type="number" min="50" max="30000" className="form-input" value={newPlcTimeoutMs}
+                    onChange={(e) => setNewPlcTimeoutMs(Math.max(50, Number(e.target.value) || 5000))} required />
                 </div>
               </div>
             )}
@@ -307,6 +416,40 @@ export default function CreateAdapterModal({
                     <label className="form-label">Password (Optional)</label>
                     <input type="password" className="form-input" placeholder="••••••••" value={newMqttPassword} onChange={(e) => setNewMqttPassword(e.target.value)} />
                   </div>
+                </div>
+              </div>
+            )}
+
+            {newAdapterProtocol === 'WEBHOOK' && (
+              <div className="form-stack-sm">
+                <div className="form-group form-group-flush">
+                  <label className="form-label form-label-bold">Security Token</label>
+                  <div className="webhook-token-display-row" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      className="form-input text-mono"
+                      readOnly
+                      value={webhookToken}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs"
+                      style={{ padding: '0.4rem 0.75rem', whiteSpace: 'nowrap' }}
+                      onClick={() => setNewAdapterProtocol('WEBHOOK')} // Force update / state refresh or do actual regen
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs"
+                      style={{ padding: '0.4rem 0.75rem', whiteSpace: 'nowrap' }}
+                      onClick={() => setWebhookToken('wh_tok_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15))}
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                  <span className="text-secondary text-xs" style={{ display: 'block', marginTop: '0.25rem' }}>
+                    This token is generated automatically. It must be included in the webhook URL query string to authorize payload delivery.
+                  </span>
                 </div>
               </div>
             )}

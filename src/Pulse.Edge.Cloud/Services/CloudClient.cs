@@ -30,21 +30,32 @@ public class CloudClient
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    public record RegisterRequest(string DeviceId, string Hostname, string AgentVersion, string ClaimSecretHash);
-    public record RegisterResponse(string EdgeId, string Status);
+    public record OrganizationDto(string Id, string Name);
+    public record SiteDto(string Id, string Name);
+
+    public record RegisterRequest(string DeviceId, string Hostname, string AgentVersion, string ClaimSecretHash, string PairingTokenHash);
+    public record RegisterResponse(string EdgeId, string Status, string? ShortCode, string? PairingExpiresAt, string? PairingBaseUrl);
+    public record RegisterResult(string EdgeId, string Status, string? ShortCode, DateTime? PairingExpiresAt, string? PairingBaseUrl);
     
     public record ClaimRequest(string DeviceId, string ClaimSecret);
     public class ClaimResponse
     {
         public string Status { get; set; } = string.Empty;
         public string? ApiKey { get; set; }
+        public OrganizationDto? Organization { get; set; }
+        public SiteDto? Site { get; set; }
         public string? Error { get; set; }
     }
+    public record ClaimResult(
+        string Status, 
+        string? ApiKey, 
+        string? OrgId, 
+        string? OrgName, 
+        string? SiteId, 
+        string? SiteName);
 
     public record HeartbeatRequest(string AgentVersion);
     public record HeartbeatResponse(bool Ok, string Status);
-
-    public record SiteDto(string Id, string Name);
 
     public record CloudMetricMetadataDto(
         string AdapterId,
@@ -61,11 +72,18 @@ public class CloudClient
     public record CloudMetricDto(string Name, string Protocol, CloudMetricMetadataDto Metadata);
 
     public record CloudDataSourceDto(string Id, string ExternalId, string Name, CloudMetricDto[] Metrics);
-    public record ConfigResponse(string EdgeId, string Status, SiteDto? Site, List<CloudDataSourceDto>? DataSources);
+    public record ConfigResponse(string EdgeId, string Status, OrganizationDto? Organization, SiteDto? Site, List<CloudDataSourceDto>? DataSources);
 
     public record DeclareDataSourceRequest(string ExternalId, string Name, CloudMetricDto[] Metrics);
 
-    public record ConfigResult(bool Success, HttpStatusCode StatusCode, string SiteId, string SiteName, List<CloudDataSourceDto> DataSources);
+    public record ConfigResult(
+        bool Success, 
+        HttpStatusCode StatusCode, 
+        string OrgId, 
+        string OrgName, 
+        string SiteId, 
+        string SiteName, 
+        List<CloudDataSourceDto> DataSources);
 
     public CloudClient(ILogger<CloudClient> logger)
     {
@@ -87,21 +105,31 @@ public class CloudClient
         return new Uri(new Uri(baseUrl), path);
     }
 
+    private static string ComputeSha256Hash(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return string.Empty;
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(input));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
     // Real call: POST /edge/register
-    public async Task<(string EdgeId, string Status)> RegisterDeviceAsync(string baseUrl, string deviceId, string hostname, string agentVersion, string claimSecret)
+    public async Task<RegisterResult?> RegisterDeviceAsync(
+        string baseUrl, 
+        string deviceId, 
+        string hostname, 
+        string agentVersion, 
+        string claimSecret, 
+        string pairingToken)
     {
         _logger.LogInformation("Sending device registration request to PULSE Cloud ({BaseUrl})...", baseUrl);
         
         try
         {
-            string claimSecretHash = "";
-            using (var sha256 = System.Security.Cryptography.SHA256.Create())
-            {
-                var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(claimSecret));
-                claimSecretHash = Convert.ToHexString(bytes).ToLowerInvariant();
-            }
+            string claimSecretHash = ComputeSha256Hash(claimSecret);
+            string pairingTokenHash = ComputeSha256Hash(pairingToken);
 
-            var req = new RegisterRequest(deviceId, hostname, agentVersion, claimSecretHash);
+            var req = new RegisterRequest(deviceId, hostname, agentVersion, claimSecretHash, pairingTokenHash);
             var response = await _httpClient.PostAsJsonAsync(GetUri(baseUrl, "/edge/register"), req);
             
             if (response.IsSuccessStatusCode)
@@ -109,8 +137,18 @@ public class CloudClient
                 var res = await response.Content.ReadFromJsonAsync<RegisterResponse>();
                 if (res != null)
                 {
-                    _logger.LogInformation("Registration request acknowledged. Cloud EdgeId: {EdgeId}, Status: {Status}", res.EdgeId, res.Status);
-                    return (res.EdgeId, res.Status);
+                    _logger.LogInformation("Registration request acknowledged. Cloud EdgeId: {EdgeId}, Status: {Status}, ShortCode: {ShortCode}", res.EdgeId, res.Status, res.ShortCode);
+                    
+                    DateTime? parsedExpiry = null;
+                    if (!string.IsNullOrEmpty(res.PairingExpiresAt))
+                    {
+                        if (DateTime.TryParse(res.PairingExpiresAt, out var dt))
+                        {
+                            parsedExpiry = dt.ToUniversalTime();
+                        }
+                    }
+
+                    return new RegisterResult(res.EdgeId, res.Status, res.ShortCode, parsedExpiry, res.PairingBaseUrl);
                 }
             }
             
@@ -122,11 +160,11 @@ public class CloudClient
             _logger.LogError(ex, "Exception during device registration to {BaseUrl}", baseUrl);
         }
         
-        return (string.Empty, "pending");
+        return null;
     }
 
     // Real call: POST /edge/claim
-    public async Task<(string Status, string? ApiKey)> ClaimKeyAsync(string baseUrl, string deviceId, string claimSecret)
+    public async Task<ClaimResult> ClaimKeyAsync(string baseUrl, string deviceId, string claimSecret)
     {
         _logger.LogInformation("Claiming API Key from PULSE Cloud ({BaseUrl}) for device {DeviceId}...", baseUrl, deviceId);
         
@@ -141,7 +179,13 @@ public class CloudClient
                 if (res != null)
                 {
                     _logger.LogInformation("Claim request successful. Status: {Status}", res.Status);
-                    return (res.Status, res.ApiKey);
+                    return new ClaimResult(
+                        res.Status, 
+                        res.ApiKey, 
+                        res.Organization?.Id, 
+                        res.Organization?.Name, 
+                        res.Site?.Id, 
+                        res.Site?.Name);
                 }
             }
             else
@@ -149,17 +193,17 @@ public class CloudClient
                 if (response.StatusCode == HttpStatusCode.Unauthorized)
                 {
                     _logger.LogWarning("Claim request failed: 401 Unauthorized (invalid device or secret)");
-                    return ("unauthorized", null);
+                    return new ClaimResult("unauthorized", null, null, null, null, null);
                 }
                 if (response.StatusCode == HttpStatusCode.Forbidden)
                 {
                     _logger.LogWarning("Claim request failed: 403 Forbidden (device revoked)");
-                    return ("revoked", null);
+                    return new ClaimResult("revoked", null, null, null, null, null);
                 }
                 if (response.StatusCode == HttpStatusCode.Conflict)
                 {
                     _logger.LogWarning("Claim request failed: 409 Conflict (already claimed)");
-                    return ("conflict", null);
+                    return new ClaimResult("conflict", null, null, null, null, null);
                 }
 
                 var err = await response.Content.ReadAsStringAsync();
@@ -171,7 +215,7 @@ public class CloudClient
             _logger.LogError(ex, "Exception during claim request to {BaseUrl}", baseUrl);
         }
         
-        return ("pending", null);
+        return new ClaimResult("pending", null, null, null, null, null);
     }
 
     // Real call: GET /edge/config
@@ -195,6 +239,8 @@ public class CloudClient
                     return new ConfigResult(
                         Success: true,
                         StatusCode: response.StatusCode,
+                        OrgId: res.Organization?.Id ?? "",
+                        OrgName: res.Organization?.Name ?? "",
                         SiteId: res.Site?.Id ?? "",
                         SiteName: res.Site?.Name ?? "",
                         DataSources: res.DataSources ?? new List<CloudDataSourceDto>()
@@ -207,12 +253,12 @@ public class CloudClient
                 _logger.LogWarning("Failed to fetch configuration: {StatusCode} - {Error}", response.StatusCode, err);
             }
             
-            return new ConfigResult(false, response.StatusCode, "", "", new List<CloudDataSourceDto>());
+            return new ConfigResult(false, response.StatusCode, "", "", "", "", new List<CloudDataSourceDto>());
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Exception during config pull from {BaseUrl}", baseUrl);
-            return new ConfigResult(false, HttpStatusCode.InternalServerError, "", "", new List<CloudDataSourceDto>());
+            return new ConfigResult(false, HttpStatusCode.InternalServerError, "", "", "", "", new List<CloudDataSourceDto>());
         }
     }
 

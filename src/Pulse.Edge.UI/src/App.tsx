@@ -147,7 +147,8 @@ export default function App() {
       if (!hasInitializedSettingsRef.current) {
         setCloudEndpoint(settingsData.cloudEndpoint || 'http://localhost:3000');
         setEdgeSerial(settingsData.serialNumber || '');
-        setIsOnboarded(!!settingsData.serialNumber);
+        const hasApiKey = settingsData.apiKey && settingsData.apiKey !== 'None';
+        setIsOnboarded(!!settingsData.serialNumber && hasApiKey);
         hasInitializedSettingsRef.current = true;
       }
       setDatasources(dsData);

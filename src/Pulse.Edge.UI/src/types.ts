@@ -22,7 +22,7 @@ export interface DashboardData {
 export interface DriverAdapter {
   id: string;
   name: string;
-  protocol: string; // "OPC_UA", "MODBUS_TCP", "MQTT"
+  protocol: string; // "OPC_UA", "MODBUS_TCP", "MQTT", "Ethernet/IP"
   host: string;
   port: number;
   configJson: string;

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -23,6 +23,7 @@
     <ProjectReference Include="..\Pulse.Edge.Agent\Pulse.Edge.Agent.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Cloud\Pulse.Edge.Cloud.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Protocols.MqttProtocol\Pulse.Edge.Protocols.MqttProtocol.csproj" />
+    <ProjectReference Include="..\Pulse.Edge.Protocols.LibPlcTag\Pulse.Edge.Protocols.LibPlcTag.csproj" />
   </ItemGroup>
 
 </Project>

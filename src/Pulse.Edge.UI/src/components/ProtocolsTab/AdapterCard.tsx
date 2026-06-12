@@ -28,6 +28,8 @@ export default function AdapterCard({
 }: AdapterCardProps) {
   const isActive = adapter.status === 'Connected' && adapter.isEnabled;
   const adapterMqttDevices = mqttDevices.filter(d => d.adapterId === adapter.id);
+  let config: Record<string, any> = {};
+  try { config = JSON.parse(adapter.configJson || '{}'); } catch {}
 
   const handleDeleteMqttDevice = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this MQTT Device? Any associated metrics will be unlinked.')) {
@@ -63,19 +65,55 @@ export default function AdapterCard({
             <span className="adapter-info-label">Protocol: </span>
             <span className="badge primary badge-protocol">{adapter.protocol}</span>
           </div>
-          <div className="adapter-info-row">
-            <span className="adapter-info-label">Host: </span>
-            <span className="adapter-info-mono">{adapter.host}</span>
-          </div>
-          <div>
-            <span className="adapter-info-label">Port: </span>
-            <span className="adapter-info-mono">{adapter.port}</span>
-          </div>
+          {adapter.protocol !== 'WEBHOOK' ? (
+            <>
+              <div className="adapter-info-row">
+                <span className="adapter-info-label">
+                  {adapter.protocol === 'MODBUS_RTU' ? 'Serial Port: ' : 'Host: '}
+                </span>
+                <span className="adapter-info-mono">{adapter.host}</span>
+              </div>
+              <div>
+                <span className="adapter-info-label">
+                  {adapter.protocol === 'MODBUS_RTU' ? 'Baud Rate: ' : 'Port: '}
+                </span>
+                <span className="adapter-info-mono">{adapter.port}</span>
+              </div>
+            </>
+          ) : (
+            <div className="webhook-copiable-url-display" style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
+              <span className="adapter-info-label">Webhook URL: </span>
+              <div style={{ display: 'flex', gap: '0.25rem', marginTop: '0.25rem' }}>
+                <input
+                  type="text"
+                  readOnly
+                  value={`${window.location.origin}/api/webhooks/receive/${adapter.id}?token=${config.Token || ''}`}
+                  className="form-input text-mono text-xs"
+                  style={{ flex: 1, padding: '0.25rem 0.5rem', height: 'auto', background: 'var(--neutral-dim)' }}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary text-xs"
+                  style={{ padding: '0.25rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/receive/${adapter.id}?token=${config.Token || ''}`);
+                      toast.success('Webhook URL copied!');
+                    } catch {
+                      toast.error('Failed to copy');
+                    }
+                  }}
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="adapter-info-section">
             <span className="adapter-config-label">Configuration Parameters:</span>
             {(() => {
-              let config: Record<string, unknown> = {};
+              let config: Record<string, any> = {};
               let hasError = false;
               try { config = JSON.parse(adapter.configJson || '{}'); } catch { hasError = true; }
 
@@ -89,6 +127,15 @@ export default function AdapterCard({
                     <span className="badge neutral badge-config">Unit ID: {String(config.UnitId ?? 1)}</span>
                     <span className="badge neutral badge-config">Timeout: {String(config.TimeoutMs ?? 1000)} ms</span>
                     <span className="badge neutral badge-config">Retries: {String(config.Retries ?? 3)}</span>
+                  </div>
+                );
+              } else if (adapter.protocol === 'MODBUS_RTU') {
+                return (
+                  <div className="adapter-badge-group">
+                    <span className="badge neutral badge-config">Unit ID: {String(config.UnitId ?? 1)}</span>
+                    <span className="badge neutral badge-config">Parity: {String(config.Parity ?? 'None')}</span>
+                    <span className="badge neutral badge-config">Stop Bits: {String(config.StopBits ?? 'One')}</span>
+                    <span className="badge neutral badge-config">Handshake: {String(config.Handshake ?? 'None')}</span>
                   </div>
                 );
               } else if (adapter.protocol === 'OPC_UA') {
@@ -109,6 +156,24 @@ export default function AdapterCard({
                       <span className="badge neutral badge-config">Prefix: {String(config.TopicPrefix)}</span>
                     )}
                     <span className="badge neutral badge-config">Auth: {hasAuth ? 'Credentials' : 'Anonymous'}</span>
+                  </div>
+                );
+              } else if (adapter.protocol === 'Ethernet/IP') {
+                return (
+                  <div className="adapter-badge-group">
+                    <span className="badge neutral badge-config">PLC: {String(config.PlcType ?? 'ControlLogix')}</span>
+                    <span className="badge neutral badge-config">Protocol: {String(config.Protocol ?? 'ab_eip')}</span>
+                    <span className="badge neutral badge-config">Path: {String(config.Path ?? '1,0')}</span>
+                    <span className="badge neutral badge-config">Timeout: {String(config.TimeoutMs ?? 5000)} ms</span>
+                  </div>
+                );
+              } else if (adapter.protocol === 'WEBHOOK') {
+                return (
+                  <div className="adapter-badge-group">
+                    <span className="badge neutral badge-config">Token: {String(config.Token || '').substring(0, 12)}...</span>
+                    {config.LastSeen && (
+                      <span className="badge neutral badge-config">Last Seen: {new Date(config.LastSeen).toLocaleTimeString()}</span>
+                    )}
                   </div>
                 );
               }

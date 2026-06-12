@@ -4,6 +4,8 @@ import type { useToast } from '../../hooks/useToast';
 import CustomSelect from '../CustomSelect';
 import OpcBrowserModal from './OpcBrowserModal';
 import MqttBrowserModal from './MqttBrowserModal';
+import WebhookBrowserModal from './WebhookBrowserModal';
+import EthernetIpBrowserModal from './EthernetIpBrowserModal';
 import ModalShell from '../ModalShell';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
@@ -36,13 +38,21 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
   const [newDpMqttJsonPath, setNewDpMqttJsonPath] = useState('');
   const [isOpcBrowserOpen, setIsOpcBrowserOpen] = useState(false);
   const [isMqttBrowserOpen, setIsMqttBrowserOpen] = useState(false);
+  const [isWebhookBrowserOpen, setIsWebhookBrowserOpen] = useState(false);
+  const [isEipBrowserOpen, setIsEipBrowserOpen] = useState(false);
 
   const handleCreateAdapterChange = (adapterId: string) => {
     setNewDpAdapterId(adapterId);
     setNewDpMqttDeviceId('');
     const selected = adapters.find(a => a.id === adapterId);
-    if (selected?.protocol !== 'MODBUS_TCP') setNewDpByteOrder('ABCD');
-    else setNewDpByteOrder(newDpDataType === 'Int16' || newDpDataType === 'UInt16' ? 'AB' : 'ABCD');
+    if (selected?.protocol === 'WEBHOOK') {
+      setNewDpMqttParseMode('JSON');
+      setNewDpByteOrder('ABCD');
+    } else if (selected?.protocol !== 'MODBUS_TCP') {
+      setNewDpByteOrder('ABCD');
+    } else {
+      setNewDpByteOrder(newDpDataType === 'Int16' || newDpDataType === 'UInt16' ? 'AB' : 'ABCD');
+    }
   };
 
   const handleCreateMqttDeviceChange = (devId: string) => {
@@ -131,10 +141,33 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
     setIsMqttBrowserOpen(true);
   };
 
+  const handleOpenWebhookBrowser = () => {
+    if (!newDpAdapterId) { toast.warning('Please select a Webhook adapter first.'); return; }
+    const adapter = adapters.find(a => a.id === newDpAdapterId);
+    if (!adapter || adapter.protocol !== 'WEBHOOK') { toast.warning('The selected adapter is not a Webhook adapter.'); return; }
+    setIsWebhookBrowserOpen(true);
+  };
+
+  const handleOpenEipBrowser = () => {
+    if (!newDpAdapterId) { toast.warning('Please select an Ethernet/IP adapter first.'); return; }
+    const adapter = adapters.find(a => a.id === newDpAdapterId);
+    if (!adapter || adapter.protocol !== 'Ethernet/IP') { toast.warning('The selected adapter is not an Ethernet/IP adapter.'); return; }
+    setIsEipBrowserOpen(true);
+  };
+
   if (!isOpen) return null;
 
   const activeAdapter = adapters.find(a => a.id === newDpAdapterId);
   const protocol = activeAdapter?.protocol;
+  let plcType = '';
+  if (activeAdapter && protocol === 'Ethernet/IP' && activeAdapter.configJson) {
+    try {
+      const config = JSON.parse(activeAdapter.configJson);
+      plcType = config.PlcType || '';
+    } catch (e) {}
+  }
+  const isBrowseSupported = protocol === 'Ethernet/IP' &&
+    (plcType === 'ControlLogix' || plcType === 'CompactLogix' || plcType === 'Micro800');
 
   const stepTitle =
     wizardStep === 1 ? 'Step 1: Identify the connection source and tag address details.' :
@@ -161,7 +194,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
               <span className={`wizard-step-circle ${wizardStep >= 2 ? 'is-done' : 'is-pending'}`}>2</span>
               <span className={`wizard-step-label ${wizardStep === 2 ? 'is-current' : 'is-pending'}`}>Data Type</span>
             </div>
-            {protocol !== 'MQTT' && (
+            {protocol !== 'MQTT' && protocol !== 'WEBHOOK' && (
               <>
                 <div className="wizard-step-line" />
                 <div className="wizard-step-group">
@@ -202,16 +235,20 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                   <div className="form-group form-group-flush">
                     <label className="form-label form-label-bold">
                       {protocol === 'MODBUS_TCP' && 'Modbus Register Address'}
+                      {protocol === 'Ethernet/IP' && 'PLC Tag Name'}
                       {protocol === 'OPC_UA' && 'OPC UA Node ID'}
                       {protocol === 'MQTT' && (newDpMqttDeviceId
                         ? (mqttDevices.find(d => d.id === newDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'JSON Path (from device payload)' : 'MQTT Sub-topic or Metric Name')
                         : 'MQTT Topic')}
+                      {protocol === 'WEBHOOK' && 'JSON Path (from webhook payload)'}
                     </label>
                     <div className="address-input-row">
                       <input className="form-input address-input-mono" type="text"
                         placeholder={
                           protocol === 'MODBUS_TCP' ? 'e.g. 40001 (Holding Register) or 30005 (Input Register)' :
+                          protocol === 'Ethernet/IP' ? 'e.g. PROGRAM:Main.Machine_Speed or MyGlobalTag' :
                           protocol === 'OPC_UA' ? 'e.g. ns=2;s=Machine_Temperature' :
+                          protocol === 'WEBHOOK' ? 'e.g. $.temperature or $.sensors.humidity' :
                           newDpMqttDeviceId
                             ? (mqttDevices.find(d => d.id === newDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'e.g. $.temperature or $.sensors.humidity' : 'e.g. temperature')
                             : 'e.g. factory/casepacker/temperature'
@@ -222,6 +259,12 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                       )}
                       {protocol === 'MQTT' && (
                         <button type="button" onClick={handleOpenMqttBrowser} className="btn-browse">Browse Broker</button>
+                      )}
+                      {protocol === 'WEBHOOK' && (
+                        <button type="button" onClick={handleOpenWebhookBrowser} className="btn-browse">Browse Payload</button>
+                      )}
+                      {isBrowseSupported && (
+                        <button type="button" onClick={handleOpenEipBrowser} className="btn-browse">Browse PLC</button>
                       )}
                     </div>
                   </div>
@@ -287,6 +330,22 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                 </>
               )}
 
+              {protocol === 'WEBHOOK' && (
+                <>
+                  <div className="form-group form-group-flush">
+                    <label className="form-label form-label-bold">Parse Mode</label>
+                    <CustomSelect value={newDpMqttParseMode} onChange={setNewDpMqttParseMode} options={[
+                      { value: 'JSON', label: 'JSON Parser' }
+                    ]} />
+                  </div>
+                  <div className="form-group form-group-flush">
+                    <label className="form-label form-label-bold">JSON Path / Key</label>
+                    <input className="form-input text-mono" type="text" placeholder="e.g. $.sensors.temperature or temperature"
+                      value={newDpAddress} onChange={(e) => { setNewDpAddress(e.target.value); setNewDpMqttJsonPath(e.target.value); }} required />
+                  </div>
+                </>
+              )}
+
               {protocol === 'MODBUS_TCP' && (
                 <div className="form-group form-group-flush">
                   <label className="form-label form-label-bold">Byte Order / Endianness Swap</label>
@@ -336,7 +395,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
               <button type="button" onClick={onClose} className="btn-secondary btn-flex-1">Cancel</button>
             )}
             {(() => {
-              const isLastStep = protocol === 'MQTT' ? wizardStep === 2 : wizardStep === 3;
+              const isLastStep = (protocol === 'MQTT' || protocol === 'WEBHOOK') ? wizardStep === 2 : wizardStep === 3;
               const isNextDisabled = wizardStep === 1 && (!newDpAdapterId || !newDpAddress.trim());
 
               if (isLastStep) {
@@ -381,6 +440,24 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
         toast={toast}
         onSaveSuccess={() => { setIsMqttBrowserOpen(false); onClose(); fetchData(); }}
         selectedMqttDeviceId={newDpMqttDeviceId}
+      />
+
+      <WebhookBrowserModal
+        isOpen={isWebhookBrowserOpen}
+        onClose={() => setIsWebhookBrowserOpen(false)}
+        adapterId={newDpAdapterId}
+        adapters={adapters}
+        toast={toast}
+        onSaveSuccess={() => { setIsWebhookBrowserOpen(false); onClose(); fetchData(); }}
+      />
+
+      <EthernetIpBrowserModal
+        isOpen={isEipBrowserOpen}
+        onClose={() => setIsEipBrowserOpen(false)}
+        adapterId={newDpAdapterId}
+        adapters={adapters}
+        toast={toast}
+        onSaveSuccess={() => { setIsEipBrowserOpen(false); onClose(); fetchData(); }}
       />
     </>
   );

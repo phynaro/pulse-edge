@@ -51,8 +51,14 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
     setEditDpAdapterId(adapterId);
     setEditDpMqttDeviceId('');
     const selected = adapters.find(a => a.id === adapterId);
-    if (selected?.protocol !== 'MODBUS_TCP') setEditDpByteOrder('ABCD');
-    else setEditDpByteOrder(editDpDataType === 'Int16' || editDpDataType === 'UInt16' ? 'AB' : 'ABCD');
+    if (selected?.protocol === 'WEBHOOK') {
+      setEditDpMqttParseMode('JSON');
+      setEditDpByteOrder('ABCD');
+    } else if (selected?.protocol !== 'MODBUS_TCP') {
+      setEditDpByteOrder('ABCD');
+    } else {
+      setEditDpByteOrder(editDpDataType === 'Int16' || editDpDataType === 'UInt16' ? 'AB' : 'ABCD');
+    }
   };
 
   const handleEditMqttDeviceChange = (devId: string) => {
@@ -124,18 +130,22 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
         <div className="form-group form-group-flush">
           <label className="form-label form-label-bold">
             {protocol === 'MODBUS_TCP' ? 'Modbus Register Address' :
+             protocol === 'Ethernet/IP' ? 'PLC Tag Name' :
              protocol === 'OPC_UA' ? 'OPC UA Node ID' :
              protocol === 'MQTT' ? (editDpMqttDeviceId
                ? (mqttDevices.find(d => d.id === editDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'JSON Path (from device payload)' : 'MQTT Sub-topic or Metric Name')
-               : 'MQTT Topic') : 'Tag Address'}
+               : 'MQTT Topic') :
+             protocol === 'WEBHOOK' ? 'JSON Path (from webhook payload)' : 'Tag Address'}
           </label>
           <input className="form-input text-mono" type="text"
             placeholder={protocol === 'MODBUS_TCP' ? 'e.g. 40001 or 30005' :
+              protocol === 'Ethernet/IP' ? 'e.g. PROGRAM:Main.Machine_Speed or MyGlobalTag' :
               protocol === 'OPC_UA' ? 'e.g. ns=2;s=Temperature' :
+              protocol === 'WEBHOOK' ? 'e.g. $.temperature or $.sensors.humidity' :
               protocol === 'MQTT' ? (editDpMqttDeviceId
                 ? (mqttDevices.find(d => d.id === editDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'e.g. $.temperature or $.sensors.humidity' : 'e.g. temperature')
                 : 'e.g. factory/casepacker/temperature') : 'e.g. Address'}
-            value={editDpAddress} onChange={(e) => setEditDpAddress(e.target.value)} required />
+            value={editDpAddress} onChange={(e) => { setEditDpAddress(e.target.value); if (protocol === 'WEBHOOK') setEditDpMqttJsonPath(e.target.value); }} required />
         </div>
 
         <div className="form-group form-group-flush">
@@ -195,6 +205,22 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
                   value={editDpMqttJsonPath} onChange={(e) => setEditDpMqttJsonPath(e.target.value)} required />
               </div>
             )}
+          </>
+        )}
+
+        {protocol === 'WEBHOOK' && (
+          <>
+            <div className="form-group form-group-flush">
+              <label className="form-label form-label-bold">Parse Mode</label>
+              <CustomSelect value={editDpMqttParseMode} onChange={setEditDpMqttParseMode} options={[
+                { value: 'JSON', label: 'JSON Parser' }
+              ]} />
+            </div>
+            <div className="form-group form-group-flush">
+              <label className="form-label form-label-bold">JSON Path / Key</label>
+              <input className="form-input text-mono" type="text" placeholder="e.g. $.sensors.temperature or temperature"
+                value={editDpAddress} onChange={(e) => { setEditDpAddress(e.target.value); setEditDpMqttJsonPath(e.target.value); }} required />
+            </div>
           </>
         )}
 

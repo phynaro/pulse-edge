@@ -4,6 +4,7 @@ using Pulse.Edge.Cloud.Services;
 using Pulse.Edge.Protocols.OpcUa;
 using Pulse.Edge.Protocols.MqttProtocol;
 using Pulse.Edge.Protocols.Modbus;
+using Pulse.Edge.Protocols.LibPlcTag;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -18,6 +19,7 @@ builder.Services.AddSingleton<SyncService>();
 builder.Services.AddSingleton<OpcUaDriver>();
 builder.Services.AddSingleton<MqttDriver>();
 builder.Services.AddSingleton<ModbusDriver>();
+builder.Services.AddSingleton<LibPlcTagDriver>();
 
 // Register Background Worker
 builder.Services.AddHostedService<Worker>();

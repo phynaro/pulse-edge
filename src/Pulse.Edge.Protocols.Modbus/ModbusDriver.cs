@@ -1,6 +1,9 @@
 using System;
+using System.IO.Ports;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
+using System.Threading.Tasks;
 using FluentModbus;
 using Microsoft.Extensions.Logging;
 
@@ -9,9 +12,19 @@ namespace Pulse.Edge.Protocols.Modbus;
 public class ModbusDriver : IDisposable
 {
     private readonly ILogger<ModbusDriver> _logger;
-    private ModbusTcpClient? _client;
+    private ModbusClient? _client;
+    
+    // TCP specific configuration cache
     private string _activeHost = string.Empty;
     private int _activePort = 0;
+
+    // RTU specific configuration cache
+    private string _activePortName = string.Empty;
+    private int _activeBaudRate = 0;
+    private Parity _activeParity = Parity.None;
+    private int _activeDataBits = 8;
+    private StopBits _activeStopBits = StopBits.One;
+    private Handshake _activeHandshake = Handshake.None;
 
     public bool IsConnected => _client != null && _client.IsConnected;
 
@@ -21,6 +34,11 @@ public class ModbusDriver : IDisposable
     }
 
     public void Connect(string host, int port)
+    {
+        ConnectAsync(host, port).GetAwaiter().GetResult();
+    }
+
+    public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken = default)
     {
         // Strip out port if included in host string (e.g. "192.168.1.51:502")
         if (!string.IsNullOrEmpty(host) && host.Contains(':'))
@@ -33,7 +51,7 @@ public class ModbusDriver : IDisposable
             }
         }
 
-        if (_client != null && _client.IsConnected && _activeHost == host && _activePort == port)
+        if (_client is ModbusTcpClient && _client.IsConnected && _activeHost == host && _activePort == port)
         {
             return; // Already connected to this endpoint
         }
@@ -41,7 +59,6 @@ public class ModbusDriver : IDisposable
         Disconnect();
 
         _logger.LogInformation("Modbus TCP Driver: Initializing connection to Modbus Server at {Host}:{Port}...", host, port);
-        _client = new ModbusTcpClient();
         
         // Parse host to IP Address
         if (!IPAddress.TryParse(host, out var ipAddress))
@@ -49,7 +66,7 @@ public class ModbusDriver : IDisposable
             // If hostname, resolve to IP
             try
             {
-                var addresses = Dns.GetHostAddresses(host);
+                var addresses = await Dns.GetHostAddressesAsync(host, cancellationToken);
                 if (addresses.Length > 0)
                 {
                     // Prefer IPv4 for Modbus/industrial compatibility
@@ -68,37 +85,95 @@ public class ModbusDriver : IDisposable
             }
         }
 
-        _client.Connect(new IPEndPoint(ipAddress, port));
+        var tcpClient = new ModbusTcpClient();
+        await Task.Run(() => tcpClient.Connect(new IPEndPoint(ipAddress, port)), cancellationToken);
+        _client = tcpClient;
         _activeHost = host;
         _activePort = port;
         _logger.LogInformation("Modbus TCP Driver: Connected successfully to {Host}:{Port}.", host, port);
+    }
+
+    public void ConnectRtu(string portName, int baudRate, Parity parity = Parity.None, int dataBits = 8, StopBits stopBits = StopBits.One, Handshake handshake = Handshake.None)
+    {
+        if (_client is ModbusRtuClient && _client.IsConnected && 
+            _activePortName == portName && 
+            _activeBaudRate == baudRate && 
+            _activeParity == parity && 
+            _activeDataBits == dataBits && 
+            _activeStopBits == stopBits && 
+            _activeHandshake == handshake)
+        {
+            return; // Already configured and connected
+        }
+
+        Disconnect();
+
+        _logger.LogInformation("Modbus RTU Driver: Initializing serial port {PortName} at {BaudRate} baud...", portName, baudRate);
+        
+        var rtuClient = new ModbusRtuClient();
+        rtuClient.BaudRate = baudRate;
+        rtuClient.Parity = parity;
+        rtuClient.StopBits = stopBits;
+        rtuClient.Handshake = handshake;
+        
+        rtuClient.Connect(portName);
+        _client = rtuClient;
+        
+        _activePortName = portName;
+        _activeBaudRate = baudRate;
+        _activeParity = parity;
+        _activeDataBits = dataBits;
+        _activeStopBits = stopBits;
+        _activeHandshake = handshake;
+        
+        _logger.LogInformation("Modbus RTU Driver: Connected successfully to serial port {PortName}.", portName);
     }
 
     public void Disconnect()
     {
         if (_client != null)
         {
-            _logger.LogInformation("Modbus TCP Driver: Disconnecting from server...");
+            _logger.LogInformation("Modbus Driver: Disconnecting...");
             try
             {
-                _client.Disconnect();
+                if (_client.IsConnected)
+                {
+                    if (_client is ModbusTcpClient tcp)
+                    {
+                        tcp.Disconnect();
+                    }
+                    else if (_client is ModbusRtuClient rtu)
+                    {
+                        rtu.Close();
+                    }
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Exception thrown while disconnecting Modbus TCP client");
+                _logger.LogWarning(ex, "Exception thrown while disconnecting Modbus client");
             }
-            _client.Dispose();
+            if (_client is IDisposable disp)
+            {
+                disp.Dispose();
+            }
             _client = null;
             _activeHost = string.Empty;
             _activePort = 0;
+            _activePortName = string.Empty;
+            _activeBaudRate = 0;
         }
     }
 
     public double ReadRegister(string address, string dataType, byte unitId = 1, string byteOrder = "ABCD")
     {
+        return ReadRegisterAsync(address, dataType, unitId, byteOrder).GetAwaiter().GetResult();
+    }
+
+    public async Task<double> ReadRegisterAsync(string address, string dataType, byte unitId = 1, string byteOrder = "ABCD", CancellationToken cancellationToken = default)
+    {
         if (_client == null || !_client.IsConnected)
         {
-            throw new InvalidOperationException("Modbus TCP client is not connected.");
+            throw new InvalidOperationException("Modbus client is not connected.");
         }
 
         var (registerType, offset) = ParseAddress(address);
@@ -106,13 +181,13 @@ public class ModbusDriver : IDisposable
         switch (registerType)
         {
             case RegisterType.HoldingRegister:
-                return ReadHolding(offset, dataType, unitId, byteOrder);
+                return await ReadHoldingAsync(offset, dataType, unitId, byteOrder, cancellationToken);
             case RegisterType.InputRegister:
-                return ReadInput(offset, dataType, unitId, byteOrder);
+                return await ReadInputAsync(offset, dataType, unitId, byteOrder, cancellationToken);
             case RegisterType.Coil:
-                return ReadCoil(offset, unitId);
+                return await ReadCoilAsync(offset, unitId, cancellationToken);
             case RegisterType.DiscreteInput:
-                return ReadDiscrete(offset, unitId);
+                return await ReadDiscreteAsync(offset, unitId, cancellationToken);
             default:
                 throw new NotSupportedException($"Register type {registerType} is not supported.");
         }
@@ -129,6 +204,17 @@ public class ModbusDriver : IDisposable
         return result;
     }
 
+    private async Task<double> ReadHoldingAsync(int offset, string dataType, byte unitId, string byteOrder, CancellationToken cancellationToken)
+    {
+        if (_client == null) throw new InvalidOperationException("Client is null");
+        int numRegisters = GetNumRegisters(dataType);
+        var memory = await _client.ReadHoldingRegistersAsync<ushort>(unitId, offset, numRegisters, cancellationToken);
+        var registers = memory.ToArray();
+        var result = ConvertRegistersToDouble(registers, dataType, byteOrder);
+        LogRegisterDebug("HR", offset, registers, dataType, byteOrder, result);
+        return result;
+    }
+
     private double ReadInput(int offset, string dataType, byte unitId, string byteOrder)
     {
         if (_client == null) throw new InvalidOperationException("Client is null");
@@ -140,10 +226,32 @@ public class ModbusDriver : IDisposable
         return result;
     }
 
+    private async Task<double> ReadInputAsync(int offset, string dataType, byte unitId, string byteOrder, CancellationToken cancellationToken)
+    {
+        if (_client == null) throw new InvalidOperationException("Client is null");
+        int numRegisters = GetNumRegisters(dataType);
+        var memory = await _client.ReadInputRegistersAsync<ushort>(unitId, offset, numRegisters, cancellationToken);
+        var registers = memory.ToArray();
+        var result = ConvertRegistersToDouble(registers, dataType, byteOrder);
+        LogRegisterDebug("IR", offset, registers, dataType, byteOrder, result);
+        return result;
+    }
+
     private double ReadCoil(int offset, byte unitId)
     {
         if (_client == null) throw new InvalidOperationException("Client is null");
         var span = _client.ReadCoils(unitId, offset, 1);
+        double result = span[0] != 0 ? 1.0 : 0.0;
+        _logger.LogDebug("[Modbus] Coil @{Offset} | Raw: 0x{Raw:X2} | Processed: {Result}",
+            offset, (byte)span[0], result);
+        return result;
+    }
+
+    private async Task<double> ReadCoilAsync(int offset, byte unitId, CancellationToken cancellationToken)
+    {
+        if (_client == null) throw new InvalidOperationException("Client is null");
+        var memory = await _client.ReadCoilsAsync(unitId, offset, 1, cancellationToken);
+        var span = memory.Span;
         double result = span[0] != 0 ? 1.0 : 0.0;
         _logger.LogDebug("[Modbus] Coil @{Offset} | Raw: 0x{Raw:X2} | Processed: {Result}",
             offset, (byte)span[0], result);
@@ -160,6 +268,17 @@ public class ModbusDriver : IDisposable
         return result;
     }
 
+    private async Task<double> ReadDiscreteAsync(int offset, byte unitId, CancellationToken cancellationToken)
+    {
+        if (_client == null) throw new InvalidOperationException("Client is null");
+        var memory = await _client.ReadDiscreteInputsAsync(unitId, offset, 1, cancellationToken);
+        var span = memory.Span;
+        double result = span[0] != 0 ? 1.0 : 0.0;
+        _logger.LogDebug("[Modbus] DI @{Offset} | Raw: 0x{Raw:X2} | Processed: {Result}",
+            offset, (byte)span[0], result);
+        return result;
+    }
+
     // ─── Block-Read API (used by the polling loop for contiguous tag groups) ─────
 
     /// <summary>
@@ -169,10 +288,23 @@ public class ModbusDriver : IDisposable
     public ushort[] ReadBlockHolding(int startOffset, int wordCount, byte unitId = 1)
     {
         if (_client == null || !_client.IsConnected)
-            throw new InvalidOperationException("Modbus TCP client is not connected.");
+            throw new InvalidOperationException("Modbus client is not connected.");
 
         var span = _client.ReadHoldingRegisters<ushort>(unitId, startOffset, wordCount);
         var buf = span.ToArray();
+
+        _logger.LogDebug("[Modbus Block] HR @{Start}..{End} ({Count} word(s)) → {Bytes} bytes read",
+            startOffset, startOffset + wordCount - 1, wordCount, wordCount * 2);
+        return buf;
+    }
+
+    public async Task<ushort[]> ReadBlockHoldingAsync(int startOffset, int wordCount, byte unitId = 1, CancellationToken cancellationToken = default)
+    {
+        if (_client == null || !_client.IsConnected)
+            throw new InvalidOperationException("Modbus client is not connected.");
+
+        var memory = await _client.ReadHoldingRegistersAsync<ushort>(unitId, startOffset, wordCount, cancellationToken);
+        var buf = memory.ToArray();
 
         _logger.LogDebug("[Modbus Block] HR @{Start}..{End} ({Count} word(s)) → {Bytes} bytes read",
             startOffset, startOffset + wordCount - 1, wordCount, wordCount * 2);
@@ -185,10 +317,23 @@ public class ModbusDriver : IDisposable
     public ushort[] ReadBlockInput(int startOffset, int wordCount, byte unitId = 1)
     {
         if (_client == null || !_client.IsConnected)
-            throw new InvalidOperationException("Modbus TCP client is not connected.");
+            throw new InvalidOperationException("Modbus client is not connected.");
 
         var span = _client.ReadInputRegisters<ushort>(unitId, startOffset, wordCount);
         var buf = span.ToArray();
+
+        _logger.LogDebug("[Modbus Block] IR @{Start}..{End} ({Count} word(s)) → {Bytes} bytes read",
+            startOffset, startOffset + wordCount - 1, wordCount, wordCount * 2);
+        return buf;
+    }
+
+    public async Task<ushort[]> ReadBlockInputAsync(int startOffset, int wordCount, byte unitId = 1, CancellationToken cancellationToken = default)
+    {
+        if (_client == null || !_client.IsConnected)
+            throw new InvalidOperationException("Modbus client is not connected.");
+
+        var memory = await _client.ReadInputRegistersAsync<ushort>(unitId, startOffset, wordCount, cancellationToken);
+        var buf = memory.ToArray();
 
         _logger.LogDebug("[Modbus Block] IR @{Start}..{End} ({Count} word(s)) → {Bytes} bytes read",
             startOffset, startOffset + wordCount - 1, wordCount, wordCount * 2);

@@ -69,6 +69,8 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
       if (tagProtocolFilter === 'OPC UA') matchesProto = adp?.protocol === 'OPC_UA';
       else if (tagProtocolFilter === 'MQTT') matchesProto = adp?.protocol === 'MQTT';
       else if (tagProtocolFilter === 'Modbus TCP') matchesProto = adp?.protocol === 'MODBUS_TCP';
+      else if (tagProtocolFilter === 'Modbus RTU') matchesProto = adp?.protocol === 'MODBUS_RTU';
+      else if (tagProtocolFilter === 'Ethernet/IP') matchesProto = adp?.protocol === 'Ethernet/IP';
     }
     return matchesSearch && matchesProto;
   });
@@ -154,7 +156,7 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
         </div>
 
         <div className="tag-protocol-chips">
-          {['All', 'OPC UA', 'MQTT', 'Modbus TCP'].map((cat) => (
+          {['All', 'OPC UA', 'MQTT', 'Modbus TCP', 'Modbus RTU', 'Ethernet/IP'].map((cat) => (
             <button
               key={cat}
               onClick={() => setTagProtocolFilter(cat)}

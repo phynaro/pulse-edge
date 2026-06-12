@@ -10,6 +10,7 @@ using Pulse.Edge.Cloud.Services;
 using Pulse.Edge.Protocols.OpcUa;
 using Pulse.Edge.Protocols.MqttProtocol;
 using Pulse.Edge.Protocols.Modbus;
+using Pulse.Edge.Protocols.LibPlcTag;
 using Pulse.Edge.Storage;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +25,7 @@ public class Worker : BackgroundService
     private readonly OpcUaDriver _opcUaDriver;
     private readonly MqttDriver _mqttDriver;
     private readonly ModbusDriver _modbusDriver;
+    private readonly LibPlcTagDriver _libPlcTagDriver;
     private readonly SyncService _syncService;
 
     private DeviceConfig? _deviceConfig;
@@ -31,15 +33,24 @@ public class Worker : BackgroundService
     private string _activeMqttHost = string.Empty;
     private int _activeMqttPort = 0;
     private List<string> _activeMqttTopics = new();
+    private string _activeModbusProtocol = "MODBUS_TCP";
     private string _activeModbusHost = string.Empty;
     private int _activeModbusPort = 0;
+    private string _activeModbusConfigJson = string.Empty;
+    private string _activeLibPlcTagHost = string.Empty;
+    private string _activeLibPlcTagPlcType = "ControlLogix";
+    private string _activeLibPlcTagProtocol = "ab_eip";
+    private string _activeLibPlcTagPath = "1,0";
+    private int _activeLibPlcTagTimeoutMs = 5000;
     private bool _activeMqttIsEnabled = false;
     private bool _activeOpcUaIsEnabled = false;
     private bool _activeModbusIsEnabled = false;
+    private bool _activeLibPlcTagIsEnabled = false;
     private bool _isMqttConnecting = false;
     private string _opcUaAdapterId = "adp-opcua-1";
     private string _mqttAdapterId = "adp-mqtt-1";
     private string _modbusAdapterId = "adp-modbus-1";
+    private string _libPlcTagAdapterId = "adp-libplctag-1";
 
     private DateTime _lastMqttPublish = DateTime.MinValue;
     private DateTime _lastHeartbeat = DateTime.MinValue;
@@ -125,6 +136,7 @@ public class Worker : BackgroundService
         OpcUaDriver opcUaDriver,
         MqttDriver mqttDriver,
         ModbusDriver modbusDriver,
+        LibPlcTagDriver libPlcTagDriver,
         SyncService syncService)
     {
         _logger = logger;
@@ -134,6 +146,7 @@ public class Worker : BackgroundService
         _opcUaDriver = opcUaDriver;
         _mqttDriver = mqttDriver;
         _modbusDriver = modbusDriver;
+        _libPlcTagDriver = libPlcTagDriver;
         _syncService = syncService;
     }
 
@@ -205,7 +218,20 @@ public class Worker : BackgroundService
             }
             _deviceConfig.ClaimSecret = Convert.ToHexString(secretBytes).ToLowerInvariant();
             await _storageService.SaveDeviceConfigAsync(_deviceConfig);
-            _logger.LogInformation("Generated new ClaimSecret for device: {ClaimSecret}", _deviceConfig.ClaimSecret);
+            _logger.LogInformation("Generated new device onboarding ClaimSecret.");
+        }
+
+        // Generate PairingToken if not present
+        if (string.IsNullOrEmpty(_deviceConfig.PairingToken))
+        {
+            var tokenBytes = new byte[24];
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(tokenBytes);
+            }
+            _deviceConfig.PairingToken = Convert.ToHexString(tokenBytes).ToLowerInvariant();
+            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+            _logger.LogInformation("Generated new device onboarding PairingToken.");
         }
 
         // Check if we have an API Key configured at boot
@@ -596,15 +622,19 @@ public class Worker : BackgroundService
         _activeOpcUaIsEnabled = opcUaAdapter?.IsEnabled ?? false;
         _activeMqttIsEnabled = mqttAdapter?.IsEnabled ?? false;
 
-        var modbusAdapterInit = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Protocol == "MODBUS_TCP", stoppingToken);
+        var modbusAdapterInit = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Protocol == "MODBUS_TCP" || x.Protocol == "MODBUS_RTU", stoppingToken);
         _modbusAdapterId = modbusAdapterInit?.Id ?? "adp-modbus-1";
         _activeModbusIsEnabled = modbusAdapterInit?.IsEnabled ?? false;
+        _activeModbusProtocol = modbusAdapterInit?.Protocol ?? "MODBUS_TCP";
+        _activeModbusHost = modbusAdapterInit?.Host ?? "127.0.0.1";
+        _activeModbusPort = modbusAdapterInit?.Port ?? 502;
+        _activeModbusConfigJson = modbusAdapterInit?.ConfigJson ?? string.Empty;
 
         if (_activeOpcUaIsEnabled)
         {
             try
             {
-                _opcUaDriver.Connect(_activeOpcUaEndpoint);
+                await _opcUaDriver.ConnectAsync(_activeOpcUaEndpoint);
                 if (opcUaAdapter != null) opcUaAdapter.Status = "Connected";
             }
             catch (Exception ex)
@@ -630,20 +660,17 @@ public class Worker : BackgroundService
         }
         if (mqttAdapter != null) db.DriverAdapters.Update(mqttAdapter);
 
-        _activeModbusHost = modbusAdapterInit?.Host ?? "127.0.0.1";
-        _activeModbusPort = modbusAdapterInit?.Port ?? 502;
-
-        if (_activeModbusIsEnabled)
+        if (_activeModbusIsEnabled && modbusAdapterInit != null)
         {
             try
             {
-                _modbusDriver.Connect(_activeModbusHost, _activeModbusPort);
-                if (modbusAdapterInit != null) modbusAdapterInit.Status = "Connected";
+                await ConnectModbusDriverAsync(modbusAdapterInit, stoppingToken);
+                modbusAdapterInit.Status = "Connected";
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to connect Modbus TCP adapter on startup");
-                if (modbusAdapterInit != null) modbusAdapterInit.Status = "Error";
+                _logger.LogError(ex, "Failed to connect Modbus {Protocol} adapter on startup", _activeModbusProtocol);
+                modbusAdapterInit.Status = "Error";
             }
         }
         else
@@ -652,11 +679,44 @@ public class Worker : BackgroundService
         }
         if (modbusAdapterInit != null) db.DriverAdapters.Update(modbusAdapterInit);
 
+        var libPlcTagAdapterInit = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Protocol == "Ethernet/IP", stoppingToken);
+        _libPlcTagAdapterId = libPlcTagAdapterInit?.Id ?? "adp-libplctag-1";
+        _activeLibPlcTagIsEnabled = libPlcTagAdapterInit?.IsEnabled ?? false;
+        _activeLibPlcTagHost = libPlcTagAdapterInit?.Host ?? "";
+        
+        var (initPlcType, initProtocol, initPath, initTimeoutMs) = libPlcTagAdapterInit != null 
+            ? ParseLibPlcTagConfig(libPlcTagAdapterInit) 
+            : ("ControlLogix", "ab_eip", "1,0", 5000);
+            
+        _activeLibPlcTagPlcType = initPlcType;
+        _activeLibPlcTagProtocol = initProtocol;
+        _activeLibPlcTagPath = initPath;
+        _activeLibPlcTagTimeoutMs = initTimeoutMs;
+
+        if (_activeLibPlcTagIsEnabled && libPlcTagAdapterInit != null)
+        {
+            try
+            {
+                _libPlcTagDriver.Connect(_activeLibPlcTagHost, _activeLibPlcTagPlcType, _activeLibPlcTagProtocol, _activeLibPlcTagPath, _activeLibPlcTagTimeoutMs);
+                libPlcTagAdapterInit.Status = "Connected";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to connect LibPlcTag adapter on startup");
+                libPlcTagAdapterInit.Status = "Error";
+            }
+        }
+        else
+        {
+            if (libPlcTagAdapterInit != null) libPlcTagAdapterInit.Status = "Disconnected";
+        }
+        if (libPlcTagAdapterInit != null) db.DriverAdapters.Update(libPlcTagAdapterInit);
+
         // Initialize any user-created custom adapters to Connected/Disconnected in SQLite
         var allAdapters = await db.DriverAdapters.ToListAsync(stoppingToken);
         foreach (var adapter in allAdapters)
         {
-            if (adapter.Id != "adp-opcua-1" && adapter.Id != "adp-mqtt-1" && adapter.Id != "adp-modbus-1")
+            if (adapter.Id != "adp-opcua-1" && adapter.Id != "adp-mqtt-1" && adapter.Id != "adp-modbus-1" && adapter.Protocol != "Ethernet/IP")
             {
                 adapter.Status = adapter.IsEnabled ? "Connected" : "Disconnected";
                 db.DriverAdapters.Update(adapter);
@@ -762,7 +822,7 @@ public class Worker : BackgroundService
 
                 var opcUaAdapterLoop = await dbLoop.DriverAdapters.FirstOrDefaultAsync(x => x.Protocol == "OPC_UA", stoppingToken);
                 var mqttAdapterLoop = await dbLoop.DriverAdapters.FirstOrDefaultAsync(x => x.Protocol == "MQTT", stoppingToken);
-                var modbusAdapterLoop = await dbLoop.DriverAdapters.FirstOrDefaultAsync(x => x.Protocol == "MODBUS_TCP", stoppingToken);
+                var modbusAdapterLoop = await dbLoop.DriverAdapters.FirstOrDefaultAsync(x => x.Protocol == "MODBUS_TCP" || x.Protocol == "MODBUS_RTU", stoppingToken);
 
                 _opcUaAdapterId = opcUaAdapterLoop?.Id ?? "adp-opcua-1";
                 _mqttAdapterId = mqttAdapterLoop?.Id ?? "adp-mqtt-1";
@@ -869,7 +929,7 @@ public class Worker : BackgroundService
                     {
                         try
                         {
-                            _opcUaDriver.Connect(_activeOpcUaEndpoint);
+                            await _opcUaDriver.ConnectAsync(_activeOpcUaEndpoint);
                             if (opcUaAdapterLoop != null)
                             {
                                 opcUaAdapterLoop.Status = "Connected";
@@ -899,11 +959,18 @@ public class Worker : BackgroundService
                 }
 
                 // 2.5 Check for Modbus Adapter configuration changes
+                string latestModbusProtocol = modbusAdapterLoop?.Protocol ?? "MODBUS_TCP";
                 string latestModbusHost = modbusAdapterLoop?.Host ?? "127.0.0.1";
                 int latestModbusPort = modbusAdapterLoop?.Port ?? 502;
                 bool isModbusEnabled = modbusAdapterLoop?.IsEnabled ?? false;
+                string latestModbusConfigJson = modbusAdapterLoop?.ConfigJson ?? string.Empty;
 
-                if (modbusAdapterLoop != null && (latestModbusHost != _activeModbusHost || latestModbusPort != _activeModbusPort || isModbusEnabled != _activeModbusIsEnabled))
+                if (modbusAdapterLoop != null && (
+                    latestModbusProtocol != _activeModbusProtocol || 
+                    latestModbusHost != _activeModbusHost || 
+                    latestModbusPort != _activeModbusPort || 
+                    isModbusEnabled != _activeModbusIsEnabled ||
+                    latestModbusConfigJson != _activeModbusConfigJson))
                 {
                     _logger.LogWarning("[Modbus Link] Configuration change detected in SQLite! Reconnecting driver...");
                     try
@@ -912,25 +979,26 @@ public class Worker : BackgroundService
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error disconnecting Modbus TCP client");
+                        _logger.LogError(ex, "Error disconnecting Modbus client");
                     }
 
+                    _activeModbusProtocol = latestModbusProtocol;
                     _activeModbusHost = latestModbusHost;
                     _activeModbusPort = latestModbusPort;
                     _activeModbusIsEnabled = isModbusEnabled;
+                    _activeModbusConfigJson = latestModbusConfigJson;
 
                     if (isModbusEnabled)
                     {
                         try
                         {
-                            _modbusDriver.Connect(_activeModbusHost, _activeModbusPort);
+                            await ConnectModbusDriverAsync(modbusAdapterLoop, stoppingToken);
                             modbusAdapterLoop.Status = "Connected";
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "Error reconnecting Modbus TCP client to {Host}:{Port}", _activeModbusHost, _activeModbusPort);
+                            _logger.LogError(ex, "Error reconnecting Modbus {Protocol} client to {Host}:{Port}", _activeModbusProtocol, _activeModbusHost, _activeModbusPort);
                             modbusAdapterLoop.Status = "Error";
-                            _activeModbusIsEnabled = isModbusEnabled;
                         }
                     }
                     else
@@ -942,13 +1010,72 @@ public class Worker : BackgroundService
                     await dbLoop.SaveChangesAsync(stoppingToken);
                 }
 
+                // 2.6 Check for LibPlcTag Adapter configuration changes
+                var libPlcTagAdapterLoop = await dbLoop.DriverAdapters.FirstOrDefaultAsync(x => x.Protocol == "Ethernet/IP", stoppingToken);
+                _libPlcTagAdapterId = libPlcTagAdapterLoop?.Id ?? "adp-libplctag-1";
+                string latestLibPlcTagHost = libPlcTagAdapterLoop?.Host ?? "";
+                bool isLibPlcTagEnabled = libPlcTagAdapterLoop?.IsEnabled ?? false;
+                var (lPlcType, lProtocol, lPath, lTimeoutMs) = libPlcTagAdapterLoop != null
+                    ? ParseLibPlcTagConfig(libPlcTagAdapterLoop)
+                    : ("ControlLogix", "ab_eip", "1,0", 5000);
+
+                bool libPlcTagConfigChanged = libPlcTagAdapterLoop != null && (
+                    latestLibPlcTagHost != _activeLibPlcTagHost ||
+                    isLibPlcTagEnabled != _activeLibPlcTagIsEnabled ||
+                    lPlcType != _activeLibPlcTagPlcType ||
+                    lProtocol != _activeLibPlcTagProtocol ||
+                    lPath != _activeLibPlcTagPath ||
+                    lTimeoutMs != _activeLibPlcTagTimeoutMs
+                );
+
+                if (libPlcTagConfigChanged && libPlcTagAdapterLoop != null)
+                {
+                    _logger.LogWarning("[LibPlcTag Link] Configuration change detected in SQLite! Reconnecting driver...");
+                    try
+                    {
+                        _libPlcTagDriver.Disconnect();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error disconnecting LibPlcTag client");
+                    }
+
+                    _activeLibPlcTagHost = latestLibPlcTagHost;
+                    _activeLibPlcTagIsEnabled = isLibPlcTagEnabled;
+                    _activeLibPlcTagPlcType = lPlcType;
+                    _activeLibPlcTagProtocol = lProtocol;
+                    _activeLibPlcTagPath = lPath;
+                    _activeLibPlcTagTimeoutMs = lTimeoutMs;
+
+                    if (isLibPlcTagEnabled)
+                    {
+                        try
+                        {
+                            _libPlcTagDriver.Connect(_activeLibPlcTagHost, _activeLibPlcTagPlcType, _activeLibPlcTagProtocol, _activeLibPlcTagPath, _activeLibPlcTagTimeoutMs);
+                            libPlcTagAdapterLoop.Status = "Connected";
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error reconnecting LibPlcTag client to {Host}", _activeLibPlcTagHost);
+                            libPlcTagAdapterLoop.Status = "Error";
+                        }
+                    }
+                    else
+                    {
+                        libPlcTagAdapterLoop.Status = "Disconnected";
+                    }
+
+                    dbLoop.DriverAdapters.Update(libPlcTagAdapterLoop);
+                    await dbLoop.SaveChangesAsync(stoppingToken);
+                }
+
                 // 2.5 Automatic OPC UA Reconnection Loop
                 if (_activeOpcUaIsEnabled && !_opcUaDriver.IsConnected)
                 {
                     _logger.LogWarning("[OPC UA Link] Driver is disconnected. Attempting automatic reconnection to {Endpoint}...", _activeOpcUaEndpoint);
                     try
                     {
-                        _opcUaDriver.Connect(_activeOpcUaEndpoint);
+                        await _opcUaDriver.ConnectAsync(_activeOpcUaEndpoint);
                         var adapterUpdate = await dbLoop.DriverAdapters.FirstOrDefaultAsync(x => x.Id == _opcUaAdapterId, stoppingToken);
                         if (adapterUpdate != null && adapterUpdate.Status != "Connected")
                         {
@@ -978,19 +1105,22 @@ public class Worker : BackgroundService
                     ConnectMqttBackground(_activeMqttHost, _activeMqttPort, _activeMqttTopics);
                 }
 
-                // 2.6 Automatic Modbus Reconnection Loop
+                // 3. Automatic Modbus Reconnection Loop
                 if (_activeModbusIsEnabled && !_modbusDriver.IsConnected)
                 {
                     _logger.LogWarning("[Modbus Link] Driver is disconnected. Attempting automatic reconnection to {Host}:{Port}...", _activeModbusHost, _activeModbusPort);
                     try
                     {
-                        _modbusDriver.Connect(_activeModbusHost, _activeModbusPort);
                         var adapterUpdate = await dbLoop.DriverAdapters.FirstOrDefaultAsync(x => x.Id == _modbusAdapterId, stoppingToken);
-                        if (adapterUpdate != null && adapterUpdate.Status != "Connected")
+                        if (adapterUpdate != null)
                         {
-                            adapterUpdate.Status = "Connected";
-                            dbLoop.DriverAdapters.Update(adapterUpdate);
-                            await dbLoop.SaveChangesAsync(stoppingToken);
+                            await ConnectModbusDriverAsync(adapterUpdate, stoppingToken);
+                            if (adapterUpdate.Status != "Connected")
+                            {
+                                adapterUpdate.Status = "Connected";
+                                dbLoop.DriverAdapters.Update(adapterUpdate);
+                                await dbLoop.SaveChangesAsync(stoppingToken);
+                            }
                         }
                         _logger.LogInformation("[Modbus Link] Automatic reconnection successful!");
                     }
@@ -1007,8 +1137,37 @@ public class Worker : BackgroundService
                     }
                 }
 
+                // 3.5 Automatic LibPlcTag Reconnection Loop
+                if (_activeLibPlcTagIsEnabled && !_libPlcTagDriver.IsConnected)
+                {
+                    _logger.LogWarning("[LibPlcTag Link] Driver is disconnected. Attempting automatic reconnection to {Host}...", _activeLibPlcTagHost);
+                    try
+                    {
+                        _libPlcTagDriver.Connect(_activeLibPlcTagHost, _activeLibPlcTagPlcType, _activeLibPlcTagProtocol, _activeLibPlcTagPath, _activeLibPlcTagTimeoutMs);
+                        var adapterUpdate = await dbLoop.DriverAdapters.FirstOrDefaultAsync(x => x.Protocol == "Ethernet/IP", stoppingToken);
+                        if (adapterUpdate != null && adapterUpdate.Status != "Connected")
+                        {
+                            adapterUpdate.Status = "Connected";
+                            dbLoop.DriverAdapters.Update(adapterUpdate);
+                            await dbLoop.SaveChangesAsync(stoppingToken);
+                        }
+                        _logger.LogInformation("[LibPlcTag Link] Automatic reconnection successful!");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError("[LibPlcTag Link] Reconnection attempt failed: {Message}", ex.Message);
+                        var adapterUpdate = await dbLoop.DriverAdapters.FirstOrDefaultAsync(x => x.Protocol == "Ethernet/IP", stoppingToken);
+                        if (adapterUpdate != null && adapterUpdate.Status != "Error")
+                        {
+                            adapterUpdate.Status = "Error";
+                            dbLoop.DriverAdapters.Update(adapterUpdate);
+                            await dbLoop.SaveChangesAsync(stoppingToken);
+                        }
+                    }
+                }
+
                 var customAdapters = await dbLoop.DriverAdapters
-                    .Where(x => x.Id != _opcUaAdapterId && x.Id != _mqttAdapterId && x.Id != _modbusAdapterId)
+                    .Where(x => x.Id != _opcUaAdapterId && x.Id != _mqttAdapterId && x.Id != _modbusAdapterId && x.Protocol != "Ethernet/IP")
                     .ToListAsync(stoppingToken);
                 bool anyCustomChanged = false;
                 foreach (var adapter in customAdapters)
@@ -1078,13 +1237,72 @@ public class Worker : BackgroundService
             {
                 var adapter = _cachedAdapters.FirstOrDefault(a => a.Id == group.Key);
                 if (adapter == null || !adapter.IsEnabled) return;
-                if (adapter.Protocol == "MQTT") return; // MQTT is purely event-driven
+                if (adapter.Protocol == "MQTT" || adapter.Protocol == "WEBHOOK") return; // Event-driven
 
-                // ── Modbus TCP: use block-read optimized path ─────────────────────
-                if (adapter.Protocol == "MODBUS_TCP" && _activeModbusIsEnabled && _modbusDriver.IsConnected)
+                // ── Modbus TCP/RTU: use block-read optimized path ─────────────────────
+                if ((adapter.Protocol == "MODBUS_TCP" || adapter.Protocol == "MODBUS_RTU") && _activeModbusIsEnabled && _modbusDriver.IsConnected)
                 {
                     byte unitId = GetModbusUnitId(adapter);
                     await PollModbusGroupAsync(group, unitId, now, dirtyDps, stoppingToken);
+                    return;
+                }
+
+                // ── Ethernet/IP (LibPlcTag): query each due tag individually ───────────
+                if (adapter.Protocol == "Ethernet/IP" && _activeLibPlcTagIsEnabled && _libPlcTagDriver.IsConnected)
+                {
+                    var dueDps = group.Where(dp =>
+                    {
+                        int baseInterval = Math.Max(dp.ScanIntervalMs > 0 ? dp.ScanIntervalMs : 1000, 100);
+                        int effectiveInterval = dp.ConsecutiveFailures > 0
+                            ? baseInterval * (int)Math.Pow(2, Math.Min(dp.ConsecutiveFailures, 6))
+                            : baseInterval;
+                        return dp.LastUpdated == null || (now - dp.LastUpdated.Value).TotalMilliseconds >= effectiveInterval;
+                    }).ToList();
+
+                    if (dueDps.Count > 0)
+                    {
+                        foreach (var dp in dueDps)
+                        {
+                            try
+                            {
+                                double rawVal = await _libPlcTagDriver.ReadTagAsync(dp.Address, dp.DataType, stoppingToken);
+                                double processedVal = (rawVal * dp.ScaleFactor) + dp.Offset;
+                                _logger.LogInformation("[Ethernet/IP Read] Address: {Address} | Raw: {Raw} | Processed: {Value}", dp.Address, rawVal, processedVal);
+                                
+                                dp.LastValue = processedVal.ToString("F2");
+                                dp.LastError = null;
+                                dp.ConsecutiveFailures = 0;
+                                dp.LastUpdated = now;
+                                AddDirtyIfNeeded(dp, now, dirtyDps);
+
+                                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                                {
+                                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                    {
+                                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
+                                        _logger.LogInformation("[Queue Buffer] Enqueued Ethernet/IP telemetry | Stream: {Source} Metric: {Metric}", dp.DataSourceId, dp.Metric);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Ethernet/IP read failed for tag {Address} on adapter {AdapterId}", dp.Address, adapter.Id);
+                                dp.LastError = ex.Message;
+                                dp.ConsecutiveFailures++;
+                                dp.LastUpdated = now;
+                                AddDirtyIfNeeded(dp, now, dirtyDps);
+
+                                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                                {
+                                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                    {
+                                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
+                                    }
+                                }
+                            }
+                        }
+                    }
                     return;
                 }
 
@@ -1109,7 +1327,7 @@ public class Worker : BackgroundService
                         Dictionary<string, OpcUaReadResult> batchResult;
                         try
                         {
-                            batchResult = _opcUaDriver.ReadMetricsBatch(nodeIds);
+                            batchResult = await _opcUaDriver.ReadMetricsBatchAsync(nodeIds, stoppingToken);
                         }
                         catch (Exception ex)
                         {
@@ -1229,7 +1447,7 @@ public class Worker : BackgroundService
                     bool updated = false;
                     string? prevError = dp.LastError;
 
-                    if (adapter.Id != _opcUaAdapterId && adapter.Id != _mqttAdapterId && adapter.Id != _modbusAdapterId)
+                    if (adapter.Id != _opcUaAdapterId && adapter.Id != _mqttAdapterId && adapter.Id != _modbusAdapterId && adapter.Protocol != "Ethernet/IP")
                     {
                         // Simulated custom adapter
                         try
@@ -1472,8 +1690,8 @@ public class Worker : BackgroundService
                 try
                 {
                     buffer = regType == ModbusDriver.RegisterType.HoldingRegister
-                        ? _modbusDriver.ReadBlockHolding(blockStart, blockWords, unitId)
-                        : _modbusDriver.ReadBlockInput(blockStart, blockWords, unitId);
+                        ? await _modbusDriver.ReadBlockHoldingAsync(blockStart, blockWords, unitId, ct)
+                        : await _modbusDriver.ReadBlockInputAsync(blockStart, blockWords, unitId, ct);
                 }
                 catch (Exception ex)
                 {
@@ -1494,7 +1712,7 @@ public class Worker : BackgroundService
                         {
                             try
                             {
-                                rawVal = _modbusDriver.ReadRegister(dp.Address, dp.DataType, unitId, dp.ByteOrder);
+                                rawVal = await _modbusDriver.ReadRegisterAsync(dp.Address, dp.DataType, unitId, dp.ByteOrder, ct);
                                 readSuccess = true;
                                 break;
                             }
@@ -1633,7 +1851,7 @@ public class Worker : BackgroundService
         {
             try
             {
-                rawVal = _modbusDriver.ReadRegister(dp.Address, dp.DataType, unitId, dp.ByteOrder);
+                rawVal = await _modbusDriver.ReadRegisterAsync(dp.Address, dp.DataType, unitId, dp.ByteOrder, ct);
                 readSuccess = true;
                 break;
             }
@@ -1715,6 +1933,79 @@ public class Worker : BackgroundService
         }
         catch { /* fallback */ }
         return 1;
+    }
+
+    private static (string PlcType, string Protocol, string Path, int TimeoutMs) ParseLibPlcTagConfig(DriverAdapter adapter)
+    {
+        string plcType = "ControlLogix";
+        string protocol = "ab_eip";
+        string path = "1,0";
+        int timeoutMs = 5000;
+        
+        try
+        {
+            if (!string.IsNullOrEmpty(adapter.ConfigJson))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(adapter.ConfigJson);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("PlcType", out var ptProp)) plcType = ptProp.GetString() ?? plcType;
+                if (root.TryGetProperty("Protocol", out var protoProp)) protocol = protoProp.GetString() ?? protocol;
+                if (root.TryGetProperty("Path", out var pathProp)) path = pathProp.GetString() ?? path;
+                if (root.TryGetProperty("TimeoutMs", out var toProp)) timeoutMs = toProp.GetInt32();
+            }
+        }
+        catch { /* fallback to defaults */ }
+        
+        return (plcType, protocol, path, timeoutMs);
+    }
+
+    private async Task ConnectModbusDriverAsync(DriverAdapter adapter, CancellationToken cancellationToken = default)
+    {
+        if (adapter.Protocol == "MODBUS_RTU")
+        {
+            var portName = adapter.Host;
+            var baudRate = adapter.Port;
+            
+            var parity = System.IO.Ports.Parity.None;
+            var dataBits = 8;
+            var stopBits = System.IO.Ports.StopBits.One;
+            var handshake = System.IO.Ports.Handshake.None;
+
+            try
+            {
+                if (!string.IsNullOrEmpty(adapter.ConfigJson))
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(adapter.ConfigJson);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("Parity", out var parityProp))
+                    {
+                        Enum.TryParse(parityProp.GetString(), true, out parity);
+                    }
+                    if (root.TryGetProperty("DataBits", out var dbProp))
+                    {
+                        dataBits = dbProp.GetInt32();
+                    }
+                    if (root.TryGetProperty("StopBits", out var sbProp))
+                    {
+                        Enum.TryParse(sbProp.GetString(), true, out stopBits);
+                    }
+                    if (root.TryGetProperty("Handshake", out var hsProp))
+                    {
+                        Enum.TryParse(hsProp.GetString(), true, out handshake);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse Modbus RTU serial configurations from ConfigJson. Using defaults.");
+            }
+
+            _modbusDriver.ConnectRtu(portName, baudRate, parity, dataBits, stopBits, handshake);
+        }
+        else
+        {
+            await _modbusDriver.ConnectAsync(adapter.Host, adapter.Port, cancellationToken);
+        }
     }
 
     private void ConnectMqttBackground(string host, int port, List<string> topics)
@@ -1850,6 +2141,7 @@ public class Worker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            int loopDelayMs = claimPollSeconds * 1000;
             try
             {
                 // Reload config from database in case it was updated by user via UI settings
@@ -1865,84 +2157,129 @@ public class Worker : BackgroundService
                     continue;
                 }
 
+                // Generate PairingToken if not present
+                if (string.IsNullOrEmpty(_deviceConfig.PairingToken))
+                {
+                    var tokenBytes = new byte[24];
+                    using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                    {
+                        rng.GetBytes(tokenBytes);
+                    }
+                    _deviceConfig.PairingToken = Convert.ToHexString(tokenBytes).ToLowerInvariant();
+                    await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+                }
+
                 string currentBaseUrl = _deviceConfig.CloudEndpoint;
 
                 if (string.IsNullOrEmpty(_deviceConfig.ApiKey))
                 {
-                    // 1. Register device (idempotent)
-                    _logger.LogInformation("[Cloud Provisioning] Registering device...");
-                    var (edgeId, status) = await _cloudClient.RegisterDeviceAsync(
-                        currentBaseUrl,
-                        _deviceConfig.Id,
-                        _deviceConfig.SerialNumber,
-                        _deviceConfig.Version,
-                        _deviceConfig.ClaimSecret
-                    );
+                    // Pairing & Claiming Phase
+                    bool needsRegister = string.IsNullOrEmpty(_deviceConfig.PairingShortCode) ||
+                                         !_deviceConfig.PairingExpiresAt.HasValue ||
+                                         _deviceConfig.PairingExpiresAt.Value <= DateTime.UtcNow.AddMinutes(1);
 
-                    if (!string.IsNullOrEmpty(edgeId))
+                    bool registerSuccess = true;
+                    if (needsRegister)
                     {
-                        bool changed = false;
-                        if (_deviceConfig.CloudEdgeId != edgeId)
+                        _logger.LogInformation("[Cloud Provisioning] Registering device with Cloud...");
+                        var regResult = await _cloudClient.RegisterDeviceAsync(
+                            currentBaseUrl,
+                            _deviceConfig.Id,
+                            _deviceConfig.SerialNumber,
+                            _deviceConfig.Version,
+                            _deviceConfig.ClaimSecret,
+                            _deviceConfig.PairingToken
+                        );
+
+                        if (regResult != null)
                         {
-                            _deviceConfig.CloudEdgeId = edgeId;
-                            changed = true;
+                            _deviceConfig.CloudEdgeId = regResult.EdgeId;
+                            _deviceConfig.PairingShortCode = regResult.ShortCode ?? "";
+                            _deviceConfig.PairingExpiresAt = regResult.PairingExpiresAt;
+                            _deviceConfig.PairingBaseUrl = regResult.PairingBaseUrl ?? "";
+                            _deviceConfig.CloudStatus = "PendingApproval";
+                            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+                            _logger.LogInformation("[Cloud Provisioning] Registered. Code: {Code}, Expiry: {Expiry}", regResult.ShortCode, regResult.PairingExpiresAt);
                         }
-                        
-                        // 2. Poll claim endpoint
-                        _logger.LogInformation("[Cloud Provisioning] Device registered with status: {Status}. Polling claim endpoint...", status);
-                        var (claimStatus, apiKey) = await _cloudClient.ClaimKeyAsync(currentBaseUrl, _deviceConfig.Id, _deviceConfig.ClaimSecret);
-                        
-                        if (claimStatus == "active" && !string.IsNullOrEmpty(apiKey))
+                        else
+                        {
+                            registerSuccess = false;
+                            _logger.LogWarning("[Cloud Provisioning] Registration failed. Will retry registration.");
+                        }
+                    }
+
+                    if (registerSuccess)
+                    {
+                        // We are registered, now poll claim endpoint (every 5 seconds during pairing phase)
+                        loopDelayMs = 5000;
+
+                        _logger.LogInformation("[Cloud Provisioning] Polling claim endpoint...");
+                        var claimResult = await _cloudClient.ClaimKeyAsync(currentBaseUrl, _deviceConfig.Id, _deviceConfig.ClaimSecret);
+
+                        if (claimResult.Status == "active" && !string.IsNullOrEmpty(claimResult.ApiKey))
                         {
                             _logger.LogInformation("[Cloud Provisioning] API Key successfully claimed!");
-                            _deviceConfig.ApiKey = apiKey;
+                            _deviceConfig.ApiKey = claimResult.ApiKey;
+                            _deviceConfig.OrganizationId = claimResult.OrgId ?? "";
+                            _deviceConfig.OrganizationName = claimResult.OrgName ?? "";
+                            _deviceConfig.SiteId = claimResult.SiteId ?? "";
+                            _deviceConfig.SiteName = claimResult.SiteName ?? "";
                             _deviceConfig.CloudStatus = "Connected";
-                            changed = true;
+                            _deviceConfig.PairingShortCode = "";
+                            _deviceConfig.PairingExpiresAt = null;
+                            _deviceConfig.PairingBaseUrl = "";
+                            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
 
                             // Immediately pull config & push data sources
-                            var configResult = await _cloudClient.GetConfigAsync(currentBaseUrl, apiKey);
+                            var configResult = await _cloudClient.GetConfigAsync(currentBaseUrl, claimResult.ApiKey);
                             if (configResult.Success)
                             {
+                                _deviceConfig.OrganizationId = configResult.OrgId;
+                                _deviceConfig.OrganizationName = configResult.OrgName;
                                 _deviceConfig.SiteId = configResult.SiteId;
                                 _deviceConfig.SiteName = configResult.SiteName;
+                                await _storageService.SaveDeviceConfigAsync(_deviceConfig);
                             }
-                            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
-                            
-                            bool success = await PushDataSourcesToCloudAsync(currentBaseUrl, apiKey);
+
+                            bool success = await PushDataSourcesToCloudAsync(currentBaseUrl, claimResult.ApiKey);
                             if (success)
                             {
                                 _lastDataSourcesHash = await CalculateDataSourcesHashAsync();
                             }
+                            // Reset loop delay to default config
+                            loopDelayMs = claimPollSeconds * 1000;
                         }
-                        else if (claimStatus == "revoked")
+                        else if (claimResult.Status == "revoked")
                         {
                             _logger.LogError("[Cloud Provisioning] Device has been revoked. Operator re-approval required.");
                             if (_deviceConfig.CloudStatus != "Revoked")
                             {
                                 _deviceConfig.CloudStatus = "Revoked";
-                                changed = true;
+                                await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+                            }
+                        }
+                        else if (claimResult.Status == "unauthorized")
+                        {
+                            _logger.LogWarning("[Cloud Provisioning] Claim unauthorized. Device unknown or wrong secret.");
+                            if (_deviceConfig.CloudStatus != "PendingApproval")
+                            {
+                                _deviceConfig.CloudStatus = "PendingApproval";
+                                await _storageService.SaveDeviceConfigAsync(_deviceConfig);
                             }
                         }
                         else
                         {
-                            // Status is "pending" or other. Update status to PendingApproval
+                            // Status is "pending" or other.
                             if (_deviceConfig.CloudStatus != "PendingApproval" && _deviceConfig.CloudStatus != "Revoked")
                             {
                                 _deviceConfig.CloudStatus = "PendingApproval";
-                                changed = true;
+                                await _storageService.SaveDeviceConfigAsync(_deviceConfig);
                             }
-                        }
-
-                        if (changed)
-                        {
-                            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
                         }
                     }
                     else
                     {
-                        _logger.LogWarning("[Cloud Provisioning] Registration failed. Retrying in 10 seconds...");
-                        await Task.Delay(10000, stoppingToken);
-                        continue;
+                        loopDelayMs = 10000; // Registration failed, retry in 10s
                     }
                 }
                 else
@@ -1956,6 +2293,8 @@ public class Worker : BackgroundService
                         if (configResult.Success)
                         {
                             _logger.LogInformation("[Cloud Provisioning] Successfully retrieved config. Site: {SiteName}", configResult.SiteName);
+                            _deviceConfig.OrganizationId = configResult.OrgId;
+                            _deviceConfig.OrganizationName = configResult.OrgName;
                             _deviceConfig.SiteId = configResult.SiteId;
                             _deviceConfig.SiteName = configResult.SiteName;
                             _deviceConfig.CloudStatus = "Connected";
@@ -1970,11 +2309,16 @@ public class Worker : BackgroundService
                         }
                         else if (configResult.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                         {
-                            _logger.LogError("[Cloud Provisioning] API Key is invalid or has been revoked (401 Unauthorized). Resetting API Key.");
+                            _logger.LogError("[Cloud Provisioning] API Key is invalid or has been revoked (401 Unauthorized). Resetting API Key for re-onboarding.");
                             _deviceConfig.ApiKey = "";
+                            _deviceConfig.OrganizationId = "";
+                            _deviceConfig.OrganizationName = "";
                             _deviceConfig.SiteId = "";
                             _deviceConfig.SiteName = "";
-                            _deviceConfig.CloudStatus = "Revoked";
+                            _deviceConfig.PairingShortCode = "";
+                            _deviceConfig.PairingExpiresAt = null;
+                            _deviceConfig.PairingBaseUrl = "";
+                            _deviceConfig.CloudStatus = "PendingApproval"; // Return to claim/polling phase
                             await _storageService.SaveDeviceConfigAsync(_deviceConfig);
                         }
                         else
@@ -1990,7 +2334,7 @@ public class Worker : BackgroundService
             }
 
             // Wait before next check/poll
-            await Task.Delay(claimPollSeconds * 1000, stoppingToken);
+            await Task.Delay(loopDelayMs, stoppingToken);
         }
     }
 

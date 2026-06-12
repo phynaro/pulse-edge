@@ -10,14 +10,17 @@ public static class DataSourceDeclarationBuilder
     {
         if (string.IsNullOrWhiteSpace(adapterProtocol)) return null;
 
-        var proto = adapterProtocol.ToLowerInvariant().Replace("_", string.Empty);
+        var proto = adapterProtocol.ToLowerInvariant().Replace("_", string.Empty).Replace("/", string.Empty);
         return proto switch
         {
             "modbustcp" => "modbus",
-            "opcua" => "opcua",
-            "mqtt" => "mqtt",
+            "modbusrtu" => "modbus",
             "modbus" => "modbus",
-            _ => proto,
+            "opcua" => "opcua",
+            "ethernetip" => "opcua",
+            "mqtt" => "mqtt",
+            "webhook" => "mqtt",
+            _ => "opcua",
         };
     }
 

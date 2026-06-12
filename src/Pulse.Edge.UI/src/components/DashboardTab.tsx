@@ -60,6 +60,8 @@ export default function DashboardTab({
           if (telemetryFilterType === 'MQTT') return adp.protocol === 'MQTT';
           if (telemetryFilterType === 'OPC UA') return adp.protocol === 'OPC_UA';
           if (telemetryFilterType === 'Modbus TCP') return adp.protocol === 'MODBUS_TCP';
+          if (telemetryFilterType === 'Modbus RTU') return adp.protocol === 'MODBUS_RTU';
+          if (telemetryFilterType === 'Ethernet/IP') return adp.protocol === 'Ethernet/IP';
           return false;
         });
         if (!hasProtocol) return false;
@@ -190,7 +192,9 @@ export default function DashboardTab({
                       { value: 'All', label: 'All Protocols' },
                       { value: 'OPC UA', label: 'OPC UA' },
                       { value: 'MQTT', label: 'MQTT' },
-                      { value: 'Modbus TCP', label: 'Modbus TCP' }
+                      { value: 'Modbus TCP', label: 'Modbus TCP' },
+                      { value: 'Modbus RTU', label: 'Modbus RTU' },
+                      { value: 'Ethernet/IP', label: 'Ethernet/IP' }
                     ]}
                   />
                 </div>

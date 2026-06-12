@@ -10,7 +10,7 @@ import {
   Wind
 } from 'lucide-react';
 
-export const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+export const ICON_MAP: Record<string, React.ComponentType<any>> = {
   Database,
   Zap,
   BarChart3,
