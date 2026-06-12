@@ -6,3 +6,58 @@
 body {
   overflow: hidden;
 }
+
+/* Sidebar Collapse Overrides */
+.sidebar {
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar.collapsed {
+  width: 64px;
+}
+
+.sidebar.collapsed .sidebar-brand {
+  padding: 0;
+  justify-content: center;
+}
+
+.sidebar.collapsed .menu-item {
+  justify-content: center;
+  padding: 12px 0;
+  border-radius: 0;
+}
+
+.sidebar.collapsed .menu-item.active {
+  padding-left: 0;
+  border-left: 3px solid var(--primary-color);
+}
+
+/* Fix logo top margin and centering */
+.sidebar-brand {
+  padding-top: 10px; /* Push down logo slightly from top border */
+}
+
+/* Styling for the sidebar toggle button */
+.sidebar-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  margin-left: auto;
+  outline: none;
+}
+
+.sidebar-toggle-btn:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.sidebar.collapsed .sidebar-toggle-btn {
+  margin-left: 0;
+}

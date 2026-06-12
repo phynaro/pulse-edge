@@ -7,7 +7,8 @@ import {
   Layers,
   AlertTriangle,
   Tag,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  PanelLeft
 } from 'lucide-react';
 import { useToast } from './hooks/useToast';
 import ToastContainer from './components/ToastContainer';
@@ -112,6 +113,17 @@ export default function App() {
   const [cloudEndpoint, setCloudEndpoint] = useState<string>('');
   const [edgeSerial, setEdgeSerial] = useState<string>('');
   const [isOnboarded, setIsOnboarded] = useState<boolean>(true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('sidebarCollapsed') === 'true';
+  });
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('sidebarCollapsed', String(next));
+      return next;
+    });
+  };
 
   const fetchData = async () => {
     try {
@@ -352,68 +364,85 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* 240px Fixed Sidebar */}
-      <aside className="sidebar">
+      {/* Sidebar with expand/collapse toggle */}
+      <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-brand">
-          <div className="sidebar-logo">
-            PULSE <span>EDGE</span>
-          </div>
+          {!isSidebarCollapsed && (
+            <div className="sidebar-logo">
+              PULSE <span>EDGE</span>
+            </div>
+          )}
+          <button 
+            onClick={toggleSidebar} 
+            className="sidebar-toggle-btn"
+            title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          >
+            <PanelLeft size={18} />
+          </button>
         </div>
         
         <nav className="sidebar-menu">
           <button 
             className={`menu-item ${activeTab === 'dashboard' ? 'active' : ''}`}
             onClick={() => setActiveTab('dashboard')}
+            title={isSidebarCollapsed ? "Dashboard" : undefined}
           >
             <Activity size={18} />
-            Dashboard
+            {!isSidebarCollapsed && <span>Dashboard</span>}
           </button>
           
           <button 
             className={`menu-item ${activeTab === 'datasources' ? 'active' : ''}`}
             onClick={() => setActiveTab('datasources')}
+            title={isSidebarCollapsed ? "Config Streams" : undefined}
           >
             <Database size={18} />
-            Config Streams
+            {!isSidebarCollapsed && <span>Config Streams</span>}
           </button>
           
           <button 
             className={`menu-item ${activeTab === 'tags' ? 'active' : ''}`}
             onClick={() => setActiveTab('tags')}
+            title={isSidebarCollapsed ? "Physical Tags" : undefined}
           >
             <Tag size={18} />
-            Physical Tags
+            {!isSidebarCollapsed && <span>Physical Tags</span>}
           </button>
           
           <button 
             className={`menu-item ${activeTab === 'protocols' ? 'active' : ''}`}
             onClick={() => setActiveTab('protocols')}
+            title={isSidebarCollapsed ? "Protocols" : undefined}
           >
             <Network size={18} />
-            Protocols
+            {!isSidebarCollapsed && <span>Protocols</span>}
           </button>
 
           <button 
             className={`menu-item ${activeTab === 'buffer' ? 'active' : ''}`}
             onClick={() => setActiveTab('buffer')}
+            title={isSidebarCollapsed ? `Buffer Explorer (${bufferTelemetry.length + bufferEvents.length})` : undefined}
           >
             <Layers size={18} />
-            Buffer Explorer ({bufferTelemetry.length + bufferEvents.length})
+            {!isSidebarCollapsed && <span>Buffer Explorer ({bufferTelemetry.length + bufferEvents.length})</span>}
           </button>
           
           <button 
             className={`menu-item ${activeTab === 'settings' ? 'active' : ''}`}
             onClick={() => setActiveTab('settings')}
+            title={isSidebarCollapsed ? "Settings" : undefined}
           >
             <SettingsIcon size={18} />
-            Settings
+            {!isSidebarCollapsed && <span>Settings</span>}
           </button>
         </nav>
         
-        <div className="sidebar-footer">
-          <div>AGENT V{dashboard?.version || '1.0.0'}</div>
-          <div className="sidebar-footer-note">DB Status: SQLite WAL</div>
-        </div>
+        {!isSidebarCollapsed && (
+          <div className="sidebar-footer">
+            <div>AGENT V{dashboard?.version || '1.0.0'}</div>
+            <div className="sidebar-footer-note">DB Status: SQLite WAL</div>
+          </div>
+        )}
       </aside>
 
       {/* Main Container */}
