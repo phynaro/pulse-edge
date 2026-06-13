@@ -238,8 +238,8 @@ export default function BindMetricModal({
 
         {step === 1 ? (
           <div className="browser-layout" style={{ flex: 1, minHeight: 0 }}>
-            <div className="browser-left-pane">
-              <div className="browser-search-wrap" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div className="browser-left-pane" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+              <div className="browser-search-wrap" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexShrink: 0 }}>
                 <div className="tag-search-inner" style={{ flex: 1 }}>
                   <Search size={16} />
                   <input
@@ -262,7 +262,7 @@ export default function BindMetricModal({
                 )}
               </div>
 
-              <div className="bind-filter-row" style={{ display: 'flex', gap: '1rem', marginBottom: '0.75rem' }}>
+              <div className="bind-filter-row" style={{ display: 'flex', gap: '1rem', marginBottom: '0.75rem', flexShrink: 0 }}>
                 <div className="bind-filter-col" style={{ flex: 1 }}>
                   <label className="bind-filter-label" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Connection / Adapter</label>
                   <CustomSelect
@@ -291,7 +291,7 @@ export default function BindMetricModal({
                 </div>
               </div>
 
-              <div className="browser-node-list">
+              <div className="browser-node-list" style={{ flex: 1, overflowY: 'auto' }}>
                 {filteredDatapoints.length === 0 ? (
                   <div className="tag-list-empty" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                     <AlertCircle size={24} />
@@ -342,8 +342,8 @@ export default function BindMetricModal({
               </div>
             </div>
 
-            <div className="browser-right-pane">
-              <div className="browser-right-header">
+            <div className="browser-right-pane" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+              <div className="browser-right-header" style={{ flexShrink: 0 }}>
                 <span className="browser-section-label">Selected Tags ({selectedCount})</span>
                 {selectedCount > 0 && (
                   <button type="button" onClick={() => setSelectedTagIds({})} className="browser-clear-btn">
@@ -352,12 +352,12 @@ export default function BindMetricModal({
                 )}
               </div>
               {selectedCount === 0 ? (
-                <div className="browser-empty-right">
+                <div className="browser-empty-right" style={{ flex: 1 }}>
                   <span className="browser-empty-icon">📋</span>
                   <span className="browser-empty-text">Select physical driver tags on the left to bind them to telemetry metrics.</span>
                 </div>
               ) : (
-                <div className="browser-selected-list">
+                <div className="browser-selected-list" style={{ flex: 1, overflowY: 'auto' }}>
                   {Object.keys(selectedTagIds).map((tagId) => {
                     const dp = datapoints.find(x => x.id === tagId);
                     if (!dp) return null;
