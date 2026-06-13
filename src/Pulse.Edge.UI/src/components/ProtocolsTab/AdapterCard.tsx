@@ -26,7 +26,6 @@ export default function AdapterCard({
   toast,
   fetchData
 }: AdapterCardProps) {
-  const isActive = adapter.status === 'Connected' && adapter.isEnabled;
   const adapterMqttDevices = mqttDevices.filter(d => d.adapterId === adapter.id);
   let config: Record<string, any> = {};
   try { config = JSON.parse(adapter.configJson || '{}'); } catch {}
@@ -51,13 +50,25 @@ export default function AdapterCard({
   };
 
   return (
-    <div className="panel adapter-card">
+    <div className="panel adapter-card" style={{ height: 'fit-content' }}>
       <div>
         <div className="panel-header adapter-panel-header">
           <h3 className="panel-title adapter-panel-title">{adapter.name}</h3>
-          <span className={`badge ${isActive ? 'success' : 'warning'}`}>
-            {!adapter.isEnabled ? 'Disabled' : adapter.status === 'Connected' ? 'Active' : 'Offline'}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600 }}>
+            <span 
+              className="status-dot" 
+              style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                backgroundColor: !adapter.isEnabled ? 'var(--text-muted, #94a3b8)' : adapter.status === 'Connected' ? 'var(--success-color, #10b981)' : 'var(--warning-color, #f59e0b)',
+                display: 'inline-block'
+              }} 
+            />
+            <span style={{ color: !adapter.isEnabled ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+              {!adapter.isEnabled ? 'Disabled' : adapter.status === 'Connected' ? 'Active' : 'Offline'}
+            </span>
+          </div>
         </div>
 
         <div className="adapter-info-body">
@@ -272,11 +283,19 @@ export default function AdapterCard({
         </div>
       </div>
 
-      <div className="adapter-action-row">
-        <button onClick={() => onStartEdit(adapter)} className="btn-adapter-edit">
-          Edit Adapter Config
+      <div className="adapter-action-row" style={{ justifyContent: 'flex-end' }}>
+        <button
+          onClick={() => onStartEdit(adapter)}
+          title="Edit Adapter Config"
+          className="btn-card-icon is-edit"
+        >
+          <Edit size={14} />
         </button>
-        <button onClick={() => onStartDelete(adapter)} title="Delete Adapter" className="btn-adapter-delete">
+        <button
+          onClick={() => onStartDelete(adapter)}
+          title="Delete Adapter"
+          className="btn-card-icon is-delete"
+        >
           <Trash2 size={14} />
         </button>
       </div>
