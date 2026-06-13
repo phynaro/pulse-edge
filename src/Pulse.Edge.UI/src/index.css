@@ -210,11 +210,11 @@ body {
   border: 1px solid rgba(217, 70, 239, 0.25) !important;
 }
 
-/* BACnet: Amber */
+/* BACnet: Logo Lime Green */
 .proto-bacnet {
-  background-color: rgba(245, 158, 11, 0.12) !important;
-  color: #fbbf24 !important;
-  border: 1px solid rgba(245, 158, 11, 0.25) !important;
+  background-color: rgba(148, 193, 28, 0.12) !important;
+  color: #94c11c !important;
+  border: 1px solid rgba(148, 193, 28, 0.25) !important;
 }
 
 /* Discovery list container scrollability in modals */
