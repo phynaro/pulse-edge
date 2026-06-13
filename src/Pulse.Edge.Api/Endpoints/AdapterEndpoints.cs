@@ -7,6 +7,7 @@ using Pulse.Edge.Storage.Models;
 using Pulse.Edge.Storage.Services;
 using Pulse.Edge.Protocols.OpcUa;
 using Pulse.Edge.Protocols.LibPlcTag;
+using Pulse.Edge.Protocols.S7Net;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -491,6 +492,61 @@ public static class AdapterEndpoints
             }
         });
 
+        // POST /api/adapters/siemens-s7/browse - Browse Siemens S7 PLC tags
+        routes.MapPost("/api/adapters/siemens-s7/browse", async (SiemensS7BrowseRequest request, S7NetDriver s7NetDriver, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.AdapterId))
+            {
+                return Results.BadRequest(new { success = false, message = "AdapterId is required." });
+            }
+
+            try
+            {
+                using var db = new QueueDbContext();
+                var adapter = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Id == request.AdapterId);
+                if (adapter == null)
+                {
+                    return Results.NotFound(new { success = false, message = "Adapter not found." });
+                }
+
+                if (adapter.Protocol != "Siemens S7")
+                {
+                    return Results.BadRequest(new { success = false, message = "Selected adapter is not a Siemens S7 adapter." });
+                }
+
+                string cpuType = "S71200";
+                short rack = 0;
+                short slot = 1;
+                int timeoutMs = 5000;
+
+                if (!string.IsNullOrWhiteSpace(adapter.ConfigJson))
+                {
+                    try
+                    {
+                        var doc = System.Text.Json.JsonDocument.Parse(adapter.ConfigJson);
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("CpuType", out var cpuProp)) cpuType = cpuProp.GetString() ?? cpuType;
+                        if (root.TryGetProperty("Rack", out var rackProp)) rack = rackProp.GetInt16();
+                        if (root.TryGetProperty("Slot", out var slotProp)) slot = slotProp.GetInt16();
+                        if (root.TryGetProperty("TimeoutMs", out var toProp)) timeoutMs = toProp.GetInt32();
+                    }
+                    catch (Exception) { }
+                }
+
+                if (!s7NetDriver.IsConnected)
+                {
+                    await s7NetDriver.ConnectAsync(adapter.Host, cpuType, rack, slot, timeoutMs, cancellationToken);
+                }
+
+                var tags = await s7NetDriver.BrowseTagsAsync(cancellationToken);
+                return Results.Ok(new { success = true, tags });
+            }
+            catch (Exception ex)
+            {
+                return Results.Ok(new { success = false, message = $"Browse failed: {ex.Message}" });
+            }
+        });
+
         // POST /api/webhooks/receive/{adapterId} - Receive REST Webhook payloads from clients
         routes.MapPost("/api/webhooks/receive/{adapterId}", async (
             string adapterId,
@@ -899,3 +955,4 @@ public record MqttBrowseItem(string Topic, string Payload, string LastSeen, List
 public record MqttJsonKeyItem(string Path, string DataType, string Value);
 public record WebhookBrowseRequest(string AdapterId);
 public record EthernetIpBrowseRequest(string AdapterId);
+public record SiemensS7BrowseRequest(string AdapterId);

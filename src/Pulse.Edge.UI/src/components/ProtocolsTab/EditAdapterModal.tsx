@@ -54,6 +54,11 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
   const [editPlcPath, setEditPlcPath] = useState<string>(config.Path ?? '1,0');
   const [editPlcTimeoutMs, setEditPlcTimeoutMs] = useState<number>(config.TimeoutMs ?? 5000);
 
+  const [editS7CpuType, setEditS7CpuType] = useState<string>(config.CpuType ?? 'S71200');
+  const [editS7Rack, setEditS7Rack] = useState<number>(config.Rack ?? 0);
+  const [editS7Slot, setEditS7Slot] = useState<number>(config.Slot ?? 1);
+  const [editS7TimeoutMs, setEditS7TimeoutMs] = useState<number>(config.TimeoutMs ?? 5000);
+
   if (!adapter) return null;
 
   const handleDiscoverOpcUa = async (host: string, port: number) => {
@@ -129,6 +134,8 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
         configJson = JSON.stringify({ Template: editSimulatorTemplate });
       } else if (editAdapterProtocol === 'Ethernet/IP') {
         configJson = JSON.stringify({ PlcType: editPlcType, Protocol: editPlcProtocol, Path: editPlcPath, TimeoutMs: Number(editPlcTimeoutMs) });
+      } else if (editAdapterProtocol === 'Siemens S7') {
+        configJson = JSON.stringify({ CpuType: editS7CpuType, Rack: Number(editS7Rack), Slot: Number(editS7Slot), TimeoutMs: Number(editS7TimeoutMs) });
       }
       const res = await fetch('/api/adapters', {
         method: 'POST',
@@ -174,6 +181,13 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                   setEditPlcPath('1,0');
                   setEditPlcTimeoutMs(5000);
                 }
+                else if (nextProtocol === 'Siemens S7') {
+                  setEditAdapterPort(102);
+                  setEditS7CpuType('S71200');
+                  setEditS7Rack(0);
+                  setEditS7Slot(1);
+                  setEditS7TimeoutMs(5000);
+                }
                 else if (nextProtocol === 'WEBHOOK') {
                   setEditAdapterHost('localhost');
                   setEditAdapterPort(80);
@@ -193,6 +207,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                 { value: 'MODBUS_TCP', label: 'Modbus TCP Node' },
                 { value: 'MODBUS_RTU', label: 'Modbus RTU (Serial)' },
                 { value: 'Ethernet/IP', label: 'Ethernet/IP PLC' },
+                { value: 'Siemens S7', label: 'Siemens S7 PLC' },
                 { value: 'WEBHOOK', label: 'REST Webhook' },
                 { value: 'SIMULATOR', label: 'Protocol Simulator' }
               ]} />
@@ -247,6 +262,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
               {editAdapterProtocol === 'MODBUS_TCP' && 'Modbus TCP Settings'}
               {editAdapterProtocol === 'MODBUS_RTU' && 'Modbus RTU Settings'}
               {editAdapterProtocol === 'Ethernet/IP' && 'Ethernet/IP Settings'}
+              {editAdapterProtocol === 'Siemens S7' && 'Siemens S7 Settings'}
               {editAdapterProtocol === 'OPC_UA' && 'OPC UA Security Settings'}
               {editAdapterProtocol === 'MQTT' && 'MQTT Client Settings'}
               {editAdapterProtocol === 'WEBHOOK' && 'REST Webhook Settings'}
@@ -307,6 +323,38 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                     { value: 'RequestToSend', label: 'RequestToSend' },
                     { value: 'RequestToSendXOnXOff', label: 'RequestToSendXOnXOff' }
                   ]} />
+                </div>
+              </div>
+            )}
+
+            {editAdapterProtocol === 'Siemens S7' && (
+              <div className="form-stack-sm">
+                <div className="form-group form-group-flush">
+                  <label className="form-label">CPU Type</label>
+                  <CustomSelect value={editS7CpuType} onChange={setEditS7CpuType} options={[
+                    { value: 'S7200', label: 'S7-200' },
+                    { value: 'S7300', label: 'S7-300' },
+                    { value: 'S7400', label: 'S7-400' },
+                    { value: 'S71200', label: 'S7-1200' },
+                    { value: 'S71500', label: 'S7-1500' }
+                  ]} />
+                </div>
+                <div className="form-grid-half">
+                  <div className="form-group form-group-flush">
+                    <label className="form-label">Rack</label>
+                    <input type="number" min="0" max="10" className="form-input" value={editS7Rack}
+                      onChange={(e) => setEditS7Rack(Math.max(0, Number(e.target.value) || 0))} required />
+                  </div>
+                  <div className="form-group form-group-flush">
+                    <label className="form-label">Slot</label>
+                    <input type="number" min="0" max="10" className="form-input" value={editS7Slot}
+                      onChange={(e) => setEditS7Slot(Math.max(0, Number(e.target.value) || 0))} required />
+                  </div>
+                </div>
+                <div className="form-group form-group-flush">
+                  <label className="form-label">Timeout (ms)</label>
+                  <input type="number" min="50" max="30000" className="form-input" value={editS7TimeoutMs}
+                    onChange={(e) => setEditS7TimeoutMs(Math.max(50, Number(e.target.value) || 5000))} required />
                 </div>
               </div>
             )}

@@ -174,6 +174,15 @@ export default function AdapterCard({
                     <span className="badge neutral badge-config">Timeout: {String(config.TimeoutMs ?? 5000)} ms</span>
                   </div>
                 );
+              } else if (adapter.protocol === 'Siemens S7') {
+                return (
+                  <div className="adapter-badge-group">
+                    <span className="badge neutral badge-config">CPU: {String(config.CpuType ?? 'S71200')}</span>
+                    <span className="badge neutral badge-config">Rack: {String(config.Rack ?? '0')}</span>
+                    <span className="badge neutral badge-config">Slot: {String(config.Slot ?? '1')}</span>
+                    <span className="badge neutral badge-config">Timeout: {String(config.TimeoutMs ?? 5000)} ms</span>
+                  </div>
+                );
               } else if (adapter.protocol === 'WEBHOOK') {
                 return (
                   <div className="adapter-badge-group">

@@ -44,7 +44,7 @@ export default function FactoryResetModal({
           <ul style={{ margin: 0, paddingLeft: '20px', listStyleType: 'disc' }}>
             <li>All device configurations and onboarding status</li>
             <li>All enqueued telemetry data and events in the SQLite buffer</li>
-            <li>All configured driver adapters (Modbus, OPC UA, MQTT, Ethernet/IP)</li>
+            <li>All configured driver adapters (Modbus, OPC UA, MQTT, Ethernet/IP, Siemens S7)</li>
             <li>All data points, streams, and active tags</li>
           </ul>
         </div>

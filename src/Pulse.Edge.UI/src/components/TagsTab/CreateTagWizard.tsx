@@ -6,6 +6,7 @@ import OpcBrowserModal from './OpcBrowserModal';
 import MqttBrowserModal from './MqttBrowserModal';
 import WebhookBrowserModal from './WebhookBrowserModal';
 import EthernetIpBrowserModal from './EthernetIpBrowserModal';
+import SiemensS7BrowserModal from './SiemensS7BrowserModal';
 import ModalShell from '../ModalShell';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
@@ -40,6 +41,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
   const [isMqttBrowserOpen, setIsMqttBrowserOpen] = useState(false);
   const [isWebhookBrowserOpen, setIsWebhookBrowserOpen] = useState(false);
   const [isEipBrowserOpen, setIsEipBrowserOpen] = useState(false);
+  const [isS7BrowserOpen, setIsS7BrowserOpen] = useState(false);
 
   const handleCreateAdapterChange = (adapterId: string) => {
     setNewDpAdapterId(adapterId);
@@ -155,6 +157,13 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
     setIsEipBrowserOpen(true);
   };
 
+  const handleOpenS7Browser = () => {
+    if (!newDpAdapterId) { toast.warning('Please select a Siemens S7 adapter first.'); return; }
+    const adapter = adapters.find(a => a.id === newDpAdapterId);
+    if (!adapter || adapter.protocol !== 'Siemens S7') { toast.warning('The selected adapter is not a Siemens S7 adapter.'); return; }
+    setIsS7BrowserOpen(true);
+  };
+
   if (!isOpen) return null;
 
   const activeAdapter = adapters.find(a => a.id === newDpAdapterId);
@@ -166,8 +175,9 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
       plcType = config.PlcType || '';
     } catch (e) {}
   }
-  const isBrowseSupported = protocol === 'Ethernet/IP' &&
-    (plcType === 'ControlLogix' || plcType === 'CompactLogix' || plcType === 'Micro800');
+  const isBrowseSupported = (protocol === 'Ethernet/IP' &&
+    (plcType === 'ControlLogix' || plcType === 'CompactLogix' || plcType === 'Micro800')) ||
+    protocol === 'Siemens S7';
 
   const stepTitle =
     wizardStep === 1 ? 'Step 1: Identify the connection source and tag address details.' :
@@ -235,7 +245,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                   <div className="form-group form-group-flush">
                     <label className="form-label form-label-bold">
                       {protocol === 'MODBUS_TCP' && 'Modbus Register Address'}
-                      {protocol === 'Ethernet/IP' && 'PLC Tag Name'}
+                      {(protocol === 'Ethernet/IP' || protocol === 'Siemens S7') && 'PLC Tag Name'}
                       {protocol === 'OPC_UA' && 'OPC UA Node ID'}
                       {protocol === 'SIMULATOR' && 'Simulated Variable Name'}
                       {protocol === 'MQTT' && (newDpMqttDeviceId
@@ -248,6 +258,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                         placeholder={
                           protocol === 'MODBUS_TCP' ? 'e.g. 40001 (Holding Register) or 30005 (Input Register)' :
                           protocol === 'Ethernet/IP' ? 'e.g. PROGRAM:Main.Machine_Speed or MyGlobalTag' :
+                          protocol === 'Siemens S7' ? 'e.g. DB1.DBX0.0 or DB2.DBW2' :
                           protocol === 'OPC_UA' ? 'e.g. ns=2;s=Machine_Temperature' :
                           protocol === 'WEBHOOK' ? 'e.g. $.temperature or $.sensors.humidity' :
                           protocol === 'SIMULATOR' ? 'e.g. voltage, current, active_power, energy, running, count' :
@@ -266,7 +277,13 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                         <button type="button" onClick={handleOpenWebhookBrowser} className="btn-browse">Browse Payload</button>
                       )}
                       {isBrowseSupported && (
-                        <button type="button" onClick={handleOpenEipBrowser} className="btn-browse">Browse PLC</button>
+                        <button 
+                          type="button" 
+                          onClick={protocol === 'Siemens S7' ? handleOpenS7Browser : handleOpenEipBrowser} 
+                          className="btn-browse"
+                        >
+                          Browse PLC
+                        </button>
                       )}
                     </div>
                   </div>
@@ -460,6 +477,15 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
         adapters={adapters}
         toast={toast}
         onSaveSuccess={() => { setIsEipBrowserOpen(false); onClose(); fetchData(); }}
+      />
+
+      <SiemensS7BrowserModal
+        isOpen={isS7BrowserOpen}
+        onClose={() => setIsS7BrowserOpen(false)}
+        adapterId={newDpAdapterId}
+        adapters={adapters}
+        toast={toast}
+        onSaveSuccess={() => { setIsS7BrowserOpen(false); onClose(); fetchData(); }}
       />
     </>
   );

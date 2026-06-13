@@ -62,6 +62,7 @@ export default function DashboardTab({
           if (telemetryFilterType === 'Modbus TCP') return adp.protocol === 'MODBUS_TCP';
           if (telemetryFilterType === 'Modbus RTU') return adp.protocol === 'MODBUS_RTU';
           if (telemetryFilterType === 'Ethernet/IP') return adp.protocol === 'Ethernet/IP';
+          if (telemetryFilterType === 'Siemens S7') return adp.protocol === 'Siemens S7';
           return false;
         });
         if (!hasProtocol) return false;
@@ -194,7 +195,8 @@ export default function DashboardTab({
                       { value: 'MQTT', label: 'MQTT' },
                       { value: 'Modbus TCP', label: 'Modbus TCP' },
                       { value: 'Modbus RTU', label: 'Modbus RTU' },
-                      { value: 'Ethernet/IP', label: 'Ethernet/IP' }
+                      { value: 'Ethernet/IP', label: 'Ethernet/IP' },
+                      { value: 'Siemens S7', label: 'Siemens S7' }
                     ]}
                   />
                 </div>

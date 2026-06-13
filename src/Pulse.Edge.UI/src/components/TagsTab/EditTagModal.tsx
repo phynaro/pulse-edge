@@ -131,6 +131,7 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
           <label className="form-label form-label-bold">
             {protocol === 'MODBUS_TCP' ? 'Modbus Register Address' :
              protocol === 'Ethernet/IP' ? 'PLC Tag Name' :
+             protocol === 'Siemens S7' ? 'PLC Tag Name' :
              protocol === 'OPC_UA' ? 'OPC UA Node ID' :
              protocol === 'MQTT' ? (editDpMqttDeviceId
                ? (mqttDevices.find(d => d.id === editDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'JSON Path (from device payload)' : 'MQTT Sub-topic or Metric Name')
@@ -140,6 +141,7 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
           <input className="form-input text-mono" type="text"
             placeholder={protocol === 'MODBUS_TCP' ? 'e.g. 40001 or 30005' :
               protocol === 'Ethernet/IP' ? 'e.g. PROGRAM:Main.Machine_Speed or MyGlobalTag' :
+              protocol === 'Siemens S7' ? 'e.g. DB1.DBX0.0 or DB2.DBW2' :
               protocol === 'OPC_UA' ? 'e.g. ns=2;s=Temperature' :
               protocol === 'WEBHOOK' ? 'e.g. $.temperature or $.sensors.humidity' :
               protocol === 'MQTT' ? (editDpMqttDeviceId

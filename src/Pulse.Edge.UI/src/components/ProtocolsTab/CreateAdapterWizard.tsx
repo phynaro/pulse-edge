@@ -52,6 +52,11 @@ export default function CreateAdapterWizard({
   const [newPlcPath, setNewPlcPath] = useState<string>('1,0');
   const [newPlcTimeoutMs, setNewPlcTimeoutMs] = useState<number>(5000);
 
+  const [newS7CpuType, setNewS7CpuType] = useState<string>('S71200');
+  const [newS7Rack, setNewS7Rack] = useState<number>(0);
+  const [newS7Slot, setNewS7Slot] = useState<number>(1);
+  const [newS7TimeoutMs, setNewS7TimeoutMs] = useState<number>(5000);
+
   const handleDiscoverOpcUa = async (host: string, port: number) => {
     if (!host) { toast.warning('Please enter a Connection Host/IP before discovering.'); return; }
     setOpcDiscoverStatus('discovering');
@@ -164,6 +169,8 @@ export default function CreateAdapterWizard({
         configJson = JSON.stringify({ Template: newSimulatorTemplate });
       } else if (newAdapterProtocol === 'Ethernet/IP') {
         configJson = JSON.stringify({ PlcType: newPlcType, Protocol: newPlcProtocol, Path: newPlcPath, TimeoutMs: Number(newPlcTimeoutMs) });
+      } else if (newAdapterProtocol === 'Siemens S7') {
+        configJson = JSON.stringify({ CpuType: newS7CpuType, Rack: Number(newS7Rack), Slot: Number(newS7Slot), TimeoutMs: Number(newS7TimeoutMs) });
       }
       const res = await fetch('/api/adapters', {
         method: 'POST',
@@ -191,7 +198,7 @@ export default function CreateAdapterWizard({
     (wizardStep === 1 && !newAdapterName.trim()) ||
     (wizardStep === 2 && newAdapterProtocol !== 'WEBHOOK' && !newAdapterHost.trim());
 
-  const supportsDiscovery = ['MODBUS_TCP', 'Ethernet/IP', 'MQTT', 'OPC_UA'].includes(newAdapterProtocol);
+  const supportsDiscovery = ['MODBUS_TCP', 'Ethernet/IP', 'MQTT', 'OPC_UA', 'Siemens S7'].includes(newAdapterProtocol);
 
   return (
     <ModalShell
@@ -267,6 +274,14 @@ export default function CreateAdapterWizard({
                     setNewPlcPath('1,0');
                     setNewPlcTimeoutMs(5000);
                   }
+                  else if (nextProtocol === 'Siemens S7') {
+                    setNewAdapterHost('127.0.0.1');
+                    setNewAdapterPort(102);
+                    setNewS7CpuType('S71200');
+                    setNewS7Rack(0);
+                    setNewS7Slot(1);
+                    setNewS7TimeoutMs(5000);
+                  }
                   else if (nextProtocol === 'WEBHOOK') {
                     setNewAdapterHost('localhost');
                     setNewAdapterPort(80);
@@ -290,6 +305,7 @@ export default function CreateAdapterWizard({
                   { value: 'MODBUS_TCP', label: 'Modbus TCP Node' },
                   { value: 'MODBUS_RTU', label: 'Modbus RTU (Serial)' },
                   { value: 'Ethernet/IP', label: 'Ethernet/IP PLC' },
+                  { value: 'Siemens S7', label: 'Siemens S7 PLC' },
                   { value: 'WEBHOOK', label: 'REST Webhook' },
                   { value: 'SIMULATOR', label: 'Protocol Simulator' }
                 ]} 
@@ -457,6 +473,7 @@ export default function CreateAdapterWizard({
               {newAdapterProtocol === 'MODBUS_TCP' && 'Modbus TCP Settings'}
               {newAdapterProtocol === 'MODBUS_RTU' && 'Modbus RTU Settings'}
               {newAdapterProtocol === 'Ethernet/IP' && 'Ethernet/IP Settings'}
+              {newAdapterProtocol === 'Siemens S7' && 'Siemens S7 Settings'}
               {newAdapterProtocol === 'OPC_UA' && 'OPC UA Security Settings'}
               {newAdapterProtocol === 'MQTT' && 'MQTT Client Settings'}
               {newAdapterProtocol === 'WEBHOOK' && 'REST Webhook Settings'}
@@ -517,6 +534,38 @@ export default function CreateAdapterWizard({
                     { value: 'RequestToSend', label: 'RequestToSend' },
                     { value: 'RequestToSendXOnXOff', label: 'RequestToSendXOnXOff' }
                   ]} />
+                </div>
+              </div>
+            )}
+
+            {newAdapterProtocol === 'Siemens S7' && (
+              <div className="form-stack-sm">
+                <div className="form-group form-group-flush">
+                  <label className="form-label">CPU Type</label>
+                  <CustomSelect value={newS7CpuType} onChange={setNewS7CpuType} options={[
+                    { value: 'S7200', label: 'S7-200' },
+                    { value: 'S7300', label: 'S7-300' },
+                    { value: 'S7400', label: 'S7-400' },
+                    { value: 'S71200', label: 'S7-1200' },
+                    { value: 'S71500', label: 'S7-1500' }
+                  ]} />
+                </div>
+                <div className="form-grid-half">
+                  <div className="form-group form-group-flush">
+                    <label className="form-label">Rack</label>
+                    <input type="number" min="0" max="10" className="form-input" value={newS7Rack}
+                      onChange={(e) => setNewS7Rack(Math.max(0, Number(e.target.value) || 0))} required />
+                  </div>
+                  <div className="form-group form-group-flush">
+                    <label className="form-label">Slot</label>
+                    <input type="number" min="0" max="10" className="form-input" value={newS7Slot}
+                      onChange={(e) => setNewS7Slot(Math.max(0, Number(e.target.value) || 0))} required />
+                  </div>
+                </div>
+                <div className="form-group form-group-flush">
+                  <label className="form-label">Timeout (ms)</label>
+                  <input type="number" min="50" max="30000" className="form-input" value={newS7TimeoutMs}
+                    onChange={(e) => setNewS7TimeoutMs(Math.max(50, Number(e.target.value) || 5000))} required />
                 </div>
               </div>
             )}

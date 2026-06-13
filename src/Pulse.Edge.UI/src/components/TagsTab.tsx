@@ -71,6 +71,7 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
       else if (tagProtocolFilter === 'Modbus TCP') matchesProto = adp?.protocol === 'MODBUS_TCP';
       else if (tagProtocolFilter === 'Modbus RTU') matchesProto = adp?.protocol === 'MODBUS_RTU';
       else if (tagProtocolFilter === 'Ethernet/IP') matchesProto = adp?.protocol === 'Ethernet/IP';
+      else if (tagProtocolFilter === 'Siemens S7') matchesProto = adp?.protocol === 'Siemens S7';
       else if (tagProtocolFilter === 'REST Webhook') matchesProto = adp?.protocol === 'WEBHOOK';
       else if (tagProtocolFilter === 'Protocol Simulator') matchesProto = adp?.protocol === 'SIMULATOR';
     }
@@ -158,7 +159,7 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
         </div>
 
         <div className="tag-protocol-chips">
-          {['All', 'OPC UA', 'MQTT', 'Modbus TCP', 'Modbus RTU', 'Ethernet/IP', 'REST Webhook', 'Protocol Simulator'].map((cat) => (
+          {['All', 'OPC UA', 'MQTT', 'Modbus TCP', 'Modbus RTU', 'Ethernet/IP', 'Siemens S7', 'REST Webhook', 'Protocol Simulator'].map((cat) => (
             <button
               key={cat}
               onClick={() => setTagProtocolFilter(cat)}
