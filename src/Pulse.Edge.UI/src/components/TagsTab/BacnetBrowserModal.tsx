@@ -91,29 +91,28 @@ export default function BacnetBrowserModal({
     });
   };
 
-  const handleSelectAllFiltered = (filtered: DiscoveredTag[]) => {
+  const handleSelectAllFiltered = (filteredList: DiscoveredTag[]) => {
     setSelectedTags(prev => {
       const next = { ...prev };
-      filtered.forEach(tag => {
+      filteredList.forEach(tag => {
         next[tag.name] = tag;
       });
       return next;
     });
   };
 
-  const handleDeselectAllFiltered = (filtered: DiscoveredTag[]) => {
+  const handleDeselectAllFiltered = (filteredList: DiscoveredTag[]) => {
     setSelectedTags(prev => {
       const next = { ...prev };
-      filtered.forEach(tag => {
+      filteredList.forEach(tag => {
         delete next[tag.name];
       });
       return next;
     });
   };
 
-  const handleGoToConfigure = () => {
+  const handleNextStep = () => {
     const list = Object.values(selectedTags).map(tag => {
-      // Clean up tag name for binding (e.g. replacing colons with underscores)
       const cleanName = tag.name.replace(/[^a-zA-Z0-9_]/g, '_');
       return {
         name: tag.name,
@@ -127,11 +126,12 @@ export default function BacnetBrowserModal({
     setStep(2);
   };
 
-  const handleUpdateConfiguringTag = (index: number, fields: Partial<BacnetConfiguringTag>) => {
-    setConfiguringTags(prev => prev.map((item, i) => i === index ? { ...item, ...fields } : item));
+  const handleUpdateConfiguringTag = (index: number, field: keyof BacnetConfiguringTag, value: any) => {
+    setConfiguringTags(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
   };
 
-  const handleRegisterTags = async () => {
+  const handleSaveTags = async () => {
+    setLoading(true);
     let successes = 0;
     let failures = 0;
 
@@ -167,6 +167,8 @@ export default function BacnetBrowserModal({
       }
     }
 
+    setLoading(false);
+
     if (successes > 0 && failures === 0) {
       toast.success(`Successfully registered ${successes} BACnet tags.`);
       onSaveSuccess();
@@ -189,112 +191,134 @@ export default function BacnetBrowserModal({
 
   return (
     <ModalShell
-      title={`BACnet Objects Browser: ${activeAdapter?.name || 'Adapter'}`}
-      subtitle={step === 1 ? 'Select objects to register as physical tags.' : 'Configure parameters for the selected objects.'}
-      size="lg"
+      title="BACnet Objects Discoverer"
+      subtitle={activeAdapter ? `${activeAdapter.name} (${activeAdapter.host})` : undefined}
+      size="browser"
+      bodyClassName="browser-modal-body"
       onClose={onClose}
     >
       {step === 1 ? (
-        <div className="discovery-modal-body">
-          <div className="discovery-toolbar">
-            <div className="search-input-wrap">
-              <Search className="search-icon-inside" size={16} />
-              <input
-                type="text"
-                className="form-input search-input-pl"
-                placeholder="Filter BACnet objects by address or type..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
+        <div className="browser-layout">
+          <div className="browser-left-pane">
+            <div className="browser-search-wrap" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <div className="tag-search-inner" style={{ flex: 1 }}>
+                <Search size={16} />
+                <input
+                  type="text"
+                  placeholder="Filter discovered symbols by name or type..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              {filtered.length > 0 && (
+                <div style={{ display: 'flex', gap: '0.25rem' }}>
+                  <button type="button" onClick={() => handleSelectAllFiltered(filtered)} className="btn-secondary text-xs">
+                    Select All
+                  </button>
+                  <button type="button" onClick={() => handleDeselectAllFiltered(filtered)} className="btn-secondary text-xs">
+                    Deselect All
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="flex-row gap-sm">
-              <button
-                type="button"
-                className="btn-secondary btn-sm"
-                onClick={() => allFilteredSelected ? handleDeselectAllFiltered(filtered) : handleSelectAllFiltered(filtered)}
-                disabled={filtered.length === 0}
-              >
-                {allFilteredSelected ? 'Deselect All' : 'Select All Filtered'}
-              </button>
-            </div>
-          </div>
 
-          {loading ? (
-            <div className="discovery-loading-state">
-              <div className="loading-spinner" />
-              <div className="loading-label">Discovering BACnet objects over UDP...</div>
-            </div>
-          ) : error ? (
-            <div className="alert-box-danger my-md">
-              <AlertTriangle size={18} />
-              <span>{error}</span>
-            </div>
-          ) : discoveredTags.length === 0 ? (
-            <div className="discovery-empty-state">No BACnet objects discovered. Verify that the device is online and supports Object List read service.</div>
-          ) : (
-            <div className="discovery-list-container">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '40px' }} className="text-center">Select</th>
-                    <th>Object Reference (Type:Instance)</th>
-                    <th>Default Data Type</th>
-                    <th>Type Hex</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(tag => {
-                    const isSelected = !!selectedTags[tag.name];
-                    return (
-                      <tr
-                        key={tag.name}
-                        className={isSelected ? 'is-selected clickable-row' : 'clickable-row'}
-                        onClick={() => handleToggleTag(tag)}
-                      >
-                        <td className="text-center" onClick={e => e.stopPropagation()}>
+            {loading && discoveredTags.length === 0 ? (
+              <div className="browser-loading">
+                <div className="opc-spinner" />
+                <span className="browser-loading-text">Connecting to device and querying object database...</span>
+              </div>
+            ) : error ? (
+              <div className="browser-error-state">
+                <AlertTriangle color="var(--danger-color)" size={32} />
+                <span className="browser-error-title">Discovery Failed</span>
+                <span className="browser-error-desc">{error}</span>
+                <button
+                  type="button"
+                  onClick={() => fetchBacnetTags(adapterId)}
+                  className="btn-browser-retry"
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : (
+              <div className="browser-node-section">
+                <span className="browser-available-label">Discovered Objects ({filtered.length})</span>
+                {filtered.length === 0 ? (
+                  <div className="browser-folder-empty">
+                    {discoveredTags.length === 0 ? 'No BACnet objects were discovered. Verify connection settings.' : 'No objects match your filter.'}
+                  </div>
+                ) : (
+                  <div className="browser-node-list">
+                    {filtered.map((tag) => {
+                      const isSelected = !!selectedTags[tag.name];
+                      return (
+                        <div
+                          key={tag.name}
+                          className={`browser-node-item${isSelected ? ' is-selected' : ''}`}
+                          onClick={() => handleToggleTag(tag)}
+                        >
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => handleToggleTag(tag)}
+                            className="browser-checkbox"
+                            onClick={(e) => e.stopPropagation()}
                           />
-                        </td>
-                        <td className="text-mono-sm font-bold">{tag.name}</td>
-                        <td>
-                          <span className="badge tag-dtype-badge">{tag.dataType}</span>
-                        </td>
-                        <td className="text-mono-sm text-secondary">{tag.typeHex}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                          <div className="browser-node-details">
+                            <div className="browser-node-name">{tag.name}</div>
+                            <div className="browser-node-id" style={{ color: 'var(--text-muted)' }}>
+                              Type: {tag.dataType} (Hex: {tag.typeHex})
+                            </div>
+                          </div>
+                          {tag.dataType && <span className="browser-type-chip">{tag.dataType}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
-          <div className="modal-footer mt-md">
-            <div className="text-secondary text-sm">
-              {selectedCount} object{selectedCount === 1 ? '' : 's'} selected
+          <div className="browser-right-pane">
+            <div className="browser-right-header">
+              <span className="browser-section-label">Selected Objects ({selectedCount})</span>
+              {selectedCount > 0 && (
+                <button type="button" onClick={() => setSelectedTags({})} className="browser-clear-btn">
+                  Clear All
+                </button>
+              )}
             </div>
-            <div className="flex-row gap-sm">
-              <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-              <button
-                type="button"
-                onClick={handleGoToConfigure}
-                disabled={selectedCount === 0}
-                className="btn-primary"
-              >
-                Configure Selection ({selectedCount})
-              </button>
-            </div>
+            {selectedCount === 0 ? (
+              <div className="browser-empty-right">
+                <span className="browser-empty-icon">📋</span>
+                <span className="browser-empty-text">Select BACnet objects on the left to add them as registry tags.</span>
+              </div>
+            ) : (
+              <div className="browser-selected-list">
+                {Object.values(selectedTags).map((tag) => (
+                  <div key={tag.name} className="browser-selected-item">
+                    <div className="browser-selected-details">
+                      <div className="browser-selected-name">{tag.name}</div>
+                      <div className="browser-selected-id">{tag.dataType}</div>
+                    </div>
+                    <button type="button" onClick={() => handleToggleTag(tag)} className="btn-browser-remove">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       ) : (
-        <div className="discovery-modal-body">
-          <div className="discovery-list-container is-configure">
-            <table className="data-table">
+        <div className="browser-config-body">
+          <span className="browser-config-step-label">Step 2: Configure BACnet Object Parameters</span>
+          <div className="browser-config-wrap">
+            <table className="browser-config-table">
               <thead>
                 <tr>
-                  <th>Object</th>
+                  <th>BACnet Address</th>
+                  <th>Tag Registry Name</th>
                   <th>Data Type</th>
                   <th>Scan Rate (ms)</th>
                   <th>Description</th>
@@ -303,13 +327,22 @@ export default function BacnetBrowserModal({
               <tbody>
                 {configuringTags.map((tag, idx) => (
                   <tr key={tag.name}>
-                    <td className="text-mono-sm">
-                      <div className="font-bold">{tag.name}</div>
+                    <td className="browser-cell-max">
+                      <div className="browser-cell-name">{tag.name}</div>
                     </td>
                     <td>
+                      <input
+                        type="text"
+                        value={tag.tagName}
+                        onChange={(e) => handleUpdateConfiguringTag(idx, 'tagName', e.target.value)}
+                        className="browser-table-input"
+                      />
+                    </td>
+                    <td className="browser-cell-w-dtype">
                       <CustomSelect
                         value={tag.dataType}
-                        onChange={val => handleUpdateConfiguringTag(idx, { dataType: val })}
+                        onChange={(val) => handleUpdateConfiguringTag(idx, 'dataType', val)}
+                        className="is-compact"
                         options={[
                           { value: 'Float', label: 'Float' },
                           { value: 'Double', label: 'Double' },
@@ -322,22 +355,22 @@ export default function BacnetBrowserModal({
                         ]}
                       />
                     </td>
-                    <td>
+                    <td className="browser-cell-w-scan">
                       <input
                         type="number"
-                        className="form-input text-mono text-center"
-                        style={{ width: '100px' }}
-                        value={tag.scanIntervalMs}
                         min={100}
-                        onChange={e => handleUpdateConfiguringTag(idx, { scanIntervalMs: Math.max(100, Number(e.target.value) || 1000) })}
+                        value={tag.scanIntervalMs}
+                        onChange={(e) => handleUpdateConfiguringTag(idx, 'scanIntervalMs', parseInt(e.target.value, 10) || 1000)}
+                        className="browser-table-input"
                       />
                     </td>
                     <td>
                       <input
                         type="text"
-                        className="form-input"
                         value={tag.description}
-                        onChange={e => handleUpdateConfiguringTag(idx, { description: e.target.value })}
+                        onChange={(e) => handleUpdateConfiguringTag(idx, 'description', e.target.value)}
+                        placeholder="Optional description"
+                        className="browser-table-input"
                       />
                     </td>
                   </tr>
@@ -345,13 +378,42 @@ export default function BacnetBrowserModal({
               </tbody>
             </table>
           </div>
-
-          <div className="modal-footer mt-md">
-            <button type="button" onClick={() => setStep(1)} className="btn-secondary">Back</button>
-            <button type="button" onClick={handleRegisterTags} className="btn-register">Register Tags ({configuringTags.length})</button>
-          </div>
         </div>
       )}
+
+      <div className="browser-footer">
+        {step === 1 ? (
+          <>
+            <span className="browser-footer-count">{selectedCount} symbols selected</span>
+            <div className="browser-footer-btns">
+              <button type="button" onClick={onClose} className="btn-browser-cancel">Cancel</button>
+              <button
+                type="button"
+                onClick={handleNextStep}
+                disabled={selectedCount === 0}
+                className={`btn-browser-next${selectedCount === 0 ? ' is-empty' : ' is-ready'}`}
+              >
+                Next Step →
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="browser-footer-count">{configuringTags.length} tags configured</span>
+            <div className="browser-footer-btns">
+              <button type="button" onClick={() => setStep(1)} className="btn-browser-cancel">Back</button>
+              <button
+                type="button"
+                onClick={handleSaveTags}
+                disabled={loading}
+                className="btn-browser-save"
+              >
+                {loading ? 'Saving...' : 'Save & Register Tags'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </ModalShell>
   );
 }

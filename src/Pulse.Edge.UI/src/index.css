@@ -217,3 +217,12 @@ body {
   border: 1px solid rgba(245, 158, 11, 0.25) !important;
 }
 
+/* Discovery list container scrollability in modals */
+.discovery-list-container {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin-top: 1rem;
+}
+
