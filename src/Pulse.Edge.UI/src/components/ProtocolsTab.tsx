@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Network, Plus } from 'lucide-react';
 import type { DriverAdapter, DataPoint, MqttDevice } from '../types';
 import type { useToast } from '../hooks/useToast';
@@ -33,6 +33,60 @@ export default function ProtocolsTab({
   const [editingDevice, setEditingDevice] = useState<MqttDevice | null>(null);
   const [deviceAdapterId, setDeviceAdapterId] = useState('');
 
+  const [orderedAdapters, setOrderedAdapters] = useState<DriverAdapter[]>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  // Sync state with incoming adapters prop & sort by localStorage order
+  useEffect(() => {
+    const savedOrder = localStorage.getItem('pulse-adapters-order');
+    if (savedOrder) {
+      try {
+        const orderIds = JSON.parse(savedOrder) as string[];
+        const sorted = [...adapters].sort((a, b) => {
+          const idxA = orderIds.indexOf(a.id);
+          const idxB = orderIds.indexOf(b.id);
+          if (idxA === -1 && idxB === -1) return 0;
+          if (idxA === -1) return 1;
+          if (idxB === -1) return -1;
+          return idxA - idxB;
+        });
+        setOrderedAdapters(sorted);
+        return;
+      } catch (e) {
+        console.error('Failed to parse saved adapters order:', e);
+      }
+    }
+    setOrderedAdapters(adapters);
+  }, [adapters]);
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDragEnter = (targetIndex: number) => {
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+    const updated = [...orderedAdapters];
+    const [draggedItem] = updated.splice(draggedIndex, 1);
+    updated.splice(targetIndex, 0, draggedItem);
+
+    setDraggedIndex(targetIndex);
+    setOrderedAdapters(updated);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    const orderIds = orderedAdapters.map(a => a.id);
+    localStorage.setItem('pulse-adapters-order', JSON.stringify(orderIds));
+  };
+
   return (
     <div className="tab-stack">
       <div className="page-header">
@@ -54,7 +108,7 @@ export default function ProtocolsTab({
       </div>
 
       <div className="adapter-grid">
-        {adapters.map((proto) => (
+        {orderedAdapters.map((proto, index) => (
           <AdapterCard
             key={proto.id}
             adapter={proto}
@@ -73,6 +127,12 @@ export default function ProtocolsTab({
             }}
             toast={toast}
             fetchData={fetchData}
+            index={index}
+            draggedIndex={draggedIndex}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
+            onDragEnd={handleDragEnd}
           />
         ))}
       </div>

@@ -1,5 +1,5 @@
 
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import type { DriverAdapter, MqttDevice } from '../../types';
 import type { useToast } from '../../hooks/useToast';
@@ -15,6 +15,12 @@ interface AdapterCardProps {
   onEditMqttDevice: (device: MqttDevice) => void;
   toast: ToastFn;
   fetchData: () => Promise<void>;
+  index: number;
+  draggedIndex: number | null;
+  onDragStart: (e: React.DragEvent, index: number) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragEnter: (index: number) => void;
+  onDragEnd: () => void;
 }
 
 export default function AdapterCard({
@@ -25,7 +31,13 @@ export default function AdapterCard({
   onAddMqttDevice,
   onEditMqttDevice,
   toast,
-  fetchData
+  fetchData,
+  index,
+  draggedIndex,
+  onDragStart,
+  onDragOver,
+  onDragEnter,
+  onDragEnd
 }: AdapterCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [rowSpan, setRowSpan] = useState<number>(0);
@@ -74,13 +86,24 @@ export default function AdapterCard({
     }
   };
 
+  const isDraggingThis = draggedIndex === index;
+
   return (
     <div 
       ref={cardRef}
       className="panel adapter-card" 
+      draggable
+      onDragStart={(e) => onDragStart(e, index)}
+      onDragOver={onDragOver}
+      onDragEnter={() => onDragEnter(index)}
+      onDragEnd={onDragEnd}
       style={{ 
         height: 'fit-content',
-        gridRowEnd: rowSpan ? `span ${rowSpan}` : undefined
+        gridRowEnd: rowSpan ? `span ${rowSpan}` : undefined,
+        cursor: 'grab',
+        opacity: isDraggingThis ? 0.4 : 1,
+        transition: 'opacity 0.2s ease, transform 0.2s ease',
+        transform: isDraggingThis ? 'scale(0.98)' : 'none'
       }}
     >
       <div>
