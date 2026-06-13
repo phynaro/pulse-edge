@@ -21,5 +21,6 @@
     <ProjectReference Include="..\Pulse.Edge.Protocols.Modbus\Pulse.Edge.Protocols.Modbus.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Protocols.LibPlcTag\Pulse.Edge.Protocols.LibPlcTag.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Protocols.S7Net\Pulse.Edge.Protocols.S7Net.csproj" />
+    <ProjectReference Include="..\Pulse.Edge.Protocols.RestApi\Pulse.Edge.Protocols.RestApi.csproj" />
   </ItemGroup>
 </Project>

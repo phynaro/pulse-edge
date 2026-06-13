@@ -5,6 +5,7 @@ import CustomSelect from '../CustomSelect';
 import OpcBrowserModal from './OpcBrowserModal';
 import MqttBrowserModal from './MqttBrowserModal';
 import WebhookBrowserModal from './WebhookBrowserModal';
+import RestApiBrowserModal from './RestApiBrowserModal';
 import EthernetIpBrowserModal from './EthernetIpBrowserModal';
 import SiemensS7BrowserModal from './SiemensS7BrowserModal';
 import ModalShell from '../ModalShell';
@@ -40,6 +41,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
   const [isOpcBrowserOpen, setIsOpcBrowserOpen] = useState(false);
   const [isMqttBrowserOpen, setIsMqttBrowserOpen] = useState(false);
   const [isWebhookBrowserOpen, setIsWebhookBrowserOpen] = useState(false);
+  const [isRestApiBrowserOpen, setIsRestApiBrowserOpen] = useState(false);
   const [isEipBrowserOpen, setIsEipBrowserOpen] = useState(false);
   const [isS7BrowserOpen, setIsS7BrowserOpen] = useState(false);
 
@@ -47,7 +49,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
     setNewDpAdapterId(adapterId);
     setNewDpMqttDeviceId('');
     const selected = adapters.find(a => a.id === adapterId);
-    if (selected?.protocol === 'WEBHOOK') {
+    if (selected?.protocol === 'WEBHOOK' || selected?.protocol === 'REST_API') {
       setNewDpMqttParseMode('JSON');
       setNewDpByteOrder('ABCD');
     } else if (selected?.protocol !== 'MODBUS_TCP') {
@@ -148,6 +150,13 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
     const adapter = adapters.find(a => a.id === newDpAdapterId);
     if (!adapter || adapter.protocol !== 'WEBHOOK') { toast.warning('The selected adapter is not a Webhook adapter.'); return; }
     setIsWebhookBrowserOpen(true);
+  };
+
+  const handleOpenRestApiBrowser = () => {
+    if (!newDpAdapterId) { toast.warning('Please select a REST API adapter first.'); return; }
+    const adapter = adapters.find(a => a.id === newDpAdapterId);
+    if (!adapter || adapter.protocol !== 'REST_API') { toast.warning('The selected adapter is not a REST API adapter.'); return; }
+    setIsRestApiBrowserOpen(true);
   };
 
   const handleOpenEipBrowser = () => {
@@ -252,6 +261,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                         ? (mqttDevices.find(d => d.id === newDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'JSON Path (from device payload)' : 'MQTT Sub-topic or Metric Name')
                         : 'MQTT Topic')}
                       {protocol === 'WEBHOOK' && 'JSON Path (from webhook payload)'}
+                      {protocol === 'REST_API' && 'JSON Path (from JSON payload)'}
                     </label>
                     <div className="address-input-row">
                       <input className="form-input address-input-mono" type="text"
@@ -260,7 +270,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                           protocol === 'Ethernet/IP' ? 'e.g. PROGRAM:Main.Machine_Speed or MyGlobalTag' :
                           protocol === 'Siemens S7' ? 'e.g. DB1.DBX0.0 or DB2.DBW2' :
                           protocol === 'OPC_UA' ? 'e.g. ns=2;s=Machine_Temperature' :
-                          protocol === 'WEBHOOK' ? 'e.g. $.temperature or $.sensors.humidity' :
+                          (protocol === 'WEBHOOK' || protocol === 'REST_API') ? 'e.g. $.temperature or $.sensors.humidity' :
                           protocol === 'SIMULATOR' ? 'e.g. voltage, current, active_power, energy, running, count' :
                           newDpMqttDeviceId
                             ? (mqttDevices.find(d => d.id === newDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'e.g. $.temperature or $.sensors.humidity' : 'e.g. temperature')
@@ -275,6 +285,9 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                       )}
                       {protocol === 'WEBHOOK' && (
                         <button type="button" onClick={handleOpenWebhookBrowser} className="btn-browse">Browse Payload</button>
+                      )}
+                      {protocol === 'REST_API' && (
+                        <button type="button" onClick={handleOpenRestApiBrowser} className="btn-browse">Browse Payload</button>
                       )}
                       {isBrowseSupported && (
                         <button 
@@ -349,7 +362,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                 </>
               )}
 
-              {protocol === 'WEBHOOK' && (
+              {(protocol === 'WEBHOOK' || protocol === 'REST_API') && (
                 <>
                   <div className="form-group form-group-flush">
                     <label className="form-label form-label-bold">Parse Mode</label>
@@ -468,6 +481,15 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
         adapters={adapters}
         toast={toast}
         onSaveSuccess={() => { setIsWebhookBrowserOpen(false); onClose(); fetchData(); }}
+      />
+
+      <RestApiBrowserModal
+        isOpen={isRestApiBrowserOpen}
+        onClose={() => setIsRestApiBrowserOpen(false)}
+        adapterId={newDpAdapterId}
+        adapters={adapters}
+        toast={toast}
+        onSaveSuccess={() => { setIsRestApiBrowserOpen(false); onClose(); fetchData(); }}
       />
 
       <EthernetIpBrowserModal

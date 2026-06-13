@@ -57,6 +57,12 @@ export default function CreateAdapterWizard({
   const [newS7Slot, setNewS7Slot] = useState<number>(1);
   const [newS7TimeoutMs, setNewS7TimeoutMs] = useState<number>(5000);
 
+  const [newRestMethod, setNewRestMethod] = useState<string>('GET');
+  const [newRestPath, setNewRestPath] = useState<string>('/');
+  const [newRestHeaders, setNewRestHeaders] = useState<{ key: string; value: string }[]>([]);
+  const [newRestBody, setNewRestBody] = useState<string>('');
+  const [newRestTimeoutMs, setNewRestTimeoutMs] = useState<number>(5000);
+
   const handleDiscoverOpcUa = async (host: string, port: number) => {
     if (!host) { toast.warning('Please enter a Connection Host/IP before discovering.'); return; }
     setOpcDiscoverStatus('discovering');
@@ -171,6 +177,20 @@ export default function CreateAdapterWizard({
         configJson = JSON.stringify({ PlcType: newPlcType, Protocol: newPlcProtocol, Path: newPlcPath, TimeoutMs: Number(newPlcTimeoutMs) });
       } else if (newAdapterProtocol === 'Siemens S7') {
         configJson = JSON.stringify({ CpuType: newS7CpuType, Rack: Number(newS7Rack), Slot: Number(newS7Slot), TimeoutMs: Number(newS7TimeoutMs) });
+      } else if (newAdapterProtocol === 'REST_API') {
+        const headersObj: Record<string, string> = {};
+        newRestHeaders.forEach(h => {
+          if (h.key.trim()) {
+            headersObj[h.key.trim()] = h.value;
+          }
+        });
+        configJson = JSON.stringify({
+          Method: newRestMethod,
+          Path: newRestPath,
+          Headers: headersObj,
+          Body: newRestBody,
+          TimeoutMs: Number(newRestTimeoutMs)
+        });
       }
       const res = await fetch('/api/adapters', {
         method: 'POST',
@@ -287,6 +307,15 @@ export default function CreateAdapterWizard({
                     setNewAdapterPort(80);
                     setWebhookToken('wh_tok_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
                   }
+                  else if (nextProtocol === 'REST_API') {
+                    setNewAdapterHost('127.0.0.1');
+                    setNewAdapterPort(80);
+                    setNewRestMethod('GET');
+                    setNewRestPath('/');
+                    setNewRestHeaders([]);
+                    setNewRestBody('');
+                    setNewRestTimeoutMs(5000);
+                  }
                   else if (nextProtocol === 'SIMULATOR') {
                     setNewAdapterHost('simulator');
                     setNewAdapterPort(0);
@@ -307,6 +336,7 @@ export default function CreateAdapterWizard({
                   { value: 'Ethernet/IP', label: 'Ethernet/IP PLC' },
                   { value: 'Siemens S7', label: 'Siemens S7 PLC' },
                   { value: 'WEBHOOK', label: 'REST Webhook' },
+                  { value: 'REST_API', label: 'REST API Poller' },
                   { value: 'SIMULATOR', label: 'Protocol Simulator' }
                 ]} 
               />
@@ -477,6 +507,7 @@ export default function CreateAdapterWizard({
               {newAdapterProtocol === 'OPC_UA' && 'OPC UA Security Settings'}
               {newAdapterProtocol === 'MQTT' && 'MQTT Client Settings'}
               {newAdapterProtocol === 'WEBHOOK' && 'REST Webhook Settings'}
+              {newAdapterProtocol === 'REST_API' && 'REST API Poller Settings'}
               {newAdapterProtocol === 'SIMULATOR' && 'Protocol Simulator Settings'}
             </h4>
 
@@ -712,6 +743,123 @@ export default function CreateAdapterWizard({
                     This token is generated automatically. It must be included in the webhook URL query string to authorize payload delivery.
                   </span>
                 </div>
+              </div>
+            )}
+
+            {newAdapterProtocol === 'REST_API' && (
+              <div className="form-stack-sm">
+                <div className="form-grid-half">
+                  <div className="form-group form-group-flush">
+                    <label className="form-label form-label-bold">HTTP Method</label>
+                    <CustomSelect 
+                      value={newRestMethod} 
+                      onChange={setNewRestMethod} 
+                      options={[
+                        { value: 'GET', label: 'GET' },
+                        { value: 'POST', label: 'POST' },
+                        { value: 'PUT', label: 'PUT' },
+                        { value: 'DELETE', label: 'DELETE' }
+                      ]} 
+                    />
+                  </div>
+                  <div className="form-group form-group-flush">
+                    <label className="form-label form-label-bold">Request Path</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="e.g. /api/data" 
+                      value={newRestPath} 
+                      onChange={(e) => setNewRestPath(e.target.value)} 
+                      required 
+                    />
+                  </div>
+                  <div className="form-group form-group-flush form-grid-span-2">
+                    <label className="form-label form-label-bold">Timeout (ms)</label>
+                    <input 
+                      type="number" 
+                      min="100" 
+                      max="30000" 
+                      className="form-input" 
+                      value={newRestTimeoutMs} 
+                      onChange={(e) => setNewRestTimeoutMs(Math.max(100, Number(e.target.value) || 5000))} 
+                      required 
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group form-group-flush" style={{ marginTop: '0.75rem' }}>
+                  <label className="form-label form-label-bold" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Headers</span>
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs"
+                      style={{ padding: '0.2rem 0.5rem' }}
+                      onClick={() => setNewRestHeaders([...newRestHeaders, { key: '', value: '' }])}
+                    >
+                      + Add Header
+                    </button>
+                  </label>
+                  {newRestHeaders.length === 0 ? (
+                    <span className="text-secondary text-xs" style={{ fontStyle: 'italic', display: 'block', padding: '0.25rem 0' }}>
+                      No custom headers defined.
+                    </span>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
+                      {newRestHeaders.map((header, idx) => (
+                        <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            placeholder="Header Key"
+                            className="form-input text-xs"
+                            value={header.key}
+                            style={{ flex: 1 }}
+                            onChange={(e) => {
+                              const updated = [...newRestHeaders];
+                              updated[idx].key = e.target.value;
+                              setNewRestHeaders(updated);
+                            }}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Value"
+                            className="form-input text-xs"
+                            value={header.value}
+                            style={{ flex: 1 }}
+                            onChange={(e) => {
+                              const updated = [...newRestHeaders];
+                              updated[idx].value = e.target.value;
+                              setNewRestHeaders(updated);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ padding: '0.4rem', minWidth: '32px' }}
+                            onClick={() => {
+                              const updated = newRestHeaders.filter((_, i) => i !== idx);
+                              setNewRestHeaders(updated);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {(newRestMethod === 'POST' || newRestMethod === 'PUT') && (
+                  <div className="form-group form-group-flush" style={{ marginTop: '0.75rem' }}>
+                    <label className="form-label form-label-bold">Request Body (JSON)</label>
+                    <textarea
+                      rows={3}
+                      className="form-input text-mono text-xs"
+                      placeholder='{ "key": "value" }'
+                      value={newRestBody}
+                      onChange={(e) => setNewRestBody(e.target.value)}
+                    />
+                  </div>
+                )}
               </div>
             )}
 

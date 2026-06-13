@@ -8,6 +8,7 @@ using Pulse.Edge.Storage.Services;
 using Pulse.Edge.Protocols.OpcUa;
 using Pulse.Edge.Protocols.LibPlcTag;
 using Pulse.Edge.Protocols.S7Net;
+using Pulse.Edge.Protocols.RestApi;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -427,6 +428,91 @@ public static class AdapterEndpoints
                 var topics = new List<MqttBrowseItem>
                 {
                     new MqttBrowseItem("webhook-payload", lastPayload, lastSeen, keys)
+                };
+
+                return Results.Ok(new { success = true, topics });
+            }
+            catch (Exception ex)
+            {
+                return Results.Ok(new { success = false, message = $"Browse failed: {ex.Message}" });
+            }
+        });
+
+        // POST /api/adapters/restapi/browse - Browse REST API response payload keys
+        routes.MapPost("/api/adapters/restapi/browse", async (RestApiBrowseRequest request, RestApiDriver restApiDriver, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.AdapterId))
+            {
+                return Results.BadRequest(new { success = false, message = "AdapterId is required." });
+            }
+
+            try
+            {
+                using var db = new QueueDbContext();
+                var adapter = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Id == request.AdapterId, cancellationToken);
+                if (adapter == null)
+                {
+                    return Results.NotFound(new { success = false, message = "Adapter not found." });
+                }
+
+                if (adapter.Protocol != "REST_API")
+                {
+                    return Results.BadRequest(new { success = false, message = "Selected adapter is not a REST_API adapter." });
+                }
+
+                // Connect the driver to configure the endpoint
+                await restApiDriver.ConnectAsync(adapter.Host, adapter.Port, adapter.ConfigJson ?? "{}", cancellationToken);
+
+                // Fetch the live payload in real-time
+                string payload = await restApiDriver.FetchPayloadAsync(cancellationToken);
+                string lastSeen = DateTime.UtcNow.ToString("o");
+
+                // Update LastPayload and LastSeen in ConfigJson
+                try
+                {
+                    var configObj = new Dictionary<string, object>();
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(adapter.ConfigJson))
+                        {
+                            configObj = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(adapter.ConfigJson) ?? new Dictionary<string, object>();
+                        }
+                    }
+                    catch {}
+
+                    configObj["LastPayload"] = payload;
+                    configObj["LastSeen"] = lastSeen;
+
+                    adapter.ConfigJson = System.Text.Json.JsonSerializer.Serialize(configObj);
+                    db.DriverAdapters.Update(adapter);
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+                catch {}
+
+                // Extract JSON keys/paths
+                var keys = new List<MqttJsonKeyItem>();
+                if (!string.IsNullOrWhiteSpace(payload))
+                {
+                    try
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(payload);
+                        ExtractJsonPaths(doc.RootElement, "", keys);
+                    }
+                    catch
+                    {
+                        // Payload is not JSON or invalid
+                    }
+                }
+
+                // If no JSON keys were extracted, add a default key for the raw payload
+                if (keys.Count == 0)
+                {
+                    keys.Add(new MqttJsonKeyItem("$", "String", payload));
+                }
+
+                var topics = new List<MqttBrowseItem>
+                {
+                    new MqttBrowseItem("rest-api-payload", payload, lastSeen, keys)
                 };
 
                 return Results.Ok(new { success = true, topics });
@@ -1069,6 +1155,7 @@ public record MqttBrowseRequest(string AdapterId);
 public record MqttBrowseItem(string Topic, string Payload, string LastSeen, List<MqttJsonKeyItem> Keys);
 public record MqttJsonKeyItem(string Path, string DataType, string Value);
 public record WebhookBrowseRequest(string AdapterId);
+public record RestApiBrowseRequest(string AdapterId);
 public record EthernetIpBrowseRequest(string AdapterId);
 public record SiemensS7BrowseRequest(string AdapterId);
 public record EthernetIpTemplateRequest(string AdapterId, ushort TemplateId);

@@ -40,6 +40,7 @@ public class DataSourceDeclarationBuilderTests
     [InlineData("MODBUS_RTU", "modbus")]
     [InlineData("MQTT", "mqtt")]
     [InlineData("WEBHOOK", "mqtt")]
+    [InlineData("REST_API", "mqtt")]
     [InlineData("Ethernet/IP", "opcua")]
     public void NormalizeProtocol_MapsAdapterProtocols(string adapterProtocol, string expected)
     {

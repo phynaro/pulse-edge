@@ -192,6 +192,16 @@ export default function AdapterCard({
                     )}
                   </div>
                 );
+              } else if (adapter.protocol === 'REST_API') {
+                return (
+                  <div className="adapter-badge-group">
+                    <span className="badge neutral badge-config">Method: {String(config.Method ?? 'GET')}</span>
+                    <span className="badge neutral badge-config">Path: {String(config.Path ?? '/')}</span>
+                    {config.LastSeen && (
+                      <span className="badge neutral badge-config">Last Seen: {new Date(config.LastSeen).toLocaleTimeString()}</span>
+                    )}
+                  </div>
+                );
               } else if (adapter.protocol === 'SIMULATOR') {
                 return (
                   <div className="adapter-badge-group">

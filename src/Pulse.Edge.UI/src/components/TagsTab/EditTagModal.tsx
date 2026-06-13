@@ -51,7 +51,7 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
     setEditDpAdapterId(adapterId);
     setEditDpMqttDeviceId('');
     const selected = adapters.find(a => a.id === adapterId);
-    if (selected?.protocol === 'WEBHOOK') {
+    if (selected?.protocol === 'WEBHOOK' || selected?.protocol === 'REST_API') {
       setEditDpMqttParseMode('JSON');
       setEditDpByteOrder('ABCD');
     } else if (selected?.protocol !== 'MODBUS_TCP') {
@@ -136,18 +136,18 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
              protocol === 'MQTT' ? (editDpMqttDeviceId
                ? (mqttDevices.find(d => d.id === editDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'JSON Path (from device payload)' : 'MQTT Sub-topic or Metric Name')
                : 'MQTT Topic') :
-             protocol === 'WEBHOOK' ? 'JSON Path (from webhook payload)' : 'Tag Address'}
+             (protocol === 'WEBHOOK' || protocol === 'REST_API') ? 'JSON Path (from JSON payload)' : 'Tag Address'}
           </label>
           <input className="form-input text-mono" type="text"
             placeholder={protocol === 'MODBUS_TCP' ? 'e.g. 40001 or 30005' :
               protocol === 'Ethernet/IP' ? 'e.g. PROGRAM:Main.Machine_Speed or MyGlobalTag' :
               protocol === 'Siemens S7' ? 'e.g. DB1.DBX0.0 or DB2.DBW2' :
               protocol === 'OPC_UA' ? 'e.g. ns=2;s=Temperature' :
-              protocol === 'WEBHOOK' ? 'e.g. $.temperature or $.sensors.humidity' :
+              (protocol === 'WEBHOOK' || protocol === 'REST_API') ? 'e.g. $.temperature or $.sensors.humidity' :
               protocol === 'MQTT' ? (editDpMqttDeviceId
                 ? (mqttDevices.find(d => d.id === editDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'e.g. $.temperature or $.sensors.humidity' : 'e.g. temperature')
                 : 'e.g. factory/casepacker/temperature') : 'e.g. Address'}
-            value={editDpAddress} onChange={(e) => { setEditDpAddress(e.target.value); if (protocol === 'WEBHOOK') setEditDpMqttJsonPath(e.target.value); }} required />
+            value={editDpAddress} onChange={(e) => { setEditDpAddress(e.target.value); if (protocol === 'WEBHOOK' || protocol === 'REST_API') setEditDpMqttJsonPath(e.target.value); }} required />
         </div>
 
         <div className="form-group form-group-flush">
@@ -210,7 +210,7 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
           </>
         )}
 
-        {protocol === 'WEBHOOK' && (
+        {(protocol === 'WEBHOOK' || protocol === 'REST_API') && (
           <>
             <div className="form-group form-group-flush">
               <label className="form-label form-label-bold">Parse Mode</label>

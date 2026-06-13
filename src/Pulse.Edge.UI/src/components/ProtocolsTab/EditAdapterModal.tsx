@@ -59,6 +59,17 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
   const [editS7Slot, setEditS7Slot] = useState<number>(config.Slot ?? 1);
   const [editS7TimeoutMs, setEditS7TimeoutMs] = useState<number>(config.TimeoutMs ?? 5000);
 
+  const [editRestMethod, setEditRestMethod] = useState<string>(config.Method ?? 'GET');
+  const [editRestPath, setEditRestPath] = useState<string>(config.Path ?? '/');
+  const [editRestHeaders, setEditRestHeaders] = useState<{ key: string; value: string }[]>(() => {
+    if (config.Headers && typeof config.Headers === 'object') {
+      return Object.entries(config.Headers).map(([key, value]) => ({ key, value: String(value) }));
+    }
+    return [];
+  });
+  const [editRestBody, setEditRestBody] = useState<string>(config.Body ?? '');
+  const [editRestTimeoutMs, setEditRestTimeoutMs] = useState<number>(config.TimeoutMs ?? 5000);
+
   if (!adapter) return null;
 
   const handleDiscoverOpcUa = async (host: string, port: number) => {
@@ -136,6 +147,22 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
         configJson = JSON.stringify({ PlcType: editPlcType, Protocol: editPlcProtocol, Path: editPlcPath, TimeoutMs: Number(editPlcTimeoutMs) });
       } else if (editAdapterProtocol === 'Siemens S7') {
         configJson = JSON.stringify({ CpuType: editS7CpuType, Rack: Number(editS7Rack), Slot: Number(editS7Slot), TimeoutMs: Number(editS7TimeoutMs) });
+      } else if (editAdapterProtocol === 'REST_API') {
+        const headersObj: Record<string, string> = {};
+        editRestHeaders.forEach(h => {
+          if (h.key.trim()) {
+            headersObj[h.key.trim()] = h.value;
+          }
+        });
+        configJson = JSON.stringify({
+          Method: editRestMethod,
+          Path: editRestPath,
+          Headers: headersObj,
+          Body: editRestBody,
+          TimeoutMs: Number(editRestTimeoutMs),
+          LastPayload: config.LastPayload ?? '',
+          LastSeen: config.LastSeen ?? ''
+        });
       }
       const res = await fetch('/api/adapters', {
         method: 'POST',
@@ -195,6 +222,14 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                     setWebhookToken('wh_tok_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
                   }
                 }
+                else if (nextProtocol === 'REST_API') {
+                  setEditAdapterPort(80);
+                  setEditRestMethod('GET');
+                  setEditRestPath('/');
+                  setEditRestHeaders([]);
+                  setEditRestBody('');
+                  setEditRestTimeoutMs(5000);
+                }
                 else if (nextProtocol === 'SIMULATOR') {
                   setEditAdapterHost('simulator');
                   setEditAdapterPort(0);
@@ -209,6 +244,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                 { value: 'Ethernet/IP', label: 'Ethernet/IP PLC' },
                 { value: 'Siemens S7', label: 'Siemens S7 PLC' },
                 { value: 'WEBHOOK', label: 'REST Webhook' },
+                { value: 'REST_API', label: 'REST API Poller' },
                 { value: 'SIMULATOR', label: 'Protocol Simulator' }
               ]} />
             </div>
@@ -266,6 +302,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
               {editAdapterProtocol === 'OPC_UA' && 'OPC UA Security Settings'}
               {editAdapterProtocol === 'MQTT' && 'MQTT Client Settings'}
               {editAdapterProtocol === 'WEBHOOK' && 'REST Webhook Settings'}
+              {editAdapterProtocol === 'REST_API' && 'REST API Poller Settings'}
               {editAdapterProtocol === 'SIMULATOR' && 'Protocol Simulator Settings'}
             </h4>
 
@@ -501,6 +538,123 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                     This token is required in the query string of your HTTP POST request to authorize payload delivery.
                   </span>
                 </div>
+              </div>
+            )}
+
+            {editAdapterProtocol === 'REST_API' && (
+              <div className="form-stack-sm">
+                <div className="form-grid-half">
+                  <div className="form-group form-group-flush">
+                    <label className="form-label form-label-bold">HTTP Method</label>
+                    <CustomSelect 
+                      value={editRestMethod} 
+                      onChange={setEditRestMethod} 
+                      options={[
+                        { value: 'GET', label: 'GET' },
+                        { value: 'POST', label: 'POST' },
+                        { value: 'PUT', label: 'PUT' },
+                        { value: 'DELETE', label: 'DELETE' }
+                      ]} 
+                    />
+                  </div>
+                  <div className="form-group form-group-flush">
+                    <label className="form-label form-label-bold">Request Path</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="e.g. /api/data" 
+                      value={editRestPath} 
+                      onChange={(e) => setEditRestPath(e.target.value)} 
+                      required 
+                    />
+                  </div>
+                  <div className="form-group form-group-flush form-grid-span-2">
+                    <label className="form-label form-label-bold">Timeout (ms)</label>
+                    <input 
+                      type="number" 
+                      min="100" 
+                      max="30000" 
+                      className="form-input" 
+                      value={editRestTimeoutMs} 
+                      onChange={(e) => setEditRestTimeoutMs(Math.max(100, Number(e.target.value) || 5000))} 
+                      required 
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group form-group-flush" style={{ marginTop: '0.75rem' }}>
+                  <label className="form-label form-label-bold" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Headers</span>
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs"
+                      style={{ padding: '0.2rem 0.5rem' }}
+                      onClick={() => setEditRestHeaders([...editRestHeaders, { key: '', value: '' }])}
+                    >
+                      + Add Header
+                    </button>
+                  </label>
+                  {editRestHeaders.length === 0 ? (
+                    <span className="text-secondary text-xs" style={{ fontStyle: 'italic', display: 'block', padding: '0.25rem 0' }}>
+                      No custom headers defined.
+                    </span>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
+                      {editRestHeaders.map((header, idx) => (
+                        <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            placeholder="Header Key"
+                            className="form-input text-xs"
+                            value={header.key}
+                            style={{ flex: 1 }}
+                            onChange={(e) => {
+                              const updated = [...editRestHeaders];
+                              updated[idx].key = e.target.value;
+                              setEditRestHeaders(updated);
+                            }}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Value"
+                            className="form-input text-xs"
+                            value={header.value}
+                            style={{ flex: 1 }}
+                            onChange={(e) => {
+                              const updated = [...editRestHeaders];
+                              updated[idx].value = e.target.value;
+                              setEditRestHeaders(updated);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ padding: '0.4rem', minWidth: '32px' }}
+                            onClick={() => {
+                              const updated = editRestHeaders.filter((_, i) => i !== idx);
+                              setEditRestHeaders(updated);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {(editRestMethod === 'POST' || editRestMethod === 'PUT') && (
+                  <div className="form-group form-group-flush" style={{ marginTop: '0.75rem' }}>
+                    <label className="form-label form-label-bold">Request Body (JSON)</label>
+                    <textarea
+                      rows={3}
+                      className="form-input text-mono text-xs"
+                      placeholder='{ "key": "value" }'
+                      value={editRestBody}
+                      onChange={(e) => setEditRestBody(e.target.value)}
+                    />
+                  </div>
+                )}
               </div>
             )}
 

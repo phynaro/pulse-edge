@@ -27,6 +27,7 @@
     <ProjectReference Include="..\Pulse.Edge.Protocols.OpcUa\Pulse.Edge.Protocols.OpcUa.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Protocols.LibPlcTag\Pulse.Edge.Protocols.LibPlcTag.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Protocols.S7Net\Pulse.Edge.Protocols.S7Net.csproj" />
+    <ProjectReference Include="..\Pulse.Edge.Protocols.RestApi\Pulse.Edge.Protocols.RestApi.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Agent\Pulse.Edge.Agent.csproj" />
   </ItemGroup>
 

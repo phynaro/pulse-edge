@@ -20,6 +20,7 @@ public static class DataSourceDeclarationBuilder
             "ethernetip" => "opcua",
             "mqtt" => "mqtt",
             "webhook" => "mqtt",
+            "restapi" => "mqtt",
             _ => "opcua",
         };
     }
