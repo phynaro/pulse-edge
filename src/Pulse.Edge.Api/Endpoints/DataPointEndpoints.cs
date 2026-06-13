@@ -87,6 +87,43 @@ public static class DataPointEndpoints
             return Results.Ok(new { success = true });
         });
 
+        // POST /api/datapoints/bulk-bind - Binds multiple physical data point tags to metrics in bulk
+        routes.MapPost("/api/datapoints/bulk-bind", async (BulkBindRequest request) =>
+        {
+            using var db = new QueueDbContext();
+            
+            // Unbind old mappings for the same stream and metric keys to avoid conflicts
+            var metricsToBind = request.Bindings.Select(b => b.Metric).ToList();
+            var existingBound = await db.DataPoints
+                .Where(x => x.DataSourceId == request.DataSourceId && metricsToBind.Contains(x.Metric))
+                .ToListAsync();
+                
+            foreach (var oldDp in existingBound)
+            {
+                if (!request.Bindings.Any(b => b.DataPointId == oldDp.Id))
+                {
+                    oldDp.DataSourceId = string.Empty;
+                    oldDp.Metric = string.Empty;
+                    db.DataPoints.Update(oldDp);
+                }
+            }
+            
+            // Apply new bindings
+            foreach (var binding in request.Bindings)
+            {
+                var dp = await db.DataPoints.FirstOrDefaultAsync(x => x.Id == binding.DataPointId);
+                if (dp != null)
+                {
+                    dp.DataSourceId = request.DataSourceId;
+                    dp.Metric = binding.Metric;
+                    db.DataPoints.Update(dp);
+                }
+            }
+            
+            await db.SaveChangesAsync();
+            return Results.Ok(new { success = true });
+        });
+
         // GET /api/mqtt-devices - Returns configured MQTT devices
         routes.MapGet("/api/mqtt-devices", async () =>
         {
@@ -150,4 +187,16 @@ public static class DataPointEndpoints
             return Results.Ok(new { success = true });
         });
     }
+}
+
+public class BulkBindRequest
+{
+    public string DataSourceId { get; set; } = string.Empty;
+    public System.Collections.Generic.List<DataPointBinding> Bindings { get; set; } = new();
+}
+
+public class DataPointBinding
+{
+    public string DataPointId { get; set; } = string.Empty;
+    public string Metric { get; set; } = string.Empty;
 }

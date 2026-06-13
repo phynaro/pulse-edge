@@ -157,6 +157,7 @@ export default function DataSourcesTab({
           datasources={datasources}
           datapoints={datapoints}
           adapters={adapters}
+          templates={templates}
           fetchData={fetchData}
           toast={toast}
           onClose={() => {

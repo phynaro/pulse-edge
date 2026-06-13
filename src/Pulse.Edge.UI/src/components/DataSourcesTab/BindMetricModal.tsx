@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Search, AlertCircle } from 'lucide-react';
-import type { DataSource, DataPoint, DriverAdapter } from '../../types';
+import type { DataSource, DataPoint, DriverAdapter, StreamTemplate } from '../../types';
 import type { useToast } from '../../hooks/useToast';
 import CustomSelect from '../CustomSelect';
 import ModalShell from '../ModalShell';
@@ -14,12 +14,20 @@ function streamThemeClass(type?: string): string {
   return 'theme-general';
 }
 
+interface ConfiguringBinding {
+  tagId: string;
+  address: string;
+  dataType: string;
+  metric: string;
+}
+
 interface BindMetricModalProps {
   dataSourceId: string;
   initialMetric: string;
   datasources: DataSource[];
   datapoints: DataPoint[];
   adapters: DriverAdapter[];
+  templates: StreamTemplate[];
   fetchData: () => Promise<void>;
   toast: ToastFn;
   onClose: () => void;
@@ -31,18 +39,34 @@ export default function BindMetricModal({
   datasources,
   datapoints,
   adapters,
+  templates,
   fetchData,
   toast,
   onClose
 }: BindMetricModalProps) {
-  const [newDpMetric, setNewDpMetric] = useState(initialMetric);
-  const [selectedTagId, setSelectedTagId] = useState('');
+  const [step, setStep] = useState(1);
+  const [selectedTagIds, setSelectedTagIds] = useState<Record<string, boolean>>({});
   const [tagSearchQuery, setTagSearchQuery] = useState('');
   const [tagAdapterFilter, setTagAdapterFilter] = useState('All');
   const [tagMappingFilter, setTagMappingFilter] = useState('Free');
+  const [configuringBindings, setConfiguringBindings] = useState<ConfiguringBinding[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const activeDs = datasources.find(x => x.id === dataSourceId);
   const themeClass = streamThemeClass(activeDs?.type);
+  const matchingTemplate = templates.find(t => t.id === activeDs?.type);
+  const isTemplate = !!matchingTemplate && activeDs?.type !== 'General';
+
+  let expectedParams: string[] = [];
+  if (matchingTemplate) {
+    try {
+      expectedParams = JSON.parse(matchingTemplate.parametersJson) || [];
+    } catch (e) {
+      console.error('Failed to parse template parameters:', e);
+    }
+  }
+
+  const selectedCount = Object.keys(selectedTagIds).length;
 
   const filteredDatapoints = useMemo(() => {
     return datapoints.filter(dp => {
@@ -64,62 +88,144 @@ export default function BindMetricModal({
     });
   }, [datapoints, tagAdapterFilter, tagMappingFilter, tagSearchQuery, adapters]);
 
-  const handleAddDataPoint = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTagId || !dataSourceId || !newDpMetric) {
-      toast.warning('Please select a physical tag and specify a metric key.');
+  const handleToggleTag = (tagId: string) => {
+    setSelectedTagIds(prev => {
+      const next = { ...prev };
+      if (next[tagId]) {
+        delete next[tagId];
+      } else {
+        next[tagId] = true;
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllFiltered = (filteredList: DataPoint[]) => {
+    setSelectedTagIds(prev => {
+      const next = { ...prev };
+      filteredList.forEach(dp => {
+        next[dp.id] = true;
+      });
+      return next;
+    });
+  };
+
+  const handleDeselectAllFiltered = (filteredList: DataPoint[]) => {
+    setSelectedTagIds(prev => {
+      const next = { ...prev };
+      filteredList.forEach(dp => {
+        delete next[dp.id];
+      });
+      return next;
+    });
+  };
+
+  const handleNextStep = () => {
+    const selectedList = Object.keys(selectedTagIds);
+    if (selectedList.length === 0) {
+      toast.warning('Please select at least one physical tag to configure.');
       return;
     }
 
-    const tagToBind = datapoints.find(dp => dp.id === selectedTagId);
-    if (!tagToBind) {
-      toast.error('Selected physical tag not found.');
-      return;
-    }
+    const bindings = selectedList.map((tagId, index) => {
+      const dp = datapoints.find(x => x.id === tagId);
+      const address = dp?.address || '';
 
-    try {
-      const existingBoundDp = datapoints.find(
-        dp => dp.dataSourceId === dataSourceId && dp.metric === newDpMetric
-      );
-
-      if (existingBoundDp && existingBoundDp.id !== selectedTagId) {
-        const unbindRes = await fetch(`/api/datapoints/${existingBoundDp.id}`, { method: 'DELETE' });
-        if (!unbindRes.ok) {
-          toast.warning(`Note: Failed to unbind old tag for ${newDpMetric}. Binding new tag anyway.`);
+      // Auto-populate default metric key
+      let metric = '';
+      if (isTemplate) {
+        if (index === 0 && initialMetric) {
+          metric = initialMetric;
+        } else {
+          // Find first template parameter that isn't already mapped, or default to the first parameter
+          const unmapped = expectedParams.find(p => !datapoints.some(d => d.dataSourceId === dataSourceId && d.metric === p));
+          metric = unmapped || expectedParams[0] || '';
+        }
+      } else {
+        if (index === 0 && initialMetric) {
+          metric = initialMetric;
+        } else {
+          const rawAddress = dp?.address || '';
+          metric = rawAddress
+            .split(';').pop()?.split('=').pop()
+            ?.replace(/[^a-zA-Z0-9_/]/g, '_')
+            ?.replace(/\/+/g, '_')
+            ?.replace(/_+/g, '_')
+            ?.replace(/^_+|_+$/g, '')
+            ?.toLowerCase() || '';
         }
       }
 
-      const payload = { ...tagToBind, dataSourceId: dataSourceId, metric: newDpMetric };
-      const res = await fetch('/api/datapoints', {
+      return {
+        tagId,
+        address,
+        dataType: dp?.dataType || 'Float',
+        metric
+      };
+    });
+
+    setConfiguringBindings(bindings);
+    setStep(2);
+  };
+
+  const handleUpdateBindingMetric = (index: number, val: string) => {
+    setConfiguringBindings(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], metric: val };
+      return next;
+    });
+  };
+
+  const handleSaveBindings = async () => {
+    setLoading(true);
+    try {
+      const invalid = configuringBindings.some(b => !b.metric || b.metric.trim() === '');
+      if (invalid) {
+        toast.error('All physical tags must have a metric key assigned.');
+        setLoading(false);
+        return;
+      }
+
+      const payload = {
+        dataSourceId,
+        bindings: configuringBindings.map(b => ({
+          dataPointId: b.tagId,
+          metric: b.metric.trim()
+        }))
+      };
+
+      const res = await fetch('/api/datapoints/bulk-bind', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
       if (res.ok) {
-        toast.success('Physical tag bound to metric successfully.');
-        fetchData();
+        toast.success(`Successfully bound ${configuringBindings.length} physical tags to metrics.`);
+        await fetchData();
         onClose();
       } else {
-        toast.error('Failed to bind physical tag.');
+        const errorData = await res.json().catch(() => ({}));
+        toast.error(errorData.message || 'Failed to bind physical tags to metrics.');
       }
     } catch (err) {
-      console.error('Failed to bind data point:', err);
-      toast.error('Failed to bind data point.');
+      const errMsg = err instanceof Error ? err.message : 'An unknown error occurred.';
+      toast.error('An error occurred: ' + errMsg);
+    } finally {
+      setLoading(false);
     }
   };
-
-  const metricInputLocked = activeDs ? activeDs.type !== 'General' : false;
 
   return (
     <ModalShell
       title="Bind Metric Tag"
       subtitle="Establish a telemetry source driver tag mapping."
-      size="wide"
+      size="browser"
+      bodyClassName="browser-modal-body"
       onClose={onClose}
     >
-      <form onSubmit={handleAddDataPoint} className="form-stack">
-        <div className={`bind-stream-banner ${themeClass}`}>
+      <div className="form-stack" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <div className={`bind-stream-banner ${themeClass}`} style={{ marginBottom: '1rem' }}>
           <div>
             <span className="bind-stream-target-label">Target Stream</span>
             <span className="bind-stream-name">{activeDs?.name || dataSourceId}</span>
@@ -129,171 +235,229 @@ export default function BindMetricModal({
           </span>
         </div>
 
-        <div className="form-group form-group-flush form-group-stack">
-          <label className="form-label form-label-bold">Select Connection Tag</label>
-          {datapoints.length === 0 ? (
-            <div className="confirm-warning-box">
-              No physical tags configured. Please configure tags under the "Tags" tab first.
-            </div>
-          ) : (
-            <>
-              <div className="bind-filter-controls">
-                <div className="bind-search-wrap">
+        {step === 1 ? (
+          <div className="browser-layout" style={{ flex: 1, minHeight: 0 }}>
+            <div className="browser-left-pane">
+              <div className="browser-search-wrap" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                <div className="tag-search-inner" style={{ flex: 1 }}>
                   <Search size={16} />
                   <input
                     type="text"
                     placeholder="Search tags by address, description, adapter..."
                     value={tagSearchQuery}
                     onChange={(e) => setTagSearchQuery(e.target.value)}
-                    className="bind-search-input"
+                    className="form-input"
                   />
                 </div>
-
-                <div className="bind-filter-row">
-                  <div className="bind-filter-col">
-                    <label className="bind-filter-label">Connection / Adapter</label>
-                    <CustomSelect
-                      value={tagAdapterFilter}
-                      onChange={setTagAdapterFilter}
-                      options={[
-                        { value: 'All', label: 'All Adapters' },
-                        ...adapters.map(a => ({ value: a.id, label: `${a.name} (${a.protocol})` }))
-                      ]}
-                    />
+                {filteredDatapoints.length > 0 && (
+                  <div style={{ display: 'flex', gap: '0.25rem' }}>
+                    <button type="button" onClick={() => handleSelectAllFiltered(filteredDatapoints)} className="btn-secondary text-xs">
+                      Select All
+                    </button>
+                    <button type="button" onClick={() => handleDeselectAllFiltered(filteredDatapoints)} className="btn-secondary text-xs">
+                      Deselect All
+                    </button>
                   </div>
-                  <div className="bind-filter-col">
-                    <label className="bind-filter-label">Mapping Status</label>
-                    <div className="mapping-status-toggle">
-                      {(['Free', 'All', 'Mapped'] as const).map((status) => (
-                        <button
-                          key={status}
-                          type="button"
-                          onClick={() => setTagMappingFilter(status)}
-                          className={`mapping-status-btn${tagMappingFilter === status ? ' is-active' : ''}`}
-                        >
-                          {status}
-                        </button>
-                      ))}
-                    </div>
+                )}
+              </div>
+
+              <div className="bind-filter-row" style={{ display: 'flex', gap: '1rem', marginBottom: '0.75rem' }}>
+                <div className="bind-filter-col" style={{ flex: 1 }}>
+                  <label className="bind-filter-label" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Connection / Adapter</label>
+                  <CustomSelect
+                    value={tagAdapterFilter}
+                    onChange={setTagAdapterFilter}
+                    options={[
+                      { value: 'All', label: 'All Adapters' },
+                      ...adapters.map(a => ({ value: a.id, label: `${a.name} (${a.protocol})` }))
+                    ]}
+                  />
+                </div>
+                <div className="bind-filter-col">
+                  <label className="bind-filter-label" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Mapping Status</label>
+                  <div className="mapping-status-toggle">
+                    {(['Free', 'All', 'Mapped'] as const).map((status) => (
+                      <button
+                        key={status}
+                        type="button"
+                        onClick={() => setTagMappingFilter(status)}
+                        className={`mapping-status-btn${tagMappingFilter === status ? ' is-active' : ''}`}
+                      >
+                        {status}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div className="tag-list-viewport">
+              <div className="browser-node-list">
                 {filteredDatapoints.length === 0 ? (
-                  <div className="tag-list-empty">
+                  <div className="tag-list-empty" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                     <AlertCircle size={24} />
-                    No tags match the filter criteria.
+                    <span>No tags match the filter criteria.</span>
                   </div>
                 ) : (
                   filteredDatapoints.map(dp => {
-                    const adp = adapters.find(a => a.id === dp.adapterId);
-                    const isSelected = selectedTagId === dp.id;
+                    const isSelected = !!selectedTagIds[dp.id];
                     const isMapped = dp.dataSourceId && dp.dataSourceId !== '';
                     const formattedValue = formatLiveValue(dp.lastValue, dp.dataType);
+                    const adp = adapters.find(a => a.id === dp.adapterId);
 
                     return (
                       <div
                         key={dp.id}
-                        onClick={() => {
-                          setSelectedTagId(dp.id);
-                          if ((!newDpMetric || newDpMetric === '') && activeDs?.type === 'General') {
-                            const rawAddress = dp.address || '';
-                            const cleanMetric = rawAddress
-                              .split(';').pop()?.split('=').pop()
-                              ?.replace(/[^a-zA-Z0-9_/]/g, '_')
-                              ?.replace(/\/+/g, '_')
-                              ?.replace(/_+/g, '_')
-                              ?.replace(/^_+|_+$/g, '')
-                              ?.toLowerCase();
-                            if (cleanMetric) setNewDpMetric(cleanMetric);
-                          }
-                        }}
-                        className={`tag-item${isSelected ? ` is-selected ${themeClass}` : ''}`}
+                        className={`browser-node-item${isSelected ? ' is-selected' : ''}`}
+                        onClick={() => handleToggleTag(dp.id)}
+                        style={{ padding: '8px 12px' }}
                       >
-                        <div className="tag-item-top">
-                          <div className="tag-item-left">
-                            <div className={`tag-radio${isSelected ? ` is-checked ${themeClass}` : ''}`}>
-                              {isSelected && <span className="check-mark">✓</span>}
-                            </div>
-                            <span className={`tag-item-address${isSelected ? ` is-selected ${themeClass}` : ''}`}>
-                              {dp.address}
-                            </span>
-                          </div>
-
-                          <div className="tag-item-badges">
-                            {isMapped ? (
-                              <span className="tag-mapping-badge is-mapped">
-                                Mapped: {dp.dataSourceId} → {dp.metric}
-                              </span>
-                            ) : (
-                              <span className="tag-mapping-badge is-free">Free</span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="tag-item-details">
-                          <div className="tag-detail-meta">
-                            <span className="tag-adapter-badge">{adp ? adp.name : 'Unknown Adapter'}</span>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleTag(dp.id)}
+                          className="browser-checkbox"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div className="browser-node-details">
+                          <div className="browser-node-name">{dp.address}</div>
+                          <div className="browser-node-id" style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'flex', gap: '8px' }}>
+                            <span>{adp?.name || 'Unknown'}</span>
                             <span>{dp.dataType}</span>
                             <span>•</span>
                             <span>{dp.scanIntervalMs}ms</span>
+                            {isMapped && (
+                              <span style={{ color: 'var(--warning-color)' }}>
+                                (Mapped: {dp.dataSourceId} → {dp.metric})
+                              </span>
+                            )}
                           </div>
-                          {dp.lastValue !== undefined && dp.lastValue !== null && dp.lastValue !== '' && (
-                            <div className="tag-live-indicator">
-                              <span className="pulse-dot-live pulse-dot-xs" />
-                              <span>Val: {formattedValue}</span>
-                            </div>
-                          )}
                         </div>
-
-                        {dp.description && (
-                          <div className="tag-item-desc-line">{dp.description}</div>
+                        {dp.lastValue !== undefined && dp.lastValue !== null && dp.lastValue !== '' && (
+                          <span className="browser-type-chip">Val: {formattedValue}</span>
                         )}
                       </div>
                     );
                   })
                 )}
               </div>
+            </div>
+
+            <div className="browser-right-pane">
+              <div className="browser-right-header">
+                <span className="browser-section-label">Selected Tags ({selectedCount})</span>
+                {selectedCount > 0 && (
+                  <button type="button" onClick={() => setSelectedTagIds({})} className="browser-clear-btn">
+                    Clear All
+                  </button>
+                )}
+              </div>
+              {selectedCount === 0 ? (
+                <div className="browser-empty-right">
+                  <span className="browser-empty-icon">📋</span>
+                  <span className="browser-empty-text">Select physical driver tags on the left to bind them to telemetry metrics.</span>
+                </div>
+              ) : (
+                <div className="browser-selected-list">
+                  {Object.keys(selectedTagIds).map((tagId) => {
+                    const dp = datapoints.find(x => x.id === tagId);
+                    if (!dp) return null;
+                    return (
+                      <div key={tagId} className="browser-selected-item">
+                        <div className="browser-selected-details">
+                          <div className="browser-selected-name">{dp.address}</div>
+                          <div className="browser-selected-id">{dp.dataType}</div>
+                        </div>
+                        <button type="button" onClick={() => handleToggleTag(tagId)} className="btn-browser-remove">✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="browser-config-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            <span className="browser-config-step-label">Step 2: Define Metric Keys</span>
+            <div className="browser-config-wrap">
+              <table className="browser-config-table">
+                <thead>
+                  <tr>
+                    <th>Connection Tag Address</th>
+                    <th>Data Type</th>
+                    <th>Metric Key (Telemetry Identifier)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {configuringBindings.map((binding, idx) => (
+                    <tr key={binding.tagId}>
+                      <td className="browser-cell-max">
+                        <div className="browser-cell-name">{binding.address}</div>
+                      </td>
+                      <td style={{ width: '120px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                        {binding.dataType}
+                      </td>
+                      <td>
+                        {isTemplate ? (
+                          <div className="browser-cell-w-dtype" style={{ width: '100%' }}>
+                            <CustomSelect
+                              value={binding.metric}
+                              onChange={(val) => handleUpdateBindingMetric(idx, val)}
+                              className="is-compact"
+                              options={expectedParams.map(p => ({ value: p, label: p }))}
+                            />
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            value={binding.metric}
+                            onChange={(e) => handleUpdateBindingMetric(idx, e.target.value)}
+                            placeholder="e.g. temperature, voltage"
+                            className="browser-table-input"
+                            style={{ width: '100%' }}
+                          />
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div className="browser-footer" style={{ marginTop: '1rem' }}>
+          {step === 1 ? (
+            <>
+              <span className="browser-footer-count">{selectedCount} tags selected</span>
+              <div className="browser-footer-btns">
+                <button type="button" onClick={onClose} className="btn-browser-cancel">Cancel</button>
+                <button
+                  type="button"
+                  onClick={handleNextStep}
+                  disabled={selectedCount === 0}
+                  className={`btn-browser-next${selectedCount === 0 ? ' is-empty' : ' is-ready'}`}
+                >
+                  Next Step →
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <span className="browser-footer-count">{configuringBindings.length} tags configured</span>
+              <div className="browser-footer-btns">
+                <button type="button" onClick={() => setStep(1)} className="btn-browser-cancel">Back</button>
+                <button
+                  type="button"
+                  onClick={handleSaveBindings}
+                  disabled={loading}
+                  className="btn-browser-save"
+                >
+                  {loading ? 'Binding...' : 'Save & Bind Metrics'}
+                </button>
+              </div>
             </>
           )}
         </div>
-
-        <div className="form-group form-group-flush">
-          <label className="form-label form-label-bold">Metric Key (Identifier)</label>
-          <input
-            className={`form-input form-input-mono-readonly${metricInputLocked ? ' is-locked' : ''}`}
-            type="text"
-            placeholder="e.g. good_count, temperature, voltage"
-            value={newDpMetric}
-            onChange={(e) => setNewDpMetric(e.target.value)}
-            required
-            disabled={metricInputLocked}
-          />
-          {activeDs && activeDs.type !== 'General' && (
-            <span className="form-hint-block">
-              ℹ️ Fixed parameter defined by the <strong>{activeDs.type}</strong> template.
-            </span>
-          )}
-        </div>
-
-        <div className="modal-footer">
-          <button
-            type="submit"
-            disabled={datapoints.length === 0 || !selectedTagId || !newDpMetric}
-            className="btn-dark-primary"
-          >
-            Bind Metric
-          </button>
-          <button
-            type="button"
-            onClick={() => { onClose(); setSelectedTagId(''); setNewDpMetric(''); }}
-            className="btn-secondary btn-flex-1"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
+      </div>
     </ModalShell>
   );
 }
