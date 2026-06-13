@@ -9,6 +9,7 @@
     <Project Path="src/Pulse.Edge.Protocols.LibPlcTag/Pulse.Edge.Protocols.LibPlcTag.csproj" />
     <Project Path="src/Pulse.Edge.Protocols.S7Net/Pulse.Edge.Protocols.S7Net.csproj" />
     <Project Path="src/Pulse.Edge.Protocols.RestApi/Pulse.Edge.Protocols.RestApi.csproj" />
+    <Project Path="src/Pulse.Edge.Protocols.Bacnet/Pulse.Edge.Protocols.Bacnet.csproj" />
     <Project Path="src/Pulse.Edge.Storage/Pulse.Edge.Storage.csproj" />
     <Project Path="src/Pulse.Edge.Tests/Pulse.Edge.Tests.csproj" />
   </Folder>

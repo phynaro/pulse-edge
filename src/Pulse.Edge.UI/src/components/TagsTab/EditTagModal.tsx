@@ -143,6 +143,7 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
              protocol === 'Ethernet/IP' ? 'PLC Tag Name' :
              protocol === 'Siemens S7' ? 'PLC Tag Name' :
              protocol === 'OPC_UA' ? 'OPC UA Node ID' :
+             protocol === 'BACnet' ? 'BACnet Object Reference (Type:Instance)' :
              protocol === 'MQTT' ? (editDpMqttDeviceId
                ? (mqttDevices.find(d => d.id === editDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'JSON Path (from device payload)' : 'MQTT Sub-topic or Metric Name')
                : 'MQTT Topic') :
@@ -154,6 +155,7 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
               protocol === 'Siemens S7' ? 'e.g. DB1.DBX0.0 or DB2.DBW2' :
               protocol === 'OPC_UA' ? 'e.g. ns=2;s=Temperature' :
               (protocol === 'WEBHOOK' || protocol === 'REST_API') ? 'e.g. $.temperature or $.sensors.humidity' :
+              protocol === 'BACnet' ? 'e.g. AnalogInput:0 or BinaryValue:3' :
               protocol === 'MQTT' ? (editDpMqttDeviceId
                 ? (mqttDevices.find(d => d.id === editDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'e.g. $.temperature or $.sensors.humidity' : 'e.g. temperature')
                 : 'e.g. factory/casepacker/temperature') : 'e.g. Address'}

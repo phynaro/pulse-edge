@@ -63,6 +63,7 @@ export default function CreateAdapterWizard({
   const [newRestBody, setNewRestBody] = useState<string>('');
   const [newRestTimeoutMs, setNewRestTimeoutMs] = useState<number>(5000);
   const [newRestPollIntervalMs, setNewRestPollIntervalMs] = useState<number>(10000);
+  const [newBacnetDeviceId, setNewBacnetDeviceId] = useState<number>(123);
 
   const handleDiscoverOpcUa = async (host: string, port: number) => {
     if (!host) { toast.warning('Please enter a Connection Host/IP before discovering.'); return; }
@@ -178,6 +179,8 @@ export default function CreateAdapterWizard({
         configJson = JSON.stringify({ PlcType: newPlcType, Protocol: newPlcProtocol, Path: newPlcPath, TimeoutMs: Number(newPlcTimeoutMs) });
       } else if (newAdapterProtocol === 'Siemens S7') {
         configJson = JSON.stringify({ CpuType: newS7CpuType, Rack: Number(newS7Rack), Slot: Number(newS7Slot), TimeoutMs: Number(newS7TimeoutMs) });
+      } else if (newAdapterProtocol === 'BACnet') {
+        configJson = JSON.stringify({ DeviceId: Number(newBacnetDeviceId) });
       } else if (newAdapterProtocol === 'REST_API') {
         const headersObj: Record<string, string> = {};
         newRestHeaders.forEach(h => {
@@ -319,6 +322,11 @@ export default function CreateAdapterWizard({
                     setNewRestTimeoutMs(5000);
                     setNewRestPollIntervalMs(10000);
                   }
+                  else if (nextProtocol === 'BACnet') {
+                    setNewAdapterHost('127.0.0.1');
+                    setNewAdapterPort(47808);
+                    setNewBacnetDeviceId(123);
+                  }
                   else if (nextProtocol === 'SIMULATOR') {
                     setNewAdapterHost('simulator');
                     setNewAdapterPort(0);
@@ -340,6 +348,7 @@ export default function CreateAdapterWizard({
                   { value: 'Siemens S7', label: 'Siemens S7 PLC' },
                   { value: 'WEBHOOK', label: 'REST Webhook' },
                   { value: 'REST_API', label: 'REST API Poller' },
+                  { value: 'BACnet', label: 'BACnet / IP Device' },
                   { value: 'SIMULATOR', label: 'Protocol Simulator' }
                 ]} 
               />
@@ -511,6 +520,7 @@ export default function CreateAdapterWizard({
               {newAdapterProtocol === 'MQTT' && 'MQTT Client Settings'}
               {newAdapterProtocol === 'WEBHOOK' && 'REST Webhook Settings'}
               {newAdapterProtocol === 'REST_API' && 'REST API Poller Settings'}
+              {newAdapterProtocol === 'BACnet' && 'BACnet Settings'}
               {newAdapterProtocol === 'SIMULATOR' && 'Protocol Simulator Settings'}
             </h4>
 
@@ -530,6 +540,16 @@ export default function CreateAdapterWizard({
                   <label className="form-label">Max Retries</label>
                   <input type="number" min="0" max="10" className="form-input" value={newModbusRetries}
                     onChange={(e) => setNewModbusRetries(Math.max(0, Math.min(10, Number(e.target.value) || 0)))} required />
+                </div>
+              </div>
+            )}
+
+            {newAdapterProtocol === 'BACnet' && (
+              <div className="form-grid-half">
+                <div className="form-group form-group-flush form-grid-span-2">
+                  <label className="form-label">BACnet Device Instance ID</label>
+                  <input type="number" min="0" max="4194303" className="form-input" value={newBacnetDeviceId}
+                    onChange={(e) => setNewBacnetDeviceId(Math.max(0, Math.min(4194303, Number(e.target.value) || 0)))} required />
                 </div>
               </div>
             )}

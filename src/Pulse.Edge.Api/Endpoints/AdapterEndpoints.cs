@@ -9,6 +9,7 @@ using Pulse.Edge.Protocols.OpcUa;
 using Pulse.Edge.Protocols.LibPlcTag;
 using Pulse.Edge.Protocols.S7Net;
 using Pulse.Edge.Protocols.RestApi;
+using Pulse.Edge.Protocols.Bacnet;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -748,6 +749,51 @@ public static class AdapterEndpoints
             }
         });
 
+        // POST /api/adapters/bacnet/browse - Browse BACnet PLC/device objects
+        routes.MapPost("/api/adapters/bacnet/browse", async (BacnetBrowseRequest request, BacnetDriver bacnetDriver, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                using var db = new QueueDbContext();
+                var adapter = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Id == request.AdapterId, cancellationToken);
+                if (adapter == null)
+                {
+                    return Results.NotFound(new { success = false, message = "Adapter not found." });
+                }
+
+                if (adapter.Protocol != "BACnet")
+                {
+                    return Results.BadRequest(new { success = false, message = "Selected adapter is not a BACnet adapter." });
+                }
+
+                int deviceId = 123;
+                int port = adapter.Port > 0 ? adapter.Port : 47808;
+
+                if (!string.IsNullOrWhiteSpace(adapter.ConfigJson))
+                {
+                    try
+                    {
+                        var doc = System.Text.Json.JsonDocument.Parse(adapter.ConfigJson);
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("DeviceId", out var devProp)) deviceId = devProp.GetInt32();
+                    }
+                    catch (Exception) { }
+                }
+
+                if (!bacnetDriver.IsConnected)
+                {
+                    await bacnetDriver.ConnectAsync(adapter.Host, deviceId, port, cancellationToken);
+                }
+
+                var tags = await bacnetDriver.BrowseTagsAsync(cancellationToken);
+                return Results.Ok(new { success = true, tags });
+            }
+            catch (Exception ex)
+            {
+                return Results.Ok(new { success = false, message = $"Browse failed: {ex.Message}" });
+            }
+        });
+
         // POST /api/webhooks/receive/{adapterId} - Receive REST Webhook payloads from clients
         routes.MapPost("/api/webhooks/receive/{adapterId}", async (
             string adapterId,
@@ -1158,5 +1204,6 @@ public record WebhookBrowseRequest(string AdapterId);
 public record RestApiBrowseRequest(string AdapterId);
 public record EthernetIpBrowseRequest(string AdapterId);
 public record SiemensS7BrowseRequest(string AdapterId);
+public record BacnetBrowseRequest(string AdapterId);
 public record EthernetIpTemplateRequest(string AdapterId, ushort TemplateId);
 public record EthernetIpProgramTagsRequest(string AdapterId, string ProgramName);

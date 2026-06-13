@@ -8,6 +8,7 @@ import WebhookBrowserModal from './WebhookBrowserModal';
 import RestApiBrowserModal from './RestApiBrowserModal';
 import EthernetIpBrowserModal from './EthernetIpBrowserModal';
 import SiemensS7BrowserModal from './SiemensS7BrowserModal';
+import BacnetBrowserModal from './BacnetBrowserModal';
 import ModalShell from '../ModalShell';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
@@ -54,6 +55,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
   const [isRestApiBrowserOpen, setIsRestApiBrowserOpen] = useState(false);
   const [isEipBrowserOpen, setIsEipBrowserOpen] = useState(false);
   const [isS7BrowserOpen, setIsS7BrowserOpen] = useState(false);
+  const [isBacnetBrowserOpen, setIsBacnetBrowserOpen] = useState(false);
 
   const handleCreateAdapterChange = (adapterId: string) => {
     setNewDpAdapterId(adapterId);
@@ -183,6 +185,13 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
     setIsS7BrowserOpen(true);
   };
 
+  const handleOpenBacnetBrowser = () => {
+    if (!newDpAdapterId) { toast.warning('Please select a BACnet adapter first.'); return; }
+    const adapter = adapters.find(a => a.id === newDpAdapterId);
+    if (!adapter || adapter.protocol !== 'BACnet') { toast.warning('The selected adapter is not a BACnet adapter.'); return; }
+    setIsBacnetBrowserOpen(true);
+  };
+
   if (!isOpen) return null;
 
   const activeAdapter = adapters.find(a => a.id === newDpAdapterId);
@@ -272,6 +281,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                         : 'MQTT Topic')}
                       {protocol === 'WEBHOOK' && 'JSON Path (from webhook payload)'}
                       {protocol === 'REST_API' && 'JSON Path (from JSON payload)'}
+                      {protocol === 'BACnet' && 'BACnet Object Reference (Type:Instance)'}
                     </label>
                     <div className="address-input-row">
                       <input className="form-input address-input-mono" type="text"
@@ -281,6 +291,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                           protocol === 'Siemens S7' ? 'e.g. DB1.DBX0.0 or DB2.DBW2' :
                           protocol === 'OPC_UA' ? 'e.g. ns=2;s=Machine_Temperature' :
                           (protocol === 'WEBHOOK' || protocol === 'REST_API') ? 'e.g. $.temperature or $.sensors.humidity' :
+                          protocol === 'BACnet' ? 'e.g. AnalogInput:0 or BinaryValue:3' :
                           protocol === 'SIMULATOR' ? 'e.g. voltage, current, active_power, energy, running, count' :
                           newDpMqttDeviceId
                             ? (mqttDevices.find(d => d.id === newDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'e.g. $.temperature or $.sensors.humidity' : 'e.g. temperature')
@@ -298,6 +309,9 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                       )}
                       {protocol === 'REST_API' && (
                         <button type="button" onClick={handleOpenRestApiBrowser} className="btn-browse">Browse Payload</button>
+                      )}
+                      {protocol === 'BACnet' && (
+                        <button type="button" onClick={handleOpenBacnetBrowser} className="btn-browse">Browse Device</button>
                       )}
                       {isBrowseSupported && (
                         <button 
@@ -526,6 +540,15 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
         adapters={adapters}
         toast={toast}
         onSaveSuccess={() => { setIsS7BrowserOpen(false); onClose(); fetchData(); }}
+      />
+
+      <BacnetBrowserModal
+        isOpen={isBacnetBrowserOpen}
+        onClose={() => setIsBacnetBrowserOpen(false)}
+        adapterId={newDpAdapterId}
+        adapters={adapters}
+        toast={toast}
+        onSaveSuccess={() => { setIsBacnetBrowserOpen(false); onClose(); fetchData(); }}
       />
     </>
   );

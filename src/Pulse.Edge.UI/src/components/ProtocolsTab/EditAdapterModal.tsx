@@ -70,6 +70,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
   const [editRestBody, setEditRestBody] = useState<string>(config.Body ?? '');
   const [editRestTimeoutMs, setEditRestTimeoutMs] = useState<number>(config.TimeoutMs ?? 5000);
   const [editRestPollIntervalMs, setEditRestPollIntervalMs] = useState<number>(config.PollIntervalMs ?? 10000);
+  const [editBacnetDeviceId, setEditBacnetDeviceId] = useState<number>(config.DeviceId ?? 123);
 
   if (!adapter) return null;
 
@@ -148,6 +149,8 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
         configJson = JSON.stringify({ PlcType: editPlcType, Protocol: editPlcProtocol, Path: editPlcPath, TimeoutMs: Number(editPlcTimeoutMs) });
       } else if (editAdapterProtocol === 'Siemens S7') {
         configJson = JSON.stringify({ CpuType: editS7CpuType, Rack: Number(editS7Rack), Slot: Number(editS7Slot), TimeoutMs: Number(editS7TimeoutMs) });
+      } else if (editAdapterProtocol === 'BACnet') {
+        configJson = JSON.stringify({ DeviceId: Number(editBacnetDeviceId) });
       } else if (editAdapterProtocol === 'REST_API') {
         const headersObj: Record<string, string> = {};
         editRestHeaders.forEach(h => {
@@ -237,8 +240,12 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                   setEditAdapterHost('simulator');
                   setEditAdapterPort(0);
                   setEditSimulatorTemplate('energy');
-                }
-                setEditTestStatus('idle'); setEditTestMessage('');
+                  }
+                  else if (nextProtocol === 'BACnet') {
+                    setEditAdapterPort(47808);
+                    setEditBacnetDeviceId(123);
+                  }
+                  setEditTestStatus('idle'); setEditTestMessage('');
               }} options={[
                 { value: 'OPC_UA', label: 'OPC UA' },
                 { value: 'MQTT', label: 'MQTT Broker' },
@@ -246,8 +253,9 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                 { value: 'MODBUS_RTU', label: 'Modbus RTU (Serial)' },
                 { value: 'Ethernet/IP', label: 'Ethernet/IP PLC' },
                 { value: 'Siemens S7', label: 'Siemens S7 PLC' },
-                { value: 'WEBHOOK', label: 'REST Webhook' },
+                 { value: 'WEBHOOK', label: 'REST Webhook' },
                 { value: 'REST_API', label: 'REST API Poller' },
+                { value: 'BACnet', label: 'BACnet / IP Device' },
                 { value: 'SIMULATOR', label: 'Protocol Simulator' }
               ]} />
             </div>
@@ -306,6 +314,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
               {editAdapterProtocol === 'MQTT' && 'MQTT Client Settings'}
               {editAdapterProtocol === 'WEBHOOK' && 'REST Webhook Settings'}
               {editAdapterProtocol === 'REST_API' && 'REST API Poller Settings'}
+              {editAdapterProtocol === 'BACnet' && 'BACnet Settings'}
               {editAdapterProtocol === 'SIMULATOR' && 'Protocol Simulator Settings'}
             </h4>
 
@@ -325,6 +334,16 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                   <label className="form-label">Max Retries</label>
                   <input type="number" min="0" max="10" className="form-input" value={editModbusRetries}
                     onChange={(e) => setEditModbusRetries(Math.max(0, Math.min(10, Number(e.target.value) || 0)))} required />
+                </div>
+              </div>
+            )}
+
+            {editAdapterProtocol === 'BACnet' && (
+              <div className="form-grid-half">
+                <div className="form-group form-group-flush form-grid-span-2">
+                  <label className="form-label">BACnet Device Instance ID</label>
+                  <input type="number" min="0" max="4194303" className="form-input" value={editBacnetDeviceId}
+                    onChange={(e) => setEditBacnetDeviceId(Math.max(0, Math.min(4194303, Number(e.target.value) || 0)))} required />
                 </div>
               </div>
             )}

@@ -203,6 +203,12 @@ export default function AdapterCard({
                     )}
                   </div>
                 );
+              } else if (adapter.protocol === 'BACnet') {
+                return (
+                  <div className="adapter-badge-group">
+                    <span className="badge neutral badge-config">Device ID: {String(config.DeviceId ?? 123)}</span>
+                  </div>
+                );
               } else if (adapter.protocol === 'SIMULATOR') {
                 return (
                   <div className="adapter-badge-group">
