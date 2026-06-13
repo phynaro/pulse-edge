@@ -355,6 +355,7 @@ export default function App() {
         toast.success('Agent has been successfully reset to factory defaults.');
         
         // Reset states to defaults & trigger onboarding wizard
+        localStorage.removeItem('pulse_onboarding_tour_dismissed');
         setCloudEndpoint('http://localhost:3000');
         setEdgeSerial('');
         setIsOnboarded(false);
