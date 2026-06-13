@@ -57,8 +57,43 @@ const getCloudStatusInfo = (status: string | undefined) => {
   }
 };
 
+type Route = 'dashboard' | 'datasources' | 'tags' | 'protocols' | 'buffer' | 'settings';
+
+function usePathRouting(defaultRoute: Route): [Route, (route: Route) => void] {
+  const getRouteFromPath = (): Route => {
+    const segment = window.location.pathname.split('/').filter(Boolean)[0] as Route;
+    const validRoutes: Route[] = ['dashboard', 'datasources', 'tags', 'protocols', 'buffer', 'settings'];
+    return validRoutes.includes(segment) ? segment : defaultRoute;
+  };
+
+  const [currentRoute, setCurrentRoute] = useState<Route>(getRouteFromPath);
+
+  const navigate = (newRoute: Route) => {
+    window.history.pushState(null, '', `/${newRoute}`);
+    setCurrentRoute(newRoute);
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentRoute(getRouteFromPath());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    const path = window.location.pathname.split('/').filter(Boolean)[0] as Route;
+    const validRoutes: Route[] = ['dashboard', 'datasources', 'tags', 'protocols', 'buffer', 'settings'];
+    if (!validRoutes.includes(path)) {
+      window.history.replaceState(null, '', `/${currentRoute}`);
+    }
+  }, [currentRoute]);
+
+  return [currentRoute, navigate];
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'datasources' | 'tags' | 'protocols' | 'buffer' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = usePathRouting('dashboard');
   const [isConnected, setIsConnected] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   
