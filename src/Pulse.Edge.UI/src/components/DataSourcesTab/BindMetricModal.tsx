@@ -225,12 +225,11 @@ export default function BindMetricModal({
       onClose={onClose}
     >
       <div className="form-stack" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <div className={`bind-stream-banner ${themeClass}`} style={{ padding: '6px 12px', minHeight: 'unset', marginBottom: '0px' }}>
-          <div>
-            <span className="bind-stream-target-label">Target Stream</span>
-            <span className="bind-stream-name">{activeDs?.name || dataSourceId}</span>
-          </div>
-          <span className={`bind-stream-id-badge ${themeClass}`}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+          <span className={`bind-stream-id-badge ${themeClass}`} style={{ padding: '4px 8px', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', height: 'auto', lineHeight: 'normal' }}>
+            STREAM: {activeDs?.name || dataSourceId}
+          </span>
+          <span className={`bind-stream-id-badge ${themeClass}`} style={{ padding: '4px 8px', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', height: 'auto', lineHeight: 'normal' }}>
             ID: {dataSourceId}
           </span>
         </div>
