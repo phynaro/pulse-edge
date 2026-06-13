@@ -68,7 +68,27 @@ function BrowseTreeNode({
 
     setIsExpanded(true);
 
-    if (isStructure && templateId && children.length === 0) {
+    const isProgram = dataType === 'Program';
+
+    if (isProgram && children.length === 0) {
+      setLoading(true);
+      try {
+        const programName = name.split(':')[1] || '';
+        const res = await fetch('/api/adapters/ethernetip/program-tags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ adapterId, programName })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setChildren(data.tags || []);
+        }
+      } catch (err) {
+        console.error("Failed to load program tags:", err);
+      } finally {
+        setLoading(false);
+      }
+    } else if (isStructure && templateId && children.length === 0) {
       setLoading(true);
       try {
         const res = await fetch('/api/adapters/ethernetip/template', {
@@ -89,7 +109,8 @@ function BrowseTreeNode({
   };
 
   const hasArray = dimensions && dimensions.length > 0 && dimensions[0] > 0;
-  const isExpandable = isStructure || hasArray;
+  const isProgram = dataType === 'Program';
+  const isExpandable = isStructure || hasArray || isProgram;
   const isSelected = !!selectedTags[name];
 
   return (
@@ -98,7 +119,7 @@ function BrowseTreeNode({
         className={`browser-node-item${isSelected ? ' is-selected' : ''}`}
         style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '6px 12px', minHeight: '40px' }}
         onClick={() => {
-          if (!isStructure || hasArray) {
+          if ((!isStructure && !isProgram) || hasArray) {
             onToggleSelect(name, dataType);
           } else {
             handleExpand({ stopPropagation: () => {} } as any);
@@ -136,13 +157,13 @@ function BrowseTreeNode({
             e.stopPropagation();
             onToggleSelect(name, dataType);
           }}
-          disabled={isStructure && !hasArray}
+          disabled={(isStructure && !hasArray) || isProgram}
           className="browser-checkbox"
           onClick={(e) => e.stopPropagation()}
         />
         
         <div className="browser-node-details" style={{ flex: 1 }}>
-          <div className="browser-node-name" style={{ fontSize: '13px', fontWeight: isStructure ? '600' : 'normal' }}>
+          <div className="browser-node-name" style={{ fontSize: '13px', fontWeight: (isStructure || isProgram) ? '600' : 'normal' }}>
             {label}
             {hasArray && ` [${dimensions[0]}]`}
           </div>
@@ -155,8 +176,8 @@ function BrowseTreeNode({
               fontSize: '10px', 
               padding: '2px 6px', 
               borderRadius: '4px', 
-              background: isStructure ? 'rgba(14, 165, 233, 0.15)' : 'rgba(255, 255, 255, 0.08)',
-              color: isStructure ? '#38bdf8' : 'var(--text-muted)'
+              background: (isStructure || isProgram) ? 'rgba(14, 165, 233, 0.15)' : 'rgba(255, 255, 255, 0.08)',
+              color: (isStructure || isProgram) ? '#38bdf8' : 'var(--text-muted)'
             }}
           >
             {dataType}
@@ -172,19 +193,22 @@ function BrowseTreeNode({
             </div>
           )}
           
-          {isStructure && children.map(member => (
-            <BrowseTreeNode 
-              key={member.name}
-              name={`${name}.${member.name}`}
-              label={member.name}
-              dataType={member.dataType}
-              isStructure={member.isStructure}
-              templateId={member.templateId}
-              adapterId={adapterId}
-              onToggleSelect={onToggleSelect}
-              selectedTags={selectedTags}
-            />
-          ))}
+          {children.map(child => {
+            const childIsStructure = child.isStructure || (child.dataType && child.dataType.toUpperCase() === 'STRUCTURE');
+            return (
+              <BrowseTreeNode 
+                key={child.name}
+                name={`${name}.${child.name}`}
+                label={child.name}
+                dataType={child.dataType}
+                isStructure={childIsStructure}
+                templateId={child.templateId}
+                adapterId={adapterId}
+                onToggleSelect={onToggleSelect}
+                selectedTags={selectedTags}
+              />
+            );
+          })}
 
           {hasArray && Array.from({ length: Math.min(dimensions[0], 256) }).map((_, idx) => (
             <BrowseTreeNode 

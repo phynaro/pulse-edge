@@ -366,10 +366,74 @@ public class LibPlcTagDriver : IDisposable
         {
             foreach (var tag in tags.Value)
             {
+                if (tag.Name.StartsWith("__"))
+                {
+                    continue;
+                }
+
+                var dataType = MapCipTypeToDataType(tag.Type);
+                if (tag.Name.StartsWith("Program:", StringComparison.OrdinalIgnoreCase))
+                {
+                    dataType = "Program";
+                }
+                else if (dataType.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 result.Add(new DiscoveredTag
                 {
                     Name = tag.Name,
-                    DataType = MapCipTypeToDataType(tag.Type),
+                    DataType = dataType,
+                    TypeHex = $"0x{tag.Type:X4}",
+                    Dimensions = tag.Dimensions,
+                    TemplateId = (ushort)(tag.Type & 0x0FFF)
+                });
+            }
+        }
+        return result;
+    }
+
+    public async Task<List<DiscoveredTag>> BrowseProgramTagsAsync(string programName, CancellationToken cancellationToken = default)
+    {
+        if (!_isConnected)
+        {
+            throw new InvalidOperationException("LibPlcTag Driver is not connected.");
+        }
+
+        var timeout = TimeSpan.FromMilliseconds(_timeoutMs);
+        using var tags = new Tag<TagInfoPlcMapper, TagInfo[]>
+        {
+            Name = $"Program:{programName}.@tags",
+            Gateway = _host,
+            Path = _path,
+            PlcType = _plcType,
+            Protocol = _protocol,
+            Timeout = timeout
+        };
+
+        await tags.ReadAsync(cancellationToken);
+
+        var result = new List<DiscoveredTag>();
+        if (tags.Value != null)
+        {
+            foreach (var tag in tags.Value)
+            {
+                if (tag.Name.StartsWith("__"))
+                {
+                    continue;
+                }
+
+                var dataType = MapCipTypeToDataType(tag.Type);
+                if (dataType.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                result.Add(new DiscoveredTag
+                {
+                    Name = tag.Name,
+                    DataType = dataType,
                     TypeHex = $"0x{tag.Type:X4}",
                     Dimensions = tag.Dimensions,
                     TemplateId = (ushort)(tag.Type & 0x0FFF)
@@ -386,60 +450,132 @@ public class LibPlcTagDriver : IDisposable
             throw new InvalidOperationException("LibPlcTag Driver is not connected.");
         }
 
-        var timeout = TimeSpan.FromMilliseconds(_timeoutMs);
-        using var tag = new Tag
-        {
-            Name = $"@template/{templateId}",
-            Gateway = _host,
-            Path = _path,
-            PlcType = _plcType,
-            Protocol = _protocol,
-            Timeout = timeout
-        };
+        _logger.LogInformation("GetStructureTemplateAsync: Fetching template metadata for templateId={TemplateId} on host={Host}", templateId, _host);
 
-        await tag.ReadAsync(cancellationToken);
+        try
+        {
+            var timeout = TimeSpan.FromMilliseconds(_timeoutMs);
+            using var tag = new Tag
+            {
+                Name = $"@udt/{templateId}",
+                Gateway = _host,
+                Path = _path,
+                PlcType = _plcType,
+                Protocol = _protocol,
+                Timeout = timeout,
+                ElementSize = 1,
+                ElementCount = 32768
+            };
+
+            await tag.ReadAsync(cancellationToken);
+
+            int totalSize = tag.GetSize();
+            var rawBytes = new byte[totalSize];
+            for (int j = 0; j < totalSize; j++)
+            {
+                rawBytes[j] = tag.GetUInt8(j);
+            }
+
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                var byteList = new List<string>();
+                for (int j = 0; j < totalSize; j++)
+                {
+                    byteList.Add($"{rawBytes[j]:X2}");
+                }
+                _logger.LogDebug("Raw template bytes (all {Size}): {Bytes}", totalSize, string.Join(" ", byteList));
+            }
+
+            var members = ParseTemplatePayload(rawBytes, templateId, _logger);
+
+            _logger.LogInformation("GetStructureTemplateAsync finished: returned {Count} members for templateId={TemplateId}", members.Count, templateId);
+            return members;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "GetStructureTemplateAsync failed for templateId {TemplateId}", templateId);
+            throw;
+        }
+    }
+
+    public static List<StructureMember> ParseTemplatePayload(byte[] rawBytes, ushort templateId, Microsoft.Extensions.Logging.ILogger logger)
+    {
+        int totalSize = rawBytes.Length;
+        if (totalSize < 16)
+        {
+            throw new ArgumentException($"Raw template bytes size {totalSize} is too small for header.");
+        }
+
+        ushort memberCount = (ushort)BitConverter.ToInt16(rawBytes, 10);
+        logger.LogDebug("ParseTemplatePayload: templateId={TemplateId}, totalSize={TotalSize}, memberCount={MemberCount}", templateId, totalSize, memberCount);
 
         var members = new List<StructureMember>();
-        int totalSize = tag.GetInt32(0);
-        ushort memberCount = (ushort)tag.GetInt16(4);
-        
-        int offset = 8;
-        // Skip structure UDT name
-        while (offset < totalSize && tag.GetUInt8(offset) != 0)
+        if (memberCount == 0)
         {
-            offset++;
+            return members;
         }
-        offset++; // Skip null terminator
 
+        int lastMemberHeaderOffset = 16 + (memberCount - 1) * 8;
+        if (lastMemberHeaderOffset >= totalSize)
+        {
+            throw new ArgumentException($"Raw template bytes size {totalSize} is too small for {memberCount} member headers.");
+        }
+
+        // Find udtNameOffset
+        int udtNameOffset = lastMemberHeaderOffset + 8; // Default if no truncation
+        for (int o = lastMemberHeaderOffset + 4; o <= lastMemberHeaderOffset + 8; o++)
+        {
+            if (o < totalSize && IsValidUdtNameStartCharacter(rawBytes[o]) && IsValidStringsBlockStart(rawBytes, o, memberCount + 1))
+            {
+                udtNameOffset = o;
+                break;
+            }
+        }
+
+        logger.LogDebug("Found UDT name offset: {Offset}", udtNameOffset);
+
+        // Parse all strings from strings block
+        var strings = new List<string>();
+        int cur = udtNameOffset;
+        for (int k = 0; k < memberCount + 1; k++)
+        {
+            if (cur >= totalSize) break;
+            int start = cur;
+            while (cur < totalSize && rawBytes[cur] != 0)
+            {
+                cur++;
+            }
+            string s = System.Text.Encoding.ASCII.GetString(rawBytes, start, cur - start);
+            strings.Add(s);
+            cur++; // Skip null terminator
+        }
+
+        // Parse member headers
         for (int i = 0; i < memberCount; i++)
         {
-            if (offset >= totalSize) break;
-
-            ushort info = (ushort)tag.GetInt16(offset);
-            ushort typeId = (ushort)tag.GetInt16(offset + 2);
-            uint memberOffset = (uint)tag.GetInt32(offset + 4);
-
-            int nameStart = offset + 8;
-            int current = nameStart;
-            while (current < totalSize && tag.GetUInt8(current) != 0)
+            int headerOffset = 16 + i * 8;
+            if (headerOffset >= udtNameOffset)
             {
-                current++;
+                logger.LogWarning("ParseTemplatePayload header offset out of bounds: headerOffset={HeaderOffset} >= udtNameOffset={UdtNameOffset}", headerOffset, udtNameOffset);
+                break;
             }
 
-            var nameBytes = new List<byte>();
-            for (int j = nameStart; j < current; j++)
-            {
-                nameBytes.Add(tag.GetUInt8(j));
-            }
-            string memberName = System.Text.Encoding.ASCII.GetString(nameBytes.ToArray());
-            offset = current + 1;
+            ushort typeId = (ushort)BitConverter.ToInt16(rawBytes, headerOffset);
+            ushort memberOffset = (ushort)BitConverter.ToInt16(rawBytes, headerOffset + 2);
+            
+            string memberName = (i + 1 < strings.Count) ? strings[i + 1] : $"?Member{i}";
+
+            logger.LogDebug("Parsed member: Name={MemberName}, DataType={DataType}, TypeId=0x{TypeIdHex}, Offset={Offset}", memberName, MapCipTypeToDataType(typeId), $"{typeId:X4}", memberOffset);
 
             if (memberName.StartsWith("__")) continue;
+
+            var dataType = MapCipTypeToDataType(typeId);
+            if (dataType.Equals("Unknown", StringComparison.OrdinalIgnoreCase)) continue;
 
             members.Add(new StructureMember
             {
                 Name = memberName,
-                DataType = MapCipTypeToDataType(typeId),
+                DataType = dataType,
                 TypeId = typeId,
                 Offset = memberOffset,
                 IsStructure = (typeId & 0x8000) != 0,
@@ -448,6 +584,36 @@ public class LibPlcTagDriver : IDisposable
         }
 
         return members;
+    }
+
+    private static bool IsValidUdtNameStartCharacter(byte b)
+    {
+        char c = (char)b;
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
+    }
+
+    private static bool IsValidStringsBlockStart(byte[] bytes, int offset, int expectedCount)
+    {
+        int current = offset;
+        int totalSize = bytes.Length;
+        for (int i = 0; i < expectedCount; i++)
+        {
+            if (current >= totalSize) return false;
+            int start = current;
+            while (current < totalSize && bytes[current] != 0)
+            {
+                byte b = bytes[current];
+                if (b < 32 || b > 126)
+                {
+                    return false;
+                }
+                current++;
+            }
+            if (current >= totalSize) return false;
+            if (current == start) return false;
+            current++;
+        }
+        return true;
     }
 
     public class StructureMember
@@ -460,7 +626,7 @@ public class LibPlcTagDriver : IDisposable
         public ushort TemplateId { get; set; }
     }
 
-    private string MapCipTypeToDataType(ushort cipType)
+    private static string MapCipTypeToDataType(ushort cipType)
     {
         ushort baseType = (ushort)(cipType & 0x0FFF);
         switch (baseType)
