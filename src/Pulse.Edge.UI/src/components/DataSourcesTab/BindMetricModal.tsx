@@ -234,7 +234,7 @@ export default function BindMetricModal({
       bodyClassName="browser-modal-body"
       onClose={onClose}
     >
-      <div className="form-stack" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '0px' }}>
 
         {step === 1 ? (
           <div className="browser-layout" style={{ flex: 1, minHeight: 0 }}>
@@ -425,7 +425,7 @@ export default function BindMetricModal({
           </div>
         )}
 
-        <div className="browser-footer" style={{ marginTop: '1rem' }}>
+        <div className="browser-footer">
           {step === 1 ? (
             <>
               <span className="browser-footer-count">{selectedCount} tags selected</span>
