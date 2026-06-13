@@ -59,32 +59,45 @@ export default function ProtocolsTab({
     setOrderedAdapters(adapters);
   }, [adapters]);
 
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(index));
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
+    if (draggedIndex !== null && draggedIndex !== index) {
+      setDragOverIndex(index);
+    }
   };
 
-  const handleDragEnter = (targetIndex: number) => {
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    setDragOverIndex(null);
     if (draggedIndex === null || draggedIndex === targetIndex) return;
 
     const updated = [...orderedAdapters];
     const [draggedItem] = updated.splice(draggedIndex, 1);
     updated.splice(targetIndex, 0, draggedItem);
 
-    setDraggedIndex(targetIndex);
     setOrderedAdapters(updated);
+    
+    const orderIds = updated.map(a => a.id);
+    localStorage.setItem('pulse-adapters-order', JSON.stringify(orderIds));
   };
 
   const handleDragEnd = () => {
     setDraggedIndex(null);
-    const orderIds = orderedAdapters.map(a => a.id);
-    localStorage.setItem('pulse-adapters-order', JSON.stringify(orderIds));
+    setDragOverIndex(null);
   };
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -167,9 +180,11 @@ export default function ProtocolsTab({
                   fetchData={fetchData}
                   index={index}
                   draggedIndex={draggedIndex}
+                  dragOverIndex={dragOverIndex}
                   onDragStart={handleDragStart}
                   onDragOver={handleDragOver}
-                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
                   onDragEnd={handleDragEnd}
                 />
               );

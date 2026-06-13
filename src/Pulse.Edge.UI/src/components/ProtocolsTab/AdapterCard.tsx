@@ -17,9 +17,11 @@ interface AdapterCardProps {
   fetchData: () => Promise<void>;
   index: number;
   draggedIndex: number | null;
+  dragOverIndex: number | null;
   onDragStart: (e: React.DragEvent, index: number) => void;
-  onDragOver: (e: React.DragEvent) => void;
-  onDragEnter: (index: number) => void;
+  onDragOver: (e: React.DragEvent, index: number) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent, index: number) => void;
   onDragEnd: () => void;
 }
 
@@ -34,9 +36,11 @@ export default function AdapterCard({
   fetchData,
   index,
   draggedIndex,
+  dragOverIndex,
   onDragStart,
   onDragOver,
-  onDragEnter,
+  onDragLeave,
+  onDrop,
   onDragEnd
 }: AdapterCardProps) {
 
@@ -66,20 +70,29 @@ export default function AdapterCard({
 
   const isDraggingThis = draggedIndex === index;
 
+  const isDragOverThis = dragOverIndex === index;
+
   return (
     <div 
       className="panel adapter-card" 
       draggable
       onDragStart={(e) => onDragStart(e, index)}
-      onDragOver={onDragOver}
-      onDragEnter={() => onDragEnter(index)}
+      onDragOver={(e) => onDragOver(e, index)}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => onDrop(e, index)}
       onDragEnd={onDragEnd}
       style={{ 
         height: 'fit-content',
         cursor: 'grab',
         opacity: isDraggingThis ? 0.4 : 1,
-        transition: 'opacity 0.2s ease, transform 0.2s ease',
-        transform: isDraggingThis ? 'scale(0.98)' : 'none'
+        transition: 'all 0.2s ease',
+        transform: isDraggingThis 
+          ? 'scale(0.98)' 
+          : isDragOverThis 
+            ? 'scale(1.02)' 
+            : 'none',
+        border: isDragOverThis ? '1px dashed var(--primary-color)' : undefined,
+        boxShadow: isDragOverThis ? 'var(--shadow-md)' : undefined
       }}
     >
       <div>
