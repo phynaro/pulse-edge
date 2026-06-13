@@ -23,8 +23,17 @@ if [ "$RESET_DB" == "true" ]; then
   fi
 fi
 
-# Trap Ctrl+C (SIGINT) and exit signals to kill all child processes automatically
-trap "echo -e '\n🛑 Stopping all services...'; kill 0" EXIT
+# Trap Ctrl+C (SIGINT), SIGTERM, and EXIT signals to kill all child processes cleanly
+cleanup() {
+  trap - EXIT SIGINT SIGTERM
+  echo -e "\n🛑 Stopping all services..."
+  local pids=$(jobs -p)
+  if [ -n "$pids" ]; then
+    kill -INT $pids 2>/dev/null
+    wait $pids 2>/dev/null
+  fi
+}
+trap cleanup EXIT SIGINT SIGTERM
 
 # ─────────────────────────────────────────────────────────────────
 # wait_for_http <url> <label> [timeout_seconds=60]

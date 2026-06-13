@@ -134,22 +134,31 @@ public class ModbusDriver : IDisposable
         if (_client != null)
         {
             _logger.LogInformation("Modbus Driver: Disconnecting...");
-            try
-            {
-                if (_client is IDisposable disp)
-                {
-                    disp.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Exception thrown while disposing Modbus client");
-            }
+            var clientToDispose = _client;
             _client = null;
             _activeHost = string.Empty;
             _activePort = 0;
             _activePortName = string.Empty;
             _activeBaudRate = 0;
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    if (clientToDispose is IDisposable disp)
+                    {
+                        disp.Dispose();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        _logger.LogWarning(ex, "Exception thrown while disposing Modbus client in background");
+                    }
+                    catch { }
+                }
+            });
         }
     }
 
