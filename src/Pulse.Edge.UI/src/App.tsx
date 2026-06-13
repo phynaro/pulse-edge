@@ -385,68 +385,16 @@ function EdgeInner() {
       </aside>
  
       <main className="main-content">
-        <header className="topbar">
-          <div className="topbar-badge-group">
-            {dashboard?.device.organizationName && dashboard.device.organizationName !== 'N/A' && (
-              <div className="topbar-node-badge">
-                <span className="badge-label">ORG</span>
-                <span className="badge-value">{dashboard.device.organizationName}</span>
-              </div>
-            )}
- 
-            {dashboard?.device.siteName && dashboard.device.siteName !== 'N/A' && (
-              <div className="topbar-node-badge">
-                <span className="badge-label">SITE</span>
-                <span className="badge-value">{dashboard.device.siteName}</span>
-              </div>
-            )}
- 
-            <div className="topbar-node-badge">
-              <span className="badge-label">NODE</span>
-              <span className="badge-value">{edgeSerial}</span>
-            </div>
-          </div>
-          
-          <div className="topbar-status">
-            <div className="status-indicator">
-              <div className={`pulse-dot ${isConnected ? '' : 'warning'}`} />
-              <span>{isConnected ? 'Local Agent: Online' : 'Local Agent: Offline'}</span>
-            </div>
- 
-            {isConnected && dashboard && (
-              (() => {
-                const cloudInfo = getCloudStatusInfo(dashboard.cloudStatus);
-                return (
-                  <div className="status-indicator status-indicator-divider">
-                    <div className={`pulse-dot ${cloudInfo.className}`} />
-                    <span>{cloudInfo.label}</span>
-                  </div>
-                );
-              })()
-            )}
-            
-            <button
-              type="button"
-              onClick={() => { setIsLoading(true); void fetchStaticData(); }}
-              className="refresh-btn"
-              title="Force Refresh Data"
-              aria-label="Force refresh data"
-            >
-              <RefreshCw size={16} className={isLoading ? 'spin refresh-icon' : 'refresh-icon'} />
-            </button>
-          </div>
-        </header>
- 
         <div className="content-area">
           {!isSyncEnabled && (
             <div className="banner-warning">
               <AlertTriangle size={20} />
               <span>
-                <strong>Simulated Cloud Outage:</strong> Synchronization loop is currently paused. Telemetry packets are building up in the SQLite database queue buffer.
+                <strong>Sync Loop Paused:</strong> Synchronization loop is currently paused. Telemetry packets are building up in the SQLite database queue buffer.
               </span>
             </div>
           )}
- 
+
           {isLoading && !dashboard ? (
             <div className="loading-center">
               Loading edge statistics...
@@ -549,6 +497,58 @@ function EdgeInner() {
             </>
           )}
         </div>
+
+        <footer className="bottombar">
+          <div className="bottombar-badge-group">
+            {dashboard?.device.organizationName && dashboard.device.organizationName !== 'N/A' && (
+              <div className="bottombar-node-badge">
+                <span className="badge-label">ORG</span>
+                <span className="badge-value">{dashboard.device.organizationName}</span>
+              </div>
+            )}
+
+            {dashboard?.device.siteName && dashboard.device.siteName !== 'N/A' && (
+              <div className="bottombar-node-badge">
+                <span className="badge-label">SITE</span>
+                <span className="badge-value">{dashboard.device.siteName}</span>
+              </div>
+            )}
+
+            <div className="bottombar-node-badge">
+              <span className="badge-label">NODE</span>
+              <span className="badge-value">{edgeSerial}</span>
+            </div>
+          </div>
+          
+          <div className="bottombar-status">
+            <div className="status-indicator">
+              <div className={`pulse-dot ${isConnected ? '' : 'warning'}`} />
+              <span>{isConnected ? 'Local Agent: Online' : 'Local Agent: Offline'}</span>
+            </div>
+
+            {isConnected && dashboard && (
+              (() => {
+                const cloudInfo = getCloudStatusInfo(dashboard.cloudStatus);
+                return (
+                  <div className="status-indicator status-indicator-divider">
+                    <div className={`pulse-dot ${cloudInfo.className}`} />
+                    <span>{cloudInfo.label}</span>
+                  </div>
+                );
+              })()
+            )}
+            
+            <button
+              type="button"
+              onClick={() => { setIsLoading(true); void fetchStaticData(); }}
+              className="refresh-btn"
+              title="Force Refresh Data"
+              aria-label="Force refresh data"
+            >
+              <RefreshCw size={16} className={isLoading ? 'spin refresh-icon' : 'refresh-icon'} />
+            </button>
+          </div>
+        </footer>
       </main>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>

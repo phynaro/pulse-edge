@@ -153,7 +153,7 @@ export default function TagGroupAccordion({
               </strong>
               {!isOrphan ? (
                 <>
-                  <span className="badge info badge-protocol-xs">{adapter.protocol.replace('_', ' ')}</span>
+                  <span className={`badge badge-protocol-xs proto-${adapter.protocol.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}>{adapter.protocol.replace('_', ' ')}</span>
                   <div className="adapter-status-indicator">
                     <span className={`adapter-status-dot-sm ${adapterStatusClass(adapter.status)}`} />
                     <span className="badge-adapter-status">{adapter.status}</span>

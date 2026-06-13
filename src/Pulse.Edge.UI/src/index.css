@@ -63,18 +63,54 @@ body {
   margin-left: 0;
 }
 
-/* Topbar Badge Group Horizontal Alignment */
-.topbar-badge-group {
+/* Bottombar Layout & Badge Styles */
+.bottombar {
+  height: var(--topbar-height);
+  background-color: var(--surface-color);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--content-padding-x);
+  font-family: var(--font-body);
+  position: sticky;
+  bottom: 0;
+  z-index: 99;
+  flex-shrink: 0;
+}
+
+.bottombar-status {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.bottombar-badge-group {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.topbar-node-badge {
+.bottombar-node-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--bg-hover);
+  border: 1px solid var(--border-color);
   padding: 2px 8px !important;
   font-size: 10px !important;
   line-height: 1.2 !important;
   border-radius: 12px !important;
+}
+
+.bottombar-node-badge .badge-label {
+  color: var(--primary-dark);
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.bottombar-node-badge .badge-value {
+  color: var(--text-primary);
 }
 
 /* Refresh Button Custom Theme Styling */
@@ -102,3 +138,61 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Protocol Badges Colors */
+.badge-protocol,
+.badge-protocol-xs {
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* OPC UA: Teal / Cyan */
+.proto-opc-ua {
+  background-color: rgba(20, 184, 166, 0.12) !important;
+  color: #2dd4bf !important;
+  border: 1px solid rgba(20, 184, 166, 0.25) !important;
+}
+
+/* MQTT: Slate Blue / Indigo */
+.proto-mqtt {
+  background-color: rgba(99, 102, 241, 0.12) !important;
+  color: #818cf8 !important;
+  border: 1px solid rgba(99, 102, 241, 0.25) !important;
+}
+
+/* Modbus TCP: Amber */
+.proto-modbus-tcp {
+  background-color: rgba(245, 158, 11, 0.12) !important;
+  color: #fbbf24 !important;
+  border: 1px solid rgba(245, 158, 11, 0.25) !important;
+}
+
+/* Modbus RTU: Yellow / Gold */
+.proto-modbus-rtu {
+  background-color: rgba(234, 179, 8, 0.12) !important;
+  color: #facc15 !important;
+  border: 1px solid rgba(234, 179, 8, 0.25) !important;
+}
+
+/* Ethernet/IP: Sky Blue */
+.proto-ethernet-ip {
+  background-color: rgba(14, 165, 233, 0.12) !important;
+  color: #38bdf8 !important;
+  border: 1px solid rgba(14, 165, 233, 0.25) !important;
+}
+
+/* WEBHOOK: Rose / Pink */
+.proto-webhook {
+  background-color: rgba(244, 63, 94, 0.12) !important;
+  color: #fb7185 !important;
+  border: 1px solid rgba(244, 63, 94, 0.25) !important;
+}
+
+/* SIMULATOR: Emerald Green */
+.proto-simulator {
+  background-color: rgba(16, 185, 129, 0.12) !important;
+  color: #34d399 !important;
+  border: 1px solid rgba(16, 185, 129, 0.25) !important;
+}
+

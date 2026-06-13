@@ -197,6 +197,18 @@ export default function SettingsTab({
           </div>
 
           <div className="form-group">
+            <label className="form-label">Associated Organization ID</label>
+            <input className="form-input form-input-mono" type="text" readOnly value={dashboard?.device.organizationId || 'Fetching...'} />
+          </div>
+
+          {dashboard?.device.organizationName && dashboard.device.organizationName !== 'N/A' && (
+            <div className="form-group">
+              <label className="form-label">Associated Organization Name</label>
+              <input className="form-input" type="text" readOnly value={dashboard.device.organizationName} />
+            </div>
+          )}
+
+          <div className="form-group">
             <label className="form-label">Associated Factory Site ID</label>
             <input className="form-input form-input-mono" type="text" readOnly value={dashboard?.device.siteId || 'Fetching...'} />
           </div>

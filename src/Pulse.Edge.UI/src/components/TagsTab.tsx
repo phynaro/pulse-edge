@@ -71,6 +71,8 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
       else if (tagProtocolFilter === 'Modbus TCP') matchesProto = adp?.protocol === 'MODBUS_TCP';
       else if (tagProtocolFilter === 'Modbus RTU') matchesProto = adp?.protocol === 'MODBUS_RTU';
       else if (tagProtocolFilter === 'Ethernet/IP') matchesProto = adp?.protocol === 'Ethernet/IP';
+      else if (tagProtocolFilter === 'REST Webhook') matchesProto = adp?.protocol === 'WEBHOOK';
+      else if (tagProtocolFilter === 'Protocol Simulator') matchesProto = adp?.protocol === 'SIMULATOR';
     }
     return matchesSearch && matchesProto;
   });
@@ -122,7 +124,7 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
   const selectedCount = Object.values(selectedTagIds).filter(Boolean).length;
 
   return (
-    <div className="tags-page">
+    <div className="tab-stack">
       <div className="page-header">
         <div className="page-header-info">
           <h2 className="page-header-title">
@@ -156,7 +158,7 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
         </div>
 
         <div className="tag-protocol-chips">
-          {['All', 'OPC UA', 'MQTT', 'Modbus TCP', 'Modbus RTU', 'Ethernet/IP'].map((cat) => (
+          {['All', 'OPC UA', 'MQTT', 'Modbus TCP', 'Modbus RTU', 'Ethernet/IP', 'REST Webhook', 'Protocol Simulator'].map((cat) => (
             <button
               key={cat}
               onClick={() => setTagProtocolFilter(cat)}

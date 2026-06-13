@@ -63,7 +63,7 @@ export default function AdapterCard({
         <div className="adapter-info-body">
           <div>
             <span className="adapter-info-label">Protocol: </span>
-            <span className="badge primary badge-protocol">{adapter.protocol}</span>
+            <span className={`badge badge-protocol proto-${adapter.protocol.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}>{adapter.protocol}</span>
           </div>
           {adapter.protocol !== 'WEBHOOK' && adapter.protocol !== 'SIMULATOR' ? (
             <>

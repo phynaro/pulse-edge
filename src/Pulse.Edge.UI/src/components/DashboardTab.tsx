@@ -122,7 +122,7 @@ export default function DashboardTab({
             className={`sync-toggle-btn ${isSyncEnabled ? 'is-online' : 'is-paused'}`}
           >
             {isSyncEnabled ? <Pause size={14} /> : <Play size={14} />}
-            {isSyncEnabled ? 'Simulate Outage' : 'Resume Sync'}
+            {isSyncEnabled ? 'Pause Sync' : 'Resume Sync'}
           </button>
         </div>
 

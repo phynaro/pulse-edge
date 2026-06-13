@@ -3,7 +3,6 @@ import { Database, Plus, Settings } from 'lucide-react';
 import type { DataSource, DataPoint, DriverAdapter, StreamTemplate } from '../types';
 import type { useToast } from '../hooks/useToast';
 
-import SummaryCards from './DataSourcesTab/SummaryCards';
 import FilterBar from './DataSourcesTab/FilterBar';
 import DataSourceCard from './DataSourcesTab/DataSourceCard';
 import CreateSourceModal from './DataSourcesTab/CreateSourceModal';
@@ -101,8 +100,6 @@ export default function DataSourcesTab({
           </button>
         </div>
       </div>
-
-      <SummaryCards datasources={datasources} datapoints={datapoints} />
 
       <FilterBar
         streamSearchQuery={streamSearchQuery}
