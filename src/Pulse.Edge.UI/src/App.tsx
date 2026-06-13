@@ -30,6 +30,7 @@ import { EdgeProvider, useEdge } from './context/EdgeContext';
 import { useDashboardData } from './hooks/useDashboardData';
 import { useBufferStatus } from './hooks/useBufferStatus';
 import { useAdaptersList } from './hooks/useAdaptersList';
+import { useDatapointsList } from './hooks/useDatapointsList';
 
 const getCloudStatusInfo = (status: string | undefined) => {
   switch (status) {
@@ -115,6 +116,7 @@ function EdgeInner() {
   useDashboardData(pollingInterval); // Polls dashboard and diagnostics
   useBufferStatus(2000);             // Polls buffer status and updates live logs
   useAdaptersList(activeTab === 'protocols', 3000); // Polls adapters only when tab is active
+  useDatapointsList(activeTab === 'tags' || activeTab === 'datasources', pollingInterval); // Polls tags when active
 
   const toggleSidebar = () => {
     setIsSidebarCollapsed(!isSidebarCollapsed);
