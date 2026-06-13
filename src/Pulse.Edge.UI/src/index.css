@@ -34,7 +34,8 @@ body {
 
 /* Fix logo top margin and centering */
 .sidebar-brand {
-  padding-top: 10px; /* Push down logo slightly from top border */
+  height: 50px !important;
+  padding-top: 0 !important;
 }
 
 /* Styling for the sidebar toggle button */
