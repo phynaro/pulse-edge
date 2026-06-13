@@ -154,11 +154,11 @@ body {
   border: 1px solid rgba(20, 184, 166, 0.25) !important;
 }
 
-/* MQTT: Slate Blue / Indigo */
+/* MQTT: Maroon text on light red background */
 .proto-mqtt {
-  background-color: rgba(99, 102, 241, 0.12) !important;
-  color: #818cf8 !important;
-  border: 1px solid rgba(99, 102, 241, 0.25) !important;
+  background-color: #fee2e2 !important;
+  color: #800000 !important;
+  border: 1px solid #fca5a5 !important;
 }
 
 /* Modbus TCP: Amber */
