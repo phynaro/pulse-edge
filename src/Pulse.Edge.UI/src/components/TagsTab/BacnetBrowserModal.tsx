@@ -187,8 +187,6 @@ export default function BacnetBrowserModal({
     tag.dataType.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const allFilteredSelected = filtered.length > 0 && filtered.every(tag => !!selectedTags[tag.name]);
-
   return (
     <ModalShell
       title="BACnet Objects Discoverer"
