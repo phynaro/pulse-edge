@@ -12,6 +12,16 @@ import ModalShell from '../ModalShell';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 
+const isNumericType = (dataType: string): boolean => {
+  const lower = (dataType || '').toLowerCase();
+  return (
+    lower.includes('int') ||
+    lower.includes('float') ||
+    lower.includes('double') ||
+    lower.includes('uint')
+  );
+};
+
 interface CreateTagWizardProps {
   isOpen: boolean;
   onClose: () => void;
@@ -213,7 +223,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
               <span className={`wizard-step-circle ${wizardStep >= 2 ? 'is-done' : 'is-pending'}`}>2</span>
               <span className={`wizard-step-label ${wizardStep === 2 ? 'is-current' : 'is-pending'}`}>Data Type</span>
             </div>
-            {protocol !== 'MQTT' && protocol !== 'WEBHOOK' && (
+            {protocol !== 'MQTT' && protocol !== 'WEBHOOK' && !(protocol === 'REST_API' && !isNumericType(newDpDataType)) && (
               <>
                 <div className="wizard-step-line" />
                 <div className="wizard-step-group">
@@ -397,23 +407,27 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
           {/* STEP 3 */}
           {wizardStep === 3 && protocol !== 'MQTT' && (
             <div className="form-stack">
-              <div className="form-group form-group-flush">
-                <label className="form-label form-label-bold">Scan Rate (ms)</label>
-                <input className="form-input text-mono" type="number" value={newDpScanIntervalMs}
-                  onChange={(e) => setNewDpScanIntervalMs(parseInt(e.target.value, 10) || 1000)} min={100} />
-              </div>
-              <div className="form-grid-half">
+              {protocol !== 'REST_API' && (
                 <div className="form-group form-group-flush">
-                  <label className="form-label form-label-bold">Scale Factor</label>
-                  <input className="form-input text-mono" type="number" step="any" value={newDpScaleFactor}
-                    onChange={(e) => setNewDpScaleFactor(e.target.value)} />
+                  <label className="form-label form-label-bold">Scan Rate (ms)</label>
+                  <input className="form-input text-mono" type="number" value={newDpScanIntervalMs}
+                    onChange={(e) => setNewDpScanIntervalMs(parseInt(e.target.value, 10) || 1000)} min={100} />
                 </div>
-                <div className="form-group form-group-flush">
-                  <label className="form-label form-label-bold">Offset</label>
-                  <input className="form-input text-mono" type="number" step="any" value={newDpOffset}
-                    onChange={(e) => setNewDpOffset(e.target.value)} />
+              )}
+              {isNumericType(newDpDataType) && (
+                <div className="form-grid-half">
+                  <div className="form-group form-group-flush">
+                    <label className="form-label form-label-bold">Scale Factor</label>
+                    <input className="form-input text-mono" type="number" step="any" value={newDpScaleFactor}
+                      onChange={(e) => setNewDpScaleFactor(e.target.value)} />
+                  </div>
+                  <div className="form-group form-group-flush">
+                    <label className="form-label form-label-bold">Offset</label>
+                    <input className="form-input text-mono" type="number" step="any" value={newDpOffset}
+                      onChange={(e) => setNewDpOffset(e.target.value)} />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -427,7 +441,11 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
               <button type="button" onClick={onClose} className="btn-secondary btn-flex-1">Cancel</button>
             )}
             {(() => {
-              const isLastStep = (protocol === 'MQTT' || protocol === 'WEBHOOK') ? wizardStep === 2 : wizardStep === 3;
+              const isLastStep = (
+                protocol === 'MQTT' ||
+                protocol === 'WEBHOOK' ||
+                (protocol === 'REST_API' && !isNumericType(newDpDataType))
+              ) ? wizardStep === 2 : wizardStep === 3;
               const isNextDisabled = wizardStep === 1 && (!newDpAdapterId || !newDpAddress.trim());
 
               if (isLastStep) {

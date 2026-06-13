@@ -11,6 +11,16 @@ const formatToLocalTimeString = (dateStr: string | null | undefined) => {
   return new Date(utcStr).toLocaleTimeString();
 };
 
+const isNumericType = (dataType: string): boolean => {
+  const lower = (dataType || '').toLowerCase();
+  return (
+    lower.includes('int') ||
+    lower.includes('float') ||
+    lower.includes('double') ||
+    lower.includes('uint')
+  );
+};
+
 const formatLiveValue = (value: string | null | undefined, dataType: string): string => {
   if (value === null || value === undefined || value === '') return '—';
 
@@ -98,6 +108,18 @@ export default function TagGroupAccordion({
   const abnormalCount = tags.filter(dp => !!dp.lastError).length;
   const visibleTags = tags.slice(0, visibleLimit);
   const orphanClass = isOrphan ? 'is-orphan' : 'is-normal';
+
+  let pollIntervalMs: number | null = null;
+  if (adapter && adapter.protocol === 'REST_API' && adapter.configJson) {
+    try {
+      const config = JSON.parse(adapter.configJson);
+      if (typeof config.PollIntervalMs === 'number') {
+        pollIntervalMs = config.PollIntervalMs;
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
 
   const toggleTagDetails = (tagId: string) => {
     setExpandedTags(prev => ({ ...prev, [tagId]: !prev[tagId] }));
@@ -250,7 +272,13 @@ export default function TagGroupAccordion({
                         <td>
                           <span className={`badge tag-dtype-badge${isOrphan ? ' is-orphan' : ''}`}>{dp.dataType}</span>
                         </td>
-                        {!isEventDriven && <td>{dp.scanIntervalMs}ms</td>}
+                        {!isEventDriven && (
+                          <td>
+                            {adapter?.protocol === 'REST_API'
+                              ? `${pollIntervalMs ?? 10000}ms (Adapter)`
+                              : `${dp.scanIntervalMs}ms`}
+                          </td>
+                        )}
                         <td className={`tag-live-cell${isOrphan ? ' is-orphan' : ''}`}>
                           {isOrphan ? (
                             'Offline (No Driver)'
@@ -320,11 +348,13 @@ export default function TagGroupAccordion({
                                   {dp.description || 'No description provided.'}
                                 </div>
                               </div>
-                              <div className="tag-detail-section">
-                                <div className={`detail-label${isOrphan ? ' is-orphan' : ''}`}>Scaling & Math</div>
-                                <div className="detail-value">Scale Factor: <span className="tag-detail-mono">x{dp.scaleFactor}</span></div>
-                                <div className="detail-value detail-value-mt">Offset: <span className="tag-detail-mono">+{dp.offset}</span></div>
-                              </div>
+                              {isNumericType(dp.dataType) && (
+                                <div className="tag-detail-section">
+                                  <div className={`detail-label${isOrphan ? ' is-orphan' : ''}`}>Scaling & Math</div>
+                                  <div className="detail-value">Scale Factor: <span className="tag-detail-mono">x{dp.scaleFactor}</span></div>
+                                  <div className="detail-value detail-value-mt">Offset: <span className="tag-detail-mono">+{dp.offset}</span></div>
+                                </div>
+                              )}
                               {!isOrphan && adapter.protocol === 'MODBUS_TCP' && (
                                 <div className="tag-detail-section">
                                   <div className="detail-label">Endianness (Modbus Only)</div>

@@ -6,6 +6,16 @@ import ModalShell from '../ModalShell';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 
+const isNumericType = (dataType: string): boolean => {
+  const lower = (dataType || '').toLowerCase();
+  return (
+    lower.includes('int') ||
+    lower.includes('float') ||
+    lower.includes('double') ||
+    lower.includes('uint')
+  );
+};
+
 interface EditTagModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -171,11 +181,13 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
               ...(protocol !== 'MODBUS_TCP' ? [{ value: 'String', label: 'String' }] : [])
             ]} />
           </div>
-          <div className="form-group form-group-flush">
-            <label className="form-label form-label-bold">Scan Rate (ms)</label>
-            <input className="form-input text-mono" type="number" value={editDpScanIntervalMs}
-              onChange={(e) => setEditDpScanIntervalMs(parseInt(e.target.value, 10) || 1000)} />
-          </div>
+          {protocol !== 'REST_API' && (
+            <div className="form-group form-group-flush">
+              <label className="form-label form-label-bold">Scan Rate (ms)</label>
+              <input className="form-input text-mono" type="number" value={editDpScanIntervalMs}
+                onChange={(e) => setEditDpScanIntervalMs(parseInt(e.target.value, 10) || 1000)} />
+            </div>
+          )}
         </div>
 
         {protocol === 'MODBUS_TCP' && (
@@ -226,18 +238,20 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
           </>
         )}
 
-        <div className="form-grid-2">
-          <div className="form-group form-group-flush">
-            <label className="form-label form-label-bold">Scale Factor</label>
-            <input className="form-input text-mono" type="number" step="any" value={editDpScaleFactor}
-              onChange={(e) => setEditDpScaleFactor(e.target.value)} />
+        {isNumericType(editDpDataType) && (
+          <div className="form-grid-2">
+            <div className="form-group form-group-flush">
+              <label className="form-label form-label-bold">Scale Factor</label>
+              <input className="form-input text-mono" type="number" step="any" value={editDpScaleFactor}
+                onChange={(e) => setEditDpScaleFactor(e.target.value)} />
+            </div>
+            <div className="form-group form-group-flush">
+              <label className="form-label form-label-bold">Offset</label>
+              <input className="form-input text-mono" type="number" step="any" value={editDpOffset}
+                onChange={(e) => setEditDpOffset(e.target.value)} />
+            </div>
           </div>
-          <div className="form-group form-group-flush">
-            <label className="form-label form-label-bold">Offset</label>
-            <input className="form-input text-mono" type="number" step="any" value={editDpOffset}
-              onChange={(e) => setEditDpOffset(e.target.value)} />
-          </div>
-        </div>
+        )}
 
         <div className="checkbox-inline">
           <input type="checkbox" id="editDpIsEnabled" checked={editDpIsEnabled} onChange={(e) => setEditDpIsEnabled(e.target.checked)} />
