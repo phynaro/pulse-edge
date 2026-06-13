@@ -146,22 +146,11 @@ public class RestApiDriverPoller : IProtocolDriver
                         continue;
                     }
 
-                    double val;
-                    bool parseSuccess = false;
-                    if (double.TryParse(extractedValue, out val))
-                    {
-                        parseSuccess = true;
-                    }
-                    else if (bool.TryParse(extractedValue, out bool boolVal))
-                    {
-                        val = boolVal ? 1.0 : 0.0;
-                        parseSuccess = true;
-                    }
+                    bool isString = string.Equals(dp.DataType, "String", StringComparison.OrdinalIgnoreCase);
 
-                    if (parseSuccess)
+                    if (isString)
                     {
-                        double processedVal = (val * dp.ScaleFactor) + dp.Offset;
-                        dp.LastValue = processedVal.ToString("F2");
+                        dp.LastValue = extractedValue;
                         dp.LastError = null;
                         dp.ConsecutiveFailures = 0;
                         dp.LastUpdated = now;
@@ -170,22 +159,54 @@ public class RestApiDriverPoller : IProtocolDriver
                         {
                             if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
                             {
-                                await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
-                                _logger.LogInformation("[Queue Buffer] Enqueued REST API telemetry | Stream: {Source} Metric: {Metric} Val: {Val}", dp.DataSourceId, dp.Metric, processedVal);
+                                await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, "Good");
+                                _logger.LogInformation("[Queue Buffer] Enqueued REST API string telemetry | Stream: {Source} Metric: {Metric} Val: {Val}", dp.DataSourceId, dp.Metric, extractedValue);
                             }
                         }
                     }
                     else
                     {
-                        dp.LastError = $"Failed to parse extracted value '{extractedValue}' as double or boolean";
-                        dp.ConsecutiveFailures++;
-                        dp.LastUpdated = now;
-
-                        if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                        double val;
+                        bool parseSuccess = false;
+                        if (double.TryParse(extractedValue, out val))
                         {
-                            if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                            parseSuccess = true;
+                        }
+                        else if (bool.TryParse(extractedValue, out bool boolVal))
+                        {
+                            val = boolVal ? 1.0 : 0.0;
+                            parseSuccess = true;
+                        }
+
+                        if (parseSuccess)
+                        {
+                            double processedVal = (val * dp.ScaleFactor) + dp.Offset;
+                            dp.LastValue = processedVal.ToString("F2");
+                            dp.LastError = null;
+                            dp.ConsecutiveFailures = 0;
+                            dp.LastUpdated = now;
+
+                            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
                             {
-                                await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, "DriverError");
+                                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                {
+                                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
+                                    _logger.LogInformation("[Queue Buffer] Enqueued REST API telemetry | Stream: {Source} Metric: {Metric} Val: {Val}", dp.DataSourceId, dp.Metric, processedVal);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            dp.LastError = $"Failed to parse extracted value '{extractedValue}' as double or boolean";
+                            dp.ConsecutiveFailures++;
+                            dp.LastUpdated = now;
+
+                            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                            {
+                                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                {
+                                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, "DriverError");
+                                }
                             }
                         }
                     }
