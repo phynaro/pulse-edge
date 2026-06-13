@@ -1,4 +1,5 @@
 
+import { useState, useRef, useEffect } from 'react';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import type { DriverAdapter, MqttDevice } from '../../types';
 import type { useToast } from '../../hooks/useToast';
@@ -26,6 +27,30 @@ export default function AdapterCard({
   toast,
   fetchData
 }: AdapterCardProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [rowSpan, setRowSpan] = useState<number>(0);
+
+  useEffect(() => {
+    const calculateSpan = () => {
+      if (cardRef.current) {
+        const height = cardRef.current.getBoundingClientRect().height;
+        // rowHeight = 10, rowGap = 24
+        const span = Math.ceil((height + 24) / 34);
+        setRowSpan(span);
+      }
+    };
+
+    calculateSpan();
+
+    if (typeof ResizeObserver !== 'undefined' && cardRef.current) {
+      const observer = new ResizeObserver(() => {
+        calculateSpan();
+      });
+      observer.observe(cardRef.current);
+      return () => observer.disconnect();
+    }
+  }, [adapter, mqttDevices]);
+
   const adapterMqttDevices = mqttDevices.filter(d => d.adapterId === adapter.id);
   let config: Record<string, any> = {};
   try { config = JSON.parse(adapter.configJson || '{}'); } catch {}
@@ -50,7 +75,14 @@ export default function AdapterCard({
   };
 
   return (
-    <div className="panel adapter-card" style={{ height: 'fit-content' }}>
+    <div 
+      ref={cardRef}
+      className="panel adapter-card" 
+      style={{ 
+        height: 'fit-content',
+        gridRowEnd: rowSpan ? `span ${rowSpan}` : undefined
+      }}
+    >
       <div>
         <div className="panel-header adapter-panel-header">
           <h3 className="panel-title adapter-panel-title">{adapter.name}</h3>

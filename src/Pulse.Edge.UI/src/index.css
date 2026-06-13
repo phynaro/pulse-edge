@@ -226,3 +226,10 @@ body {
   margin-top: 1rem;
 }
 
+/* Custom styling for Masonry grid row spanning */
+.adapter-grid {
+  grid-auto-rows: 10px !important;
+  align-items: start;
+}
+
+
