@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Network, Plus } from 'lucide-react';
 import type { DriverAdapter, DataPoint, MqttDevice } from '../types';
 import type { useToast } from '../hooks/useToast';
@@ -87,6 +87,30 @@ export default function ProtocolsTab({
     localStorage.setItem('pulse-adapters-order', JSON.stringify(orderIds));
   };
 
+  const [columnsCount, setColumnsCount] = useState(2);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 900) {
+        setColumnsCount(1);
+      } else {
+        setColumnsCount(2);
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const columns = useMemo(() => {
+    const cols: DriverAdapter[][] = Array.from({ length: columnsCount }, () => []);
+    orderedAdapters.forEach((adapter) => {
+      const origIdx = orderedAdapters.findIndex(a => a.id === adapter.id);
+      cols[origIdx % columnsCount].push(adapter);
+    });
+    return cols;
+  }, [orderedAdapters, columnsCount]);
+
   return (
     <div className="tab-stack">
       <div className="page-header">
@@ -107,33 +131,40 @@ export default function ProtocolsTab({
         </div>
       </div>
 
-      <div className="adapter-grid">
-        {orderedAdapters.map((proto, index) => (
-          <AdapterCard
-            key={proto.id}
-            adapter={proto}
-            mqttDevices={mqttDevices}
-            onStartEdit={(a) => setEditingAdapter(a)}
-            onStartDelete={(a) => setDeletingAdapter(a)}
-            onAddMqttDevice={(adapterId) => {
-              setEditingDevice(null);
-              setDeviceAdapterId(adapterId);
-              setIsDeviceModalOpen(true);
-            }}
-            onEditMqttDevice={(dev) => {
-              setEditingDevice(dev);
-              setDeviceAdapterId(dev.adapterId);
-              setIsDeviceModalOpen(true);
-            }}
-            toast={toast}
-            fetchData={fetchData}
-            index={index}
-            draggedIndex={draggedIndex}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragEnter={handleDragEnter}
-            onDragEnd={handleDragEnd}
-          />
+      <div className="adapter-grid" style={{ display: 'flex', gap: '24px', width: '100%', alignItems: 'flex-start' }}>
+        {columns.map((column, colIdx) => (
+          <div key={colIdx} style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1, minWidth: 0 }}>
+            {column.map((proto) => {
+              const index = orderedAdapters.findIndex(a => a.id === proto.id);
+              return (
+                <AdapterCard
+                  key={proto.id}
+                  adapter={proto}
+                  mqttDevices={mqttDevices}
+                  onStartEdit={(a) => setEditingAdapter(a)}
+                  onStartDelete={(a) => setDeletingAdapter(a)}
+                  onAddMqttDevice={(adapterId) => {
+                    setEditingDevice(null);
+                    setDeviceAdapterId(adapterId);
+                    setIsDeviceModalOpen(true);
+                  }}
+                  onEditMqttDevice={(dev) => {
+                    setEditingDevice(dev);
+                    setDeviceAdapterId(dev.adapterId);
+                    setIsDeviceModalOpen(true);
+                  }}
+                  toast={toast}
+                  fetchData={fetchData}
+                  index={index}
+                  draggedIndex={draggedIndex}
+                  onDragStart={handleDragStart}
+                  onDragOver={handleDragOver}
+                  onDragEnter={handleDragEnter}
+                  onDragEnd={handleDragEnd}
+                />
+              );
+            })}
+          </div>
         ))}
       </div>
 

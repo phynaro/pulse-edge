@@ -263,7 +263,7 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
           </p>
         </div>
       ) : (
-        <div className="accordion-groups">
+        <div className="accordion-groups" style={{ gap: '10px' }}>
           {orderedAdapters.map((adapter, index) => {
             const adapterTags = filteredDatapoints.filter(dp => dp.adapterId === adapter.id);
             const hasMatchingTags = adapterTags.length > 0;
@@ -280,8 +280,7 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
                 style={{
                   opacity: isDraggingThis ? 0.4 : 1,
                   transition: 'opacity 0.2s ease, transform 0.2s ease',
-                  transform: isDraggingThis ? 'scale(0.99)' : 'none',
-                  marginBottom: '12px'
+                  transform: isDraggingThis ? 'scale(0.99)' : 'none'
                 }}
               >
                 <TagGroupAccordion
