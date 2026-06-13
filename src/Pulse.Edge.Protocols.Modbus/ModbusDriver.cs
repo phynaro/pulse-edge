@@ -136,25 +136,14 @@ public class ModbusDriver : IDisposable
             _logger.LogInformation("Modbus Driver: Disconnecting...");
             try
             {
-                if (_client.IsConnected)
+                if (_client is IDisposable disp)
                 {
-                    if (_client is ModbusTcpClient tcp)
-                    {
-                        tcp.Disconnect();
-                    }
-                    else if (_client is ModbusRtuClient rtu)
-                    {
-                        rtu.Close();
-                    }
+                    disp.Dispose();
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Exception thrown while disconnecting Modbus client");
-            }
-            if (_client is IDisposable disp)
-            {
-                disp.Dispose();
+                _logger.LogWarning(ex, "Exception thrown while disposing Modbus client");
             }
             _client = null;
             _activeHost = string.Empty;
