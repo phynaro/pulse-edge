@@ -62,6 +62,19 @@ public class Worker : BackgroundService
     private List<DataPoint> _cachedDataPoints = new();
     private List<DriverAdapter> _cachedAdapters = new();
     private bool _hasInitialConfigSyncRun = false;
+    private readonly SemaphoreSlim _provisioningSemaphore = new(0, 1);
+
+    public void WakeUpProvisioning()
+    {
+        try
+        {
+            if (_provisioningSemaphore.CurrentCount == 0)
+            {
+                _provisioningSemaphore.Release();
+            }
+        }
+        catch (ObjectDisposedException) {}
+    }
 
     private static string? GetJsonValueByPath(string json, string path)
     {
@@ -733,6 +746,24 @@ public class Worker : BackgroundService
         int loopCount = 0;
         while (!stoppingToken.IsCancellationRequested)
         {
+            if (_deviceConfig == null)
+            {
+                _logger.LogWarning("No active configuration. Agent is waiting for user onboarding...");
+                while (_deviceConfig == null && !stoppingToken.IsCancellationRequested)
+                {
+                    await Task.Delay(2000, stoppingToken);
+                    _deviceConfig = await _storageService.GetDeviceConfigAsync();
+                }
+
+                if (stoppingToken.IsCancellationRequested)
+                    return;
+
+                _logger.LogInformation("Configuration loaded! Resuming agent loops...");
+                _lastConfigReload = DateTime.UtcNow;
+                _lastDataSourceCheck = DateTime.UtcNow;
+                continue;
+            }
+
             loopCount++;
             var now = DateTime.UtcNow;
 
@@ -761,64 +792,87 @@ public class Worker : BackgroundService
                 _lastConfigReload = now;
                 
                 var dbConfig = await _storageService.GetDeviceConfigAsync();
-                if (dbConfig != null && _deviceConfig != null)
+                if (dbConfig == null)
                 {
-                    bool endpointChanged = dbConfig.CloudEndpoint != _deviceConfig.CloudEndpoint;
-                    bool apiKeyChanged = dbConfig.ApiKey != _deviceConfig.ApiKey;
-
-                    if (endpointChanged || apiKeyChanged)
+                    if (_deviceConfig != null)
                     {
-                        _logger.LogInformation("System settings update detected from SQLite! Updating Edge Agent runtime. Endpoint: {Endpoint}, API Key updated.", 
-                            dbConfig.CloudEndpoint);
+                        _logger.LogWarning("Active configuration deleted/reset in SQLite! Entering waiting mode...");
+                        _deviceConfig = null;
+                        _hasInitialConfigSyncRun = false;
+                        WakeUpProvisioning();
+                    }
+                }
+                else
+                {
+                    if (_deviceConfig == null)
+                    {
+                        _logger.LogInformation("New configuration detected! Activating Edge Agent loops...");
+                        _deviceConfig = dbConfig;
+                        _hasInitialConfigSyncRun = false;
+                        WakeUpProvisioning();
+                    }
+                    else
+                    {
+                        bool endpointChanged = dbConfig.CloudEndpoint != _deviceConfig.CloudEndpoint;
+                        bool apiKeyChanged = dbConfig.ApiKey != _deviceConfig.ApiKey;
 
-                        if (!string.IsNullOrEmpty(dbConfig.ApiKey) && (apiKeyChanged || endpointChanged))
+                        if (endpointChanged || apiKeyChanged)
                         {
-                            _logger.LogInformation("API key is present or updated. Fetching config from PULSE Cloud dynamically...");
-                            // Fetch config in the background
-                            _ = Task.Run(async () =>
+                            _logger.LogInformation("System settings update detected from SQLite! Updating Edge Agent runtime. Endpoint: {Endpoint}, API Key updated.", 
+                                dbConfig.CloudEndpoint);
+
+                            _hasInitialConfigSyncRun = false;
+                            WakeUpProvisioning();
+
+                            if (!string.IsNullOrEmpty(dbConfig.ApiKey) && (apiKeyChanged || endpointChanged))
                             {
-                                try
+                                _logger.LogInformation("API key is present or updated. Fetching config from PULSE Cloud dynamically...");
+                                // Fetch config in the background
+                                _ = Task.Run(async () =>
                                 {
-                                    var configResult = await _cloudClient.GetConfigAsync(dbConfig.CloudEndpoint, dbConfig.ApiKey);
-                                    if (configResult.Success)
+                                    try
                                     {
-                                        _logger.LogInformation("Successfully retrieved dynamic config. Assigned Site: {SiteName}", configResult.SiteName);
-                                        dbConfig.SiteId = configResult.SiteId;
-                                        dbConfig.SiteName = configResult.SiteName;
-                                        dbConfig.CloudStatus = "Connected";
-                                        await _storageService.SaveDeviceConfigAsync(dbConfig);
-                                        
-                                        // Push logical data sources to cloud control plane
-                                        bool success = await PushDataSourcesToCloudAsync(dbConfig.CloudEndpoint, dbConfig.ApiKey);
-                                        if (success)
+                                        var configResult = await _cloudClient.GetConfigAsync(dbConfig.CloudEndpoint, dbConfig.ApiKey);
+                                        if (configResult.Success)
                                         {
-                                            _lastDataSourcesHash = await CalculateDataSourcesHashAsync();
+                                            _logger.LogInformation("Successfully retrieved dynamic config. Assigned Site: {SiteName}", configResult.SiteName);
+                                            dbConfig.SiteId = configResult.SiteId;
+                                            dbConfig.SiteName = configResult.SiteName;
+                                            dbConfig.CloudStatus = "Connected";
+                                            await _storageService.SaveDeviceConfigAsync(dbConfig);
+                                            
+                                            // Push logical data sources to cloud control plane
+                                            bool success = await PushDataSourcesToCloudAsync(dbConfig.CloudEndpoint, dbConfig.ApiKey);
+                                            if (success)
+                                            {
+                                                _lastDataSourcesHash = await CalculateDataSourcesHashAsync();
+                                            }
+                                        }
+                                        else if (configResult.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                                        {
+                                            _logger.LogError("API Key has been rejected as invalid or revoked by cloud.");
+                                            dbConfig.ApiKey = "";
+                                            dbConfig.SiteId = "";
+                                            dbConfig.SiteName = "";
+                                            dbConfig.CloudStatus = "Revoked";
+                                            await _storageService.SaveDeviceConfigAsync(dbConfig);
+                                        }
+                                        else
+                                        {
+                                            _logger.LogWarning("Failed to retrieve config dynamically from cloud (Status Code: {StatusCode}).", configResult.StatusCode);
+                                            dbConfig.CloudStatus = "Disconnected";
+                                            await _storageService.SaveDeviceConfigAsync(dbConfig);
                                         }
                                     }
-                                    else if (configResult.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                                    catch (Exception ex)
                                     {
-                                        _logger.LogError("API Key has been rejected as invalid or revoked by cloud.");
-                                        dbConfig.ApiKey = "";
-                                        dbConfig.SiteId = "";
-                                        dbConfig.SiteName = "";
-                                        dbConfig.CloudStatus = "Revoked";
-                                        await _storageService.SaveDeviceConfigAsync(dbConfig);
+                                        _logger.LogError(ex, "Failed to pull config or declare data sources on dynamic settings update");
                                     }
-                                    else
-                                    {
-                                        _logger.LogWarning("Failed to retrieve config dynamically from cloud (Status Code: {StatusCode}).", configResult.StatusCode);
-                                        dbConfig.CloudStatus = "Disconnected";
-                                        await _storageService.SaveDeviceConfigAsync(dbConfig);
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogError(ex, "Failed to pull config or declare data sources on dynamic settings update");
-                                }
-                            });
+                                });
+                            }
                         }
+                        _deviceConfig = dbConfig;
                     }
-                    _deviceConfig = dbConfig;
                 }
 
                 using var dbLoop = new QueueDbContext();
@@ -2260,14 +2314,15 @@ public class Worker : BackgroundService
             {
                 // Reload config from database in case it was updated by user via UI settings
                 var dbConfig = await _storageService.GetDeviceConfigAsync();
-                if (dbConfig != null)
-                {
-                    _deviceConfig = dbConfig;
-                }
+                _deviceConfig = dbConfig;
 
                 if (_deviceConfig == null)
                 {
-                    await Task.Delay(3000, stoppingToken);
+                    try
+                    {
+                        await _provisioningSemaphore.WaitAsync(3000, stoppingToken);
+                    }
+                    catch (OperationCanceledException) {}
                     continue;
                 }
 
@@ -2448,7 +2503,11 @@ public class Worker : BackgroundService
             }
 
             // Wait before next check/poll
-            await Task.Delay(loopDelayMs, stoppingToken);
+            try
+            {
+                await _provisioningSemaphore.WaitAsync(loopDelayMs, stoppingToken);
+            }
+            catch (OperationCanceledException) {}
         }
     }
 

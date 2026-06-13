@@ -1277,7 +1277,7 @@ app.MapGet("/api/settings", async () =>
 });
 
 // POST /api/settings - Saves updated DeviceConfig (Cloud Endpoint, Serial Number) to SQLite database
-app.MapPost("/api/settings", async (UpdateSettingsRequest request) =>
+app.MapPost("/api/settings", async (UpdateSettingsRequest request, IEnumerable<IHostedService> hostedServices) =>
 {
     using var db = new QueueDbContext();
     var config = await db.DeviceConfigs.FirstOrDefaultAsync();
@@ -1345,11 +1345,15 @@ app.MapPost("/api/settings", async (UpdateSettingsRequest request) =>
         db.DeviceConfigs.Update(config);
     }
     await db.SaveChangesAsync();
+    
+    var worker = hostedServices.OfType<Worker>().FirstOrDefault();
+    worker?.WakeUpProvisioning();
+
     return Results.Ok(config);
 });
 
 // POST /api/settings/factory-reset - Deletes all configurations and resets the edge agent to factory settings
-app.MapPost("/api/settings/factory-reset", async () =>
+app.MapPost("/api/settings/factory-reset", async (IEnumerable<IHostedService> hostedServices) =>
 {
     using var db = new QueueDbContext();
     try
@@ -1365,6 +1369,10 @@ app.MapPost("/api/settings/factory-reset", async () =>
         await db.Database.ExecuteSqlRawAsync("DELETE FROM MqttSeenTopics;");
         
         await db.SaveChangesAsync();
+
+        var worker = hostedServices.OfType<Worker>().FirstOrDefault();
+        worker?.WakeUpProvisioning();
+
         return Results.Ok(new { success = true, message = "System configuration has been reset to factory default." });
     }
     catch (Exception ex)

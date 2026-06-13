@@ -38,9 +38,15 @@ public class SyncService
             {
                 // Check if Cloud Sync is enabled in the database configuration
                 var config = await _storageService.GetDeviceConfigAsync();
-                bool syncEnabled = config?.IsSyncEnabled ?? true;
-                string currentApiKey = config?.ApiKey ?? apiKey;
-                string currentDeviceId = config?.Id ?? deviceId;
+                if (config == null)
+                {
+                    await Task.Delay(2000, stoppingToken);
+                    continue;
+                }
+
+                bool syncEnabled = config.IsSyncEnabled;
+                string currentApiKey = config.ApiKey;
+                string currentDeviceId = config.Id;
 
                 if (syncEnabled)
                 {
