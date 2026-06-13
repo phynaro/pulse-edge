@@ -225,7 +225,7 @@ export default function BindMetricModal({
       onClose={onClose}
     >
       <div className="form-stack" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <div className={`bind-stream-banner ${themeClass}`} style={{ marginBottom: '1rem' }}>
+        <div className={`bind-stream-banner ${themeClass}`} style={{ padding: '6px 12px', minHeight: 'unset', marginBottom: '0px' }}>
           <div>
             <span className="bind-stream-target-label">Target Stream</span>
             <span className="bind-stream-name">{activeDs?.name || dataSourceId}</span>
