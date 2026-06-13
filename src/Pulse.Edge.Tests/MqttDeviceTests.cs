@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text.Json;
 using Xunit;
 using Pulse.Edge.Agent;
+using Pulse.Edge.Agent.Drivers;
 using Pulse.Edge.Storage.Models;
 
 namespace Pulse.Edge.Tests;
@@ -12,25 +13,25 @@ public class MqttDeviceTests
     [Fact]
     public void TestMqttTopicMatches_ExactMatch()
     {
-        Assert.True(Worker.MqttTopicMatches("tele/device1/SENSOR", "tele/device1/SENSOR"));
-        Assert.False(Worker.MqttTopicMatches("tele/device1/SENSOR", "tele/device2/SENSOR"));
+        Assert.True(MqttDriverPoller.MqttTopicMatches("tele/device1/SENSOR", "tele/device1/SENSOR"));
+        Assert.False(MqttDriverPoller.MqttTopicMatches("tele/device1/SENSOR", "tele/device2/SENSOR"));
     }
 
     [Fact]
     public void TestMqttTopicMatches_SingleLevelWildcard()
     {
-        Assert.True(Worker.MqttTopicMatches("tele/+/SENSOR", "tele/device1/SENSOR"));
-        Assert.True(Worker.MqttTopicMatches("tele/+/SENSOR", "tele/device2/SENSOR"));
-        Assert.False(Worker.MqttTopicMatches("tele/+/SENSOR", "tele/device1/temp/SENSOR"));
+        Assert.True(MqttDriverPoller.MqttTopicMatches("tele/+/SENSOR", "tele/device1/SENSOR"));
+        Assert.True(MqttDriverPoller.MqttTopicMatches("tele/+/SENSOR", "tele/device2/SENSOR"));
+        Assert.False(MqttDriverPoller.MqttTopicMatches("tele/+/SENSOR", "tele/device1/temp/SENSOR"));
     }
 
     [Fact]
     public void TestMqttTopicMatches_MultiLevelWildcard()
     {
-        Assert.True(Worker.MqttTopicMatches("tele/device1/#", "tele/device1/SENSOR"));
-        Assert.True(Worker.MqttTopicMatches("tele/device1/#", "tele/device1/temp/celsius"));
-        Assert.True(Worker.MqttTopicMatches("#", "tele/device1/temp/celsius"));
-        Assert.False(Worker.MqttTopicMatches("tele/device1/#", "tele/device2/SENSOR"));
+        Assert.True(MqttDriverPoller.MqttTopicMatches("tele/device1/#", "tele/device1/SENSOR"));
+        Assert.True(MqttDriverPoller.MqttTopicMatches("tele/device1/#", "tele/device1/temp/celsius"));
+        Assert.True(MqttDriverPoller.MqttTopicMatches("#", "tele/device1/temp/celsius"));
+        Assert.False(MqttDriverPoller.MqttTopicMatches("tele/device1/#", "tele/device2/SENSOR"));
     }
 
     [Theory]
@@ -44,7 +45,7 @@ public class MqttDeviceTests
     [InlineData("{\"nested\": {\"values\": [{\"val\": 1.2}, {\"val\": 3.4}]}}", "nested.values[1].val", "3.4")]
     public void TestGetJsonValueByPath(string json, string path, string expectedValue)
     {
-        var method = typeof(Worker).GetMethod("GetJsonValueByPath", BindingFlags.NonPublic | BindingFlags.Static);
+        var method = typeof(MqttDriverPoller).GetMethod("GetJsonValueByPath", BindingFlags.Public | BindingFlags.Static);
         Assert.NotNull(method);
 
         var result = method.Invoke(null, new object[] { json, path }) as string;
@@ -54,7 +55,7 @@ public class MqttDeviceTests
     [Fact]
     public void TestGetJsonValueByPath_InvalidPaths()
     {
-        var method = typeof(Worker).GetMethod("GetJsonValueByPath", BindingFlags.NonPublic | BindingFlags.Static);
+        var method = typeof(MqttDriverPoller).GetMethod("GetJsonValueByPath", BindingFlags.Public | BindingFlags.Static);
         Assert.NotNull(method);
 
         // Path not found

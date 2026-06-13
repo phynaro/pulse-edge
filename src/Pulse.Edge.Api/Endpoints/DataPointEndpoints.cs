@@ -1,0 +1,153 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
+using Pulse.Edge.Storage;
+using Pulse.Edge.Storage.Models;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace Pulse.Edge.Api.Endpoints;
+
+public static class DataPointEndpoints
+{
+    public static void MapDataPointEndpoints(this IEndpointRouteBuilder routes)
+    {
+        // GET /api/datapoints - Returns configured data points
+        routes.MapGet("/api/datapoints", async () =>
+        {
+            using var db = new QueueDbContext();
+            var list = await db.DataPoints.ToListAsync();
+            return Results.Ok(list);
+        });
+
+        // POST /api/datapoints - Updates or inserts a data point mapping
+        routes.MapPost("/api/datapoints", async (DataPoint updated) =>
+        {
+            using var db = new QueueDbContext();
+            if (string.IsNullOrEmpty(updated.Id))
+            {
+                updated.Id = Guid.NewGuid().ToString();
+            }
+            
+            var existing = await db.DataPoints.FirstOrDefaultAsync(x => x.Id == updated.Id);
+            if (existing == null)
+            {
+                db.DataPoints.Add(updated);
+                await db.SaveChangesAsync();
+                return Results.Created($"/api/datapoints/{updated.Id}", updated);
+            }
+            
+            existing.AdapterId = updated.AdapterId;
+            existing.MqttDeviceId = updated.MqttDeviceId;
+            existing.DataSourceId = updated.DataSourceId;
+            existing.Metric = updated.Metric;
+            existing.Address = updated.Address;
+            existing.DataType = updated.DataType;
+            existing.ScanIntervalMs = updated.ScanIntervalMs;
+            existing.ScaleFactor = updated.ScaleFactor;
+            existing.Offset = updated.Offset;
+            existing.IsEnabled = updated.IsEnabled;
+            existing.ByteOrder = updated.ByteOrder;
+            existing.Description = updated.Description;
+            existing.MqttParseMode = updated.MqttParseMode;
+            existing.MqttJsonPath = updated.MqttJsonPath;
+            existing.ConsecutiveFailures = updated.ConsecutiveFailures;
+            
+            db.DataPoints.Update(existing);
+            await db.SaveChangesAsync();
+            return Results.Ok(existing);
+        });
+
+        // DELETE /api/datapoints/{id} - Unbinds a data point mapping from its stream
+        routes.MapDelete("/api/datapoints/{id}", async (string id) =>
+        {
+            using var db = new QueueDbContext();
+            var existing = await db.DataPoints.FirstOrDefaultAsync(x => x.Id == id);
+            if (existing == null) return Results.NotFound();
+            
+            existing.DataSourceId = string.Empty;
+            existing.Metric = string.Empty;
+            db.DataPoints.Update(existing);
+            
+            await db.SaveChangesAsync();
+            return Results.Ok(new { success = true });
+        });
+
+        // DELETE /api/datapoints/hard/{id} - Hard-deletes a physical data point tag configuration
+        routes.MapDelete("/api/datapoints/hard/{id}", async (string id) =>
+        {
+            using var db = new QueueDbContext();
+            var existing = await db.DataPoints.FirstOrDefaultAsync(x => x.Id == id);
+            if (existing == null) return Results.NotFound();
+            
+            db.DataPoints.Remove(existing);
+            await db.SaveChangesAsync();
+            return Results.Ok(new { success = true });
+        });
+
+        // GET /api/mqtt-devices - Returns configured MQTT devices
+        routes.MapGet("/api/mqtt-devices", async () =>
+        {
+            using var db = new QueueDbContext();
+            var list = await db.MqttDevices.ToListAsync();
+            return Results.Ok(list);
+        });
+
+        // POST /api/mqtt-devices - Updates or inserts an MQTT device
+        routes.MapPost("/api/mqtt-devices", async (MqttDevice updated) =>
+        {
+            using var db = new QueueDbContext();
+            if (string.IsNullOrEmpty(updated.Id))
+            {
+                updated.Id = Guid.NewGuid().ToString();
+            }
+            
+            var existing = await db.MqttDevices.FirstOrDefaultAsync(x => x.Id == updated.Id);
+            if (existing == null)
+            {
+                db.MqttDevices.Add(updated);
+            }
+            else
+            {
+                existing.AdapterId = updated.AdapterId;
+                existing.Name = updated.Name;
+                existing.TopicSubscription = updated.TopicSubscription;
+                existing.MqttParseMode = updated.MqttParseMode;
+                existing.IsEnabled = updated.IsEnabled;
+                existing.LwtTopic = updated.LwtTopic;
+                existing.LwtOnlinePayload = updated.LwtOnlinePayload;
+                existing.LwtOfflinePayload = updated.LwtOfflinePayload;
+                existing.Status = updated.Status;
+                existing.LastError = updated.LastError;
+                existing.LastUpdated = updated.LastUpdated;
+                existing.ConsecutiveFailures = updated.ConsecutiveFailures;
+                db.MqttDevices.Update(existing);
+            }
+            
+            await db.SaveChangesAsync();
+            return Results.Created($"/api/mqtt-devices/{updated.Id}", updated);
+        });
+
+        // DELETE /api/mqtt-devices/{id} - Deletes an MQTT device configuration
+        routes.MapDelete("/api/mqtt-devices/{id}", async (string id) =>
+        {
+            using var db = new QueueDbContext();
+            var existing = await db.MqttDevices.FirstOrDefaultAsync(x => x.Id == id);
+            if (existing == null) return Results.NotFound();
+            
+            // Unbind any data points associated with this device
+            var dps = await db.DataPoints.Where(x => x.MqttDeviceId == id).ToListAsync();
+            foreach (var dp in dps)
+            {
+                dp.MqttDeviceId = null;
+                db.DataPoints.Update(dp);
+            }
+            
+            db.MqttDevices.Remove(existing);
+            await db.SaveChangesAsync();
+            return Results.Ok(new { success = true });
+        });
+    }
+}

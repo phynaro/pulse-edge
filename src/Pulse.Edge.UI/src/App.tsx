@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Activity, 
   Database, 
@@ -13,16 +13,8 @@ import {
 import { useToast } from './hooks/useToast';
 import ToastContainer from './components/ToastContainer';
 
-
 import type { 
-  DashboardData, 
   DataSource, 
-  DriverAdapter, 
-  DataPoint, 
-  DiagnosticData, 
-  BufferTelemetryItem, 
-  BufferEventItem,
-  MqttDevice
 } from './types';
 
 import DashboardTab from './components/DashboardTab';
@@ -34,14 +26,10 @@ import SettingsTab from './components/SettingsTab';
 import OnboardingWizard from './components/OnboardingWizard';
 import OnboardingTourBanner from './components/OnboardingTourBanner';
 
-const formatToLocalTimeString = (dateStr: string | null | undefined) => {
-  if (!dateStr) return '';
-  let utcStr = dateStr;
-  if (!utcStr.endsWith('Z') && !utcStr.includes('+') && !utcStr.includes('GMT')) {
-    utcStr = utcStr.replace(' ', 'T') + 'Z';
-  }
-  return new Date(utcStr).toLocaleTimeString();
-};
+import { EdgeProvider, useEdge } from './context/EdgeContext';
+import { useDashboardData } from './hooks/useDashboardData';
+import { useBufferStatus } from './hooks/useBufferStatus';
+import { useAdaptersList } from './hooks/useAdaptersList';
 
 const getCloudStatusInfo = (status: string | undefined) => {
   switch (status) {
@@ -93,158 +81,55 @@ function usePathRouting(defaultRoute: Route): [Route, (route: Route) => void] {
   return [currentRoute, navigate];
 }
 
-export default function App() {
+function EdgeInner() {
   const [activeTab, setActiveTab] = usePathRouting('dashboard');
-  const [isConnected, setIsConnected] = useState<boolean>(true);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
   
-  // Dashboard APIs state
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
-  const [datasources, setDatasources] = useState<DataSource[]>([]);
-  const [adapters, setAdapters] = useState<DriverAdapter[]>([]);
-  const [datapoints, setDatapoints] = useState<DataPoint[]>([]);
-  const [mqttDevices, setMqttDevices] = useState<MqttDevice[]>([]);
-  const [diagnostics, setDiagnostics] = useState<DiagnosticData | null>(null);
-  const [isSyncEnabled, setIsSyncEnabled] = useState<boolean>(true);
+  const {
+    isConnected,
+    isLoading, setIsLoading,
+    dashboard,
+    datasources,
+    adapters,
+    datapoints,
+    mqttDevices,
+    diagnostics,
+    isSyncEnabled, setIsSyncEnabled,
+    bufferTelemetry,
+    bufferEvents,
+    pollingInterval, setPollingInterval,
+    maxLiveLogs, setMaxLiveLogs,
+    telemetryWarningThreshold, setTelemetryWarningThreshold,
+    eventWarningThreshold, setEventWarningThreshold,
+    showDiagnosticsPanel, setShowDiagnosticsPanel,
+    showLiveFeedPanel, setShowLiveFeedPanel,
+    liveFeed,
+    cloudEndpoint, setCloudEndpoint,
+    edgeSerial, setEdgeSerial,
+    isOnboarded, setIsOnboarded,
+    isSidebarCollapsed, setIsSidebarCollapsed,
+    fetchStaticData,
+    setHasInitializedSettings
+  } = useEdge();
 
-  // SQLite Buffer lists
-  const [bufferTelemetry, setBufferTelemetry] = useState<BufferTelemetryItem[]>([]);
-  const [bufferEvents, setBufferEvents] = useState<BufferEventItem[]>([]);
-
-  // Configurable UI settings states
-  const [pollingInterval, setPollingInterval] = useState<number>(() => {
-    const saved = localStorage.getItem('pulse_ui_polling_interval');
-    return saved ? parseInt(saved, 10) : 3000;
-  });
-  const [maxLiveLogs, setMaxLiveLogs] = useState<number>(() => {
-    const saved = localStorage.getItem('pulse_ui_max_live_logs');
-    return saved ? parseInt(saved, 10) : 10;
-  });
-  const [telemetryWarningThreshold, setTelemetryWarningThreshold] = useState<number>(() => {
-    const saved = localStorage.getItem('pulse_ui_telemetry_threshold');
-    return saved ? parseInt(saved, 10) : 10;
-  });
-  const [eventWarningThreshold, setEventWarningThreshold] = useState<number>(() => {
-    const saved = localStorage.getItem('pulse_ui_event_threshold');
-    return saved ? parseInt(saved, 10) : 5;
-  });
-  const [showDiagnosticsPanel, setShowDiagnosticsPanel] = useState<boolean>(() => {
-    const saved = localStorage.getItem('pulse_ui_show_diagnostics');
-    return saved !== 'false';
-  });
-  const [showLiveFeedPanel, setShowLiveFeedPanel] = useState<boolean>(() => {
-    const saved = localStorage.getItem('pulse_ui_show_live_feed');
-    return saved !== 'false';
-  });
-
-  // Dynamic filter states for live feed
-  const [telemetryFilterQuery, setTelemetryFilterQuery] = useState('');
-  const [telemetryFilterType, setTelemetryFilterType] = useState('All');
-
-  // Live feed log cache
-  const [liveFeed, setLiveFeed] = useState<{ time: string; source: string; payload: string }[]>([]);
-
-  // Settings State
-  const hasInitializedSettingsRef = useRef(false);
-  const [cloudEndpoint, setCloudEndpoint] = useState<string>('');
-  const [edgeSerial, setEdgeSerial] = useState<string>('');
-  const [isOnboarded, setIsOnboarded] = useState<boolean>(true);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
-    return localStorage.getItem('sidebarCollapsed') === 'true';
-  });
+  // Split Polling Hooks
+  useDashboardData(pollingInterval); // Polls dashboard and diagnostics
+  useBufferStatus(2000);             // Polls buffer status and updates live logs
+  useAdaptersList(activeTab === 'protocols', 3000); // Polls adapters only when tab is active
 
   const toggleSidebar = () => {
-    setIsSidebarCollapsed(prev => {
-      const next = !prev;
-      localStorage.setItem('sidebarCollapsed', String(next));
-      return next;
-    });
-  };
-
-  const fetchData = async () => {
-    try {
-      const [dashRes, dsRes, adaptersRes, dpRes, diagRes, syncRes, teleBufferRes, eventBufferRes, settingsRes, mqttRes] = await Promise.all([
-        fetch('/api/dashboard'),
-        fetch('/api/datasources'),
-        fetch('/api/adapters'),
-        fetch('/api/datapoints'),
-        fetch('/api/diagnostics'),
-        fetch('/api/settings/sync-status'),
-        fetch('/api/buffer/telemetry'),
-        fetch('/api/buffer/events'),
-        fetch('/api/settings'),
-        fetch('/api/mqtt-devices')
-      ]);
-
-      if (!dashRes.ok || !dsRes.ok || !adaptersRes.ok || !dpRes.ok || !diagRes.ok || !syncRes.ok || !teleBufferRes.ok || !eventBufferRes.ok || !settingsRes.ok || !mqttRes.ok) {
-        throw new Error('API fetch failed');
-      }
-
-      const dashData: DashboardData = await dashRes.json();
-      const dsData: DataSource[] = await dsRes.json();
-      const adaptersData: DriverAdapter[] = await adaptersRes.json();
-      const dpData: DataPoint[] = await dpRes.json();
-      const diagData: DiagnosticData = await diagRes.json();
-      const syncData = await syncRes.json();
-      const teleBufferData: BufferTelemetryItem[] = await teleBufferRes.json();
-      const eventBufferData: BufferEventItem[] = await eventBufferRes.json();
-      const settingsData = await settingsRes.json();
-      const mqttData: MqttDevice[] = await mqttRes.json();
-
-      setDashboard(dashData);
-      if (!hasInitializedSettingsRef.current) {
-        setCloudEndpoint(settingsData.cloudEndpoint || 'http://localhost:3000');
-        setEdgeSerial(settingsData.serialNumber || '');
-        const hasApiKey = settingsData.apiKey && settingsData.apiKey !== 'None';
-        setIsOnboarded(!!settingsData.serialNumber && hasApiKey);
-        hasInitializedSettingsRef.current = true;
-      }
-      setDatasources(dsData);
-      setAdapters(adaptersData);
-      setDatapoints(dpData);
-      setMqttDevices(mqttData);
-      setDiagnostics(diagData);
-      setIsSyncEnabled(syncData.isSyncEnabled);
-      setBufferTelemetry(teleBufferData);
-      setBufferEvents(eventBufferData);
-      setIsConnected(true);
-
-      // Extract telemetry from dashboard updates to maintain a live feed history
-      if (dashData && isConnected) {
-        if (teleBufferData.length > 0) {
-          const latest = teleBufferData[0];
-          setLiveFeed(prev => {
-            const formattedTime = formatToLocalTimeString(latest.timestamp);
-            const isDuplicate = prev.some(x => x.time === formattedTime && x.payload === latest.metricsJson);
-            if (isDuplicate) return prev;
-            
-            const newEntry = {
-              time: formattedTime,
-              source: latest.dataSourceId,
-              payload: latest.metricsJson
-            };
-            return [newEntry, ...prev.slice(0, 99)];
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Failed to poll local Edge API:', error);
-      setIsConnected(false);
-    } finally {
-      setIsLoading(false);
-    }
+    setIsSidebarCollapsed(!isSidebarCollapsed);
+    localStorage.setItem('sidebarCollapsed', String(!isSidebarCollapsed));
   };
 
   const { toasts, removeToast, toast } = useToast();
 
-  // Toggle Sync (Simulate cloud connection state)
   const handleToggleSync = async () => {
     try {
       const res = await fetch('/api/settings/toggle-sync', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         setIsSyncEnabled(data.isSyncEnabled);
-        fetchData();
+        void fetchStaticData();
       }
     } catch (e) {
       console.error('Failed to toggle sync status:', e);
@@ -260,7 +145,7 @@ export default function App() {
         body: JSON.stringify(updated)
       });
       if (res.ok) {
-        fetchData();
+        void fetchStaticData();
       } else {
         toast.error('Failed to toggle stream state.');
       }
@@ -274,7 +159,7 @@ export default function App() {
     try {
       const res = await fetch(`/api/datapoints/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        fetchData();
+        void fetchStaticData();
       } else {
         toast.error('Failed to unbind data point metric.');
       }
@@ -288,7 +173,7 @@ export default function App() {
     try {
       const res = await fetch(`/api/datasources/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        fetchData();
+        void fetchStaticData();
         toast.success('Stream object deleted successfully.');
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -309,7 +194,7 @@ export default function App() {
         body: JSON.stringify(updated)
       });
       if (res.ok) {
-        fetchData();
+        void fetchStaticData();
         toast.success(`Stream renamed to '${newName}' successfully.`);
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -334,7 +219,7 @@ export default function App() {
 
       if (res.ok) {
         toast.success('System settings saved successfully to SQLite.');
-        void fetchData();
+        void fetchStaticData();
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || 'Failed to save system settings.');
@@ -354,16 +239,14 @@ export default function App() {
       if (res.ok) {
         toast.success('Agent has been successfully reset to factory defaults.');
         
-        // Reset states to defaults & trigger onboarding wizard
         localStorage.removeItem('pulse_onboarding_tour_dismissed');
         setCloudEndpoint('http://localhost:3000');
         setEdgeSerial('');
         setIsOnboarded(false);
-        hasInitializedSettingsRef.current = false;
+        setHasInitializedSettings(false);
         setActiveTab('dashboard');
         
-        // Fetch new data to update UI cache (which will show empty lists / pending status)
-        void fetchData();
+        void fetchStaticData();
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || 'Failed to perform factory reset.');
@@ -374,19 +257,7 @@ export default function App() {
     }
   };
 
-
-  // Poll API using user-configured polling interval
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void fetchData();
-    const interval = setInterval(() => {
-      void fetchData();
-    }, pollingInterval);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pollingInterval, isConnected]);
-
-  // Persist UI config settings
+  // UI config persistence effects
   useEffect(() => {
     localStorage.setItem('pulse_ui_polling_interval', pollingInterval.toString());
   }, [pollingInterval]);
@@ -411,15 +282,19 @@ export default function App() {
     localStorage.setItem('pulse_ui_show_live_feed', showLiveFeedPanel.toString());
   }, [showLiveFeedPanel]);
 
+  // Dynamic filter states for live feed
+  const [telemetryFilterQuery, setTelemetryFilterQuery] = useState('');
+  const [telemetryFilterType, setTelemetryFilterType] = useState('All');
+
   if (!isOnboarded) {
     return (
       <>
         <OnboardingWizard 
           toast={toast} 
           onComplete={() => { 
-            hasInitializedSettingsRef.current = false;
+            setHasInitializedSettings(false);
             setIsOnboarded(true); 
-            void fetchData(); 
+            void fetchStaticData(); 
           }} 
         />
         <ToastContainer toasts={toasts} onRemove={removeToast} />
@@ -429,7 +304,6 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* Sidebar with expand/collapse toggle */}
       <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-brand">
           {!isSidebarCollapsed && (
@@ -464,7 +338,7 @@ export default function App() {
             <Network size={18} />
             {!isSidebarCollapsed && <span>Protocols</span>}
           </button>
-
+ 
           <button 
             className={`menu-item ${activeTab === 'tags' ? 'active' : ''}`}
             onClick={() => setActiveTab('tags')}
@@ -473,7 +347,7 @@ export default function App() {
             <Tag size={18} />
             {!isSidebarCollapsed && <span>Tags</span>}
           </button>
-
+ 
           <button 
             className={`menu-item ${activeTab === 'datasources' ? 'active' : ''}`}
             onClick={() => setActiveTab('datasources')}
@@ -482,7 +356,7 @@ export default function App() {
             <Database size={18} />
             {!isSidebarCollapsed && <span>Streams</span>}
           </button>
-
+ 
           <button 
             className={`menu-item ${activeTab === 'buffer' ? 'active' : ''}`}
             onClick={() => setActiveTab('buffer')}
@@ -509,10 +383,8 @@ export default function App() {
           </div>
         )}
       </aside>
-
-      {/* Main Container */}
+ 
       <main className="main-content">
-        {/* Sticky 60px Topbar */}
         <header className="topbar">
           <div className="topbar-badge-group">
             {dashboard?.device.organizationName && dashboard.device.organizationName !== 'N/A' && (
@@ -521,14 +393,14 @@ export default function App() {
                 <span className="badge-value">{dashboard.device.organizationName}</span>
               </div>
             )}
-
+ 
             {dashboard?.device.siteName && dashboard.device.siteName !== 'N/A' && (
               <div className="topbar-node-badge">
                 <span className="badge-label">SITE</span>
                 <span className="badge-value">{dashboard.device.siteName}</span>
               </div>
             )}
-
+ 
             <div className="topbar-node-badge">
               <span className="badge-label">NODE</span>
               <span className="badge-value">{edgeSerial}</span>
@@ -536,13 +408,11 @@ export default function App() {
           </div>
           
           <div className="topbar-status">
-            {/* Daemon Local connection */}
             <div className="status-indicator">
               <div className={`pulse-dot ${isConnected ? '' : 'warning'}`} />
               <span>{isConnected ? 'Local Agent: Online' : 'Local Agent: Offline'}</span>
             </div>
-
-            {/* Edge-to-Cloud Link connection */}
+ 
             {isConnected && dashboard && (
               (() => {
                 const cloudInfo = getCloudStatusInfo(dashboard.cloudStatus);
@@ -557,7 +427,7 @@ export default function App() {
             
             <button
               type="button"
-              onClick={() => { setIsLoading(true); fetchData(); }}
+              onClick={() => { setIsLoading(true); void fetchStaticData(); }}
               className="refresh-btn"
               title="Force Refresh Data"
               aria-label="Force refresh data"
@@ -566,10 +436,8 @@ export default function App() {
             </button>
           </div>
         </header>
-
-        {/* Scrollable Dashboard Panel */}
+ 
         <div className="content-area">
-          {/* Simulated Cloud Outage Warning Banner */}
           {!isSyncEnabled && (
             <div className="banner-warning">
               <AlertTriangle size={20} />
@@ -578,7 +446,7 @@ export default function App() {
               </span>
             </div>
           )}
-
+ 
           {isLoading && !dashboard ? (
             <div className="loading-center">
               Loading edge statistics...
@@ -612,7 +480,7 @@ export default function App() {
                   setMaxLiveLogs={setMaxLiveLogs}
                 />
               )}
-
+ 
               {activeTab === 'datasources' && (
                 <DataSourcesTab
                   datasources={datasources}
@@ -622,39 +490,39 @@ export default function App() {
                   handleDeleteDataPoint={handleDeleteDataPoint}
                   handleDeleteStream={handleDeleteStream}
                   handleRenameStream={handleRenameStream}
-                  fetchData={fetchData}
+                  fetchData={fetchStaticData}
                   toast={toast}
                 />
               )}
-
+ 
               {activeTab === 'tags' && (
                 <TagsTab
                   datapoints={datapoints}
                   adapters={adapters}
                   mqttDevices={mqttDevices}
                   handleDeleteDataPoint={handleDeleteDataPoint}
-                  fetchData={fetchData}
+                  fetchData={fetchStaticData}
                   toast={toast}
                 />
               )}
-
+ 
               {activeTab === 'protocols' && (
                 <ProtocolsTab
                   adapters={adapters}
                   datapoints={datapoints}
                   mqttDevices={mqttDevices}
-                  fetchData={fetchData}
+                  fetchData={fetchStaticData}
                   toast={toast}
                 />
               )}
-
+ 
               {activeTab === 'buffer' && (
                 <BufferTab
                   bufferTelemetry={bufferTelemetry}
                   bufferEvents={bufferEvents}
                 />
               )}
-
+ 
               {activeTab === 'settings' && (
                 <SettingsTab
                   dashboard={dashboard}
@@ -684,5 +552,13 @@ export default function App() {
       </main>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <EdgeProvider>
+      <EdgeInner />
+    </EdgeProvider>
   );
 }

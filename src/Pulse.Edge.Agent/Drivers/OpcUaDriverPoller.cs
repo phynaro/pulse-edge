@@ -1,0 +1,204 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Pulse.Edge.Protocols.OpcUa;
+using Pulse.Edge.Storage;
+using Pulse.Edge.Storage.Models;
+using Pulse.Edge.Storage.Services;
+
+namespace Pulse.Edge.Agent.Drivers;
+
+public class OpcUaDriverPoller : IProtocolDriver
+{
+    private readonly ILogger<OpcUaDriverPoller> _logger;
+    private readonly OpcUaDriver _opcUaDriver;
+    private readonly QueueStorageService _storageService;
+    private readonly ConcurrentDictionary<string, DateTime> _lastDbWriteTimes = new();
+
+    public string ProtocolName => "OPC_UA";
+    public bool IsConnected => _opcUaDriver.IsConnected;
+
+    public OpcUaDriverPoller(
+        ILogger<OpcUaDriverPoller> logger,
+        OpcUaDriver opcUaDriver,
+        QueueStorageService storageService)
+    {
+        _logger = logger;
+        _opcUaDriver = opcUaDriver;
+        _storageService = storageService;
+    }
+
+    public async Task ConnectAsync(DriverAdapter adapter, CancellationToken ct)
+    {
+        string endpoint = adapter.Host ?? "opc.tcp://localhost:4840";
+        if (!endpoint.StartsWith("opc.tcp://", StringComparison.OrdinalIgnoreCase))
+        {
+            if (endpoint.Contains(":"))
+            {
+                endpoint = $"opc.tcp://{endpoint}";
+            }
+            else
+            {
+                endpoint = $"opc.tcp://{endpoint}:{adapter.Port}";
+            }
+        }
+        await _opcUaDriver.ConnectAsync(endpoint);
+    }
+
+    public Task DisconnectAsync(CancellationToken ct)
+    {
+        // OpcUaDriver is managed as a Singleton, we do not dispose it here,
+        // but we can call a disconnect method if available. There's no disconnect
+        // method in OpcUaDriver, it manages session recovery automatically.
+        return Task.CompletedTask;
+    }
+
+    public async Task PollGroupAsync(
+        List<DataPoint> group, 
+        DriverAdapter adapter, 
+        DateTime now, 
+        List<DataPoint> dirtyDps, 
+        CancellationToken ct)
+    {
+        if (!_opcUaDriver.IsConnected)
+        {
+            return;
+        }
+
+        // Determine which data points are due for polling
+        var dueDps = group.Where(dp =>
+        {
+            int baseInterval = Math.Max(dp.ScanIntervalMs > 0 ? dp.ScanIntervalMs : 1000, 100);
+            int effectiveInterval = dp.ConsecutiveFailures > 0
+                ? baseInterval * (int)Math.Pow(2, Math.Min(dp.ConsecutiveFailures, 6))
+                : baseInterval;
+            return dp.LastUpdated == null || (now - dp.LastUpdated.Value).TotalMilliseconds >= effectiveInterval;
+        }).ToList();
+
+        if (dueDps.Count == 0) return;
+
+        var nodeIds = dueDps.Select(dp => dp.Address).ToList();
+
+        Dictionary<string, OpcUaReadResult> batchResult;
+        try
+        {
+            batchResult = await _opcUaDriver.ReadMetricsBatchAsync(nodeIds, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "OPC UA batch read failed for adapter {AdapterId}", adapter.Id);
+            foreach (var dp in dueDps)
+            {
+                dp.LastError = ex.Message;
+                dp.ConsecutiveFailures++;
+                dp.LastUpdated = now;
+                AddDirtyIfNeeded(dp, now, dirtyDps);
+
+                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                {
+                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                    {
+                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
+                    }
+                }
+            }
+
+            if (!_opcUaDriver.IsConnected)
+            {
+                using var dbUpdate = new QueueDbContext();
+                var adpUpdate = await dbUpdate.DriverAdapters.FirstOrDefaultAsync(x => x.Id == adapter.Id, ct);
+                if (adpUpdate != null && adpUpdate.Status != "Error")
+                {
+                    adpUpdate.Status = "Error";
+                    dbUpdate.DriverAdapters.Update(adpUpdate);
+                    await dbUpdate.SaveChangesAsync(ct);
+                }
+            }
+            return;
+        }
+
+        foreach (var dp in dueDps)
+        {
+            if (!batchResult.TryGetValue(dp.Address, out var readRes) || readRes == null)
+            {
+                dp.LastError = "Tag value was not returned in batch result";
+                dp.ConsecutiveFailures++;
+                dp.LastUpdated = now;
+                AddDirtyIfNeeded(dp, now, dirtyDps);
+
+                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                {
+                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                    {
+                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
+                    }
+                }
+                continue;
+            }
+
+            if (!readRes.Success)
+            {
+                dp.LastError = readRes.ErrorMessage ?? "Unknown OPC UA read error";
+                dp.ConsecutiveFailures++;
+                dp.LastUpdated = now;
+                AddDirtyIfNeeded(dp, now, dirtyDps);
+
+                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                {
+                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                    {
+                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
+                    }
+                }
+                continue;
+            }
+
+            try
+            {
+                double currentVal = readRes.Value;
+                double processedVal = (currentVal * dp.ScaleFactor) + dp.Offset;
+                _logger.LogInformation("[Telemetry Read] Node: {Node} | Raw: {Raw} | Processed: {Value}", dp.Address, currentVal, processedVal);
+                dp.LastValue = processedVal.ToString("F2");
+                dp.LastError = null;
+                dp.ConsecutiveFailures = 0;
+                dp.LastUpdated = now;
+                AddDirtyIfNeeded(dp, now, dirtyDps);
+
+                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                {
+                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                    {
+                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
+                        _logger.LogInformation("[Queue Buffer] Enqueued OPC UA telemetry | Stream: {Source} Metric: {Metric}", dp.DataSourceId, dp.Metric);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to enqueue OPC UA telemetry for Node {Node}", dp.Address);
+            }
+        }
+    }
+
+    private void AddDirtyIfNeeded(DataPoint dp, DateTime now, List<DataPoint> dirtyDps)
+    {
+        bool shouldWrite = !_lastDbWriteTimes.TryGetValue(dp.Id, out var lastWrite)
+                          || (now - lastWrite).TotalSeconds >= 1;
+        if (shouldWrite)
+        {
+            _lastDbWriteTimes[dp.Id] = now;
+            lock (dirtyDps)
+            {
+                dirtyDps.Add(dp);
+            }
+        }
+    }
+}
