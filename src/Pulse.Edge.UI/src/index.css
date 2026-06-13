@@ -147,18 +147,18 @@ body {
   letter-spacing: 0.5px !important;
 }
 
-/* OPC UA: Teal / Cyan */
+/* OPC UA: Black text on navy background */
 .proto-opc-ua {
-  background-color: rgba(20, 184, 166, 0.12) !important;
-  color: #2dd4bf !important;
-  border: 1px solid rgba(20, 184, 166, 0.25) !important;
+  background-color: #dbeafe !important;
+  color: #000000 !important;
+  border: 1px solid #1e3a8a !important;
 }
 
-/* MQTT: Maroon text on light red background */
+/* MQTT: Magenta/Purple text on light fuchsia background */
 .proto-mqtt {
-  background-color: #fee2e2 !important;
-  color: #800000 !important;
-  border: 1px solid #fca5a5 !important;
+  background-color: #fae8ff !important;
+  color: #660066 !important;
+  border: 1px solid #f5d0fe !important;
 }
 
 /* Modbus TCP: Amber */
