@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Tag, Plus, Search, Trash2 } from 'lucide-react';
 import type { DataPoint, DriverAdapter, MqttDevice } from '../types';
 import type { useToast } from '../hooks/useToast';
@@ -28,6 +28,60 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
   const [editingPhysicalTag, setEditingPhysicalTag] = useState<DataPoint | null>(null);
   const [deletingPhysicalTag, setDeletingPhysicalTag] = useState<DataPoint | null>(null);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+
+  const [orderedAdapters, setOrderedAdapters] = useState<DriverAdapter[]>([]);
+  const [draggedAdapterIndex, setDraggedAdapterIndex] = useState<number | null>(null);
+
+  // Sync state with incoming adapters prop & sort by localStorage order
+  useEffect(() => {
+    const savedOrder = localStorage.getItem('pulse-adapters-order');
+    if (savedOrder) {
+      try {
+        const orderIds = JSON.parse(savedOrder) as string[];
+        const sorted = [...adapters].sort((a, b) => {
+          const idxA = orderIds.indexOf(a.id);
+          const idxB = orderIds.indexOf(b.id);
+          if (idxA === -1 && idxB === -1) return 0;
+          if (idxA === -1) return 1;
+          if (idxB === -1) return -1;
+          return idxA - idxB;
+        });
+        setOrderedAdapters(sorted);
+        return;
+      } catch (e) {
+        console.error('Failed to parse saved adapters order:', e);
+      }
+    }
+    setOrderedAdapters(adapters);
+  }, [adapters]);
+
+  const handleAdapterDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedAdapterIndex(index);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+    }
+  };
+
+  const handleAdapterDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleAdapterDragEnter = (targetIndex: number) => {
+    if (draggedAdapterIndex === null || draggedAdapterIndex === targetIndex) return;
+
+    const updated = [...orderedAdapters];
+    const [draggedItem] = updated.splice(draggedAdapterIndex, 1);
+    updated.splice(targetIndex, 0, draggedItem);
+
+    setDraggedAdapterIndex(targetIndex);
+    setOrderedAdapters(updated);
+  };
+
+  const handleAdapterDragEnd = () => {
+    setDraggedAdapterIndex(null);
+    const orderIds = orderedAdapters.map(a => a.id);
+    localStorage.setItem('pulse-adapters-order', JSON.stringify(orderIds));
+  };
 
   const isSearchActive = tagSearchQuery.trim() !== '' || tagProtocolFilter !== 'All';
 
@@ -210,25 +264,40 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
         </div>
       ) : (
         <div className="accordion-groups">
-          {adapters.map(adapter => {
+          {orderedAdapters.map((adapter, index) => {
             const adapterTags = filteredDatapoints.filter(dp => dp.adapterId === adapter.id);
             const hasMatchingTags = adapterTags.length > 0;
             if (isSearchActive && !hasMatchingTags) return null;
+            const isDraggingThis = draggedAdapterIndex === index;
             return (
-              <TagGroupAccordion
+              <div
                 key={adapter.id}
-                adapter={adapter}
-                tags={adapterTags}
-                mqttDevices={mqttDevices}
-                selectedTagIds={selectedTagIds}
-                toggleSelectTag={toggleSelectTag}
-                toggleSelectAllGroup={toggleSelectAllGroup}
-                handleStartEdit={setEditingPhysicalTag}
-                setDeletingPhysicalTag={setDeletingPhysicalTag}
-                onUnbindTag={onUnbindTag}
-                isExpanded={isGroupExpanded(adapter.id, hasMatchingTags)}
-                onToggleExpand={() => toggleGroup(adapter.id, hasMatchingTags)}
-              />
+                draggable
+                onDragStart={(e) => handleAdapterDragStart(e, index)}
+                onDragOver={handleAdapterDragOver}
+                onDragEnter={() => handleAdapterDragEnter(index)}
+                onDragEnd={handleAdapterDragEnd}
+                style={{
+                  opacity: isDraggingThis ? 0.4 : 1,
+                  transition: 'opacity 0.2s ease, transform 0.2s ease',
+                  transform: isDraggingThis ? 'scale(0.99)' : 'none',
+                  marginBottom: '12px'
+                }}
+              >
+                <TagGroupAccordion
+                  adapter={adapter}
+                  tags={adapterTags}
+                  mqttDevices={mqttDevices}
+                  selectedTagIds={selectedTagIds}
+                  toggleSelectTag={toggleSelectTag}
+                  toggleSelectAllGroup={toggleSelectAllGroup}
+                  handleStartEdit={setEditingPhysicalTag}
+                  setDeletingPhysicalTag={setDeletingPhysicalTag}
+                  onUnbindTag={onUnbindTag}
+                  isExpanded={isGroupExpanded(adapter.id, hasMatchingTags)}
+                  onToggleExpand={() => toggleGroup(adapter.id, hasMatchingTags)}
+                />
+              </div>
             );
           })}
 

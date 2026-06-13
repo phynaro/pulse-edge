@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Database, Plus, Settings } from 'lucide-react';
 import type { DataSource, DataPoint, DriverAdapter, StreamTemplate } from '../types';
 import type { useToast } from '../hooks/useToast';
@@ -45,6 +45,72 @@ export default function DataSourcesTab({
   const [newDpDataSourceId, setNewDpDataSourceId] = useState('');
   const [newDpMetric, setNewDpMetric] = useState('');
 
+  const [orderedSources, setOrderedSources] = useState<DataSource[]>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  // Sync state with incoming filteredSources prop & sort by localStorage order
+  const filteredSources = useMemo(() => {
+    return datasources.filter(ds => {
+      const matchesSearch = ds.name.toLowerCase().includes(streamSearchQuery.toLowerCase()) ||
+                            ds.id.toLowerCase().includes(streamSearchQuery.toLowerCase()) ||
+                            (ds.description && ds.description.toLowerCase().includes(streamSearchQuery.toLowerCase()));
+      const matchesType = streamTypeFilter === 'All' || ds.type === streamTypeFilter;
+      return matchesSearch && matchesType;
+    });
+  }, [datasources, streamSearchQuery, streamTypeFilter]);
+
+  useEffect(() => {
+    const savedOrder = localStorage.getItem('pulse-datasources-order');
+    if (savedOrder) {
+      try {
+        const orderIds = JSON.parse(savedOrder) as string[];
+        const sorted = [...filteredSources].sort((a, b) => {
+          const idxA = orderIds.indexOf(a.id);
+          const idxB = orderIds.indexOf(b.id);
+          if (idxA === -1 && idxB === -1) return 0;
+          if (idxA === -1) return 1;
+          if (idxB === -1) return -1;
+          return idxA - idxB;
+        });
+        setOrderedSources(sorted);
+        return;
+      } catch (e) {
+        console.error('Failed to parse saved datasources order:', e);
+      }
+    }
+    setOrderedSources(filteredSources);
+  }, [filteredSources]);
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDragEnter = (targetIndex: number) => {
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+    const updated = [...orderedSources];
+    const [draggedItem] = updated.splice(draggedIndex, 1);
+    updated.splice(targetIndex, 0, draggedItem);
+
+    setDraggedIndex(targetIndex);
+    setOrderedSources(updated);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    const visibleIds = orderedSources.map(ds => ds.id);
+    const otherIds = datasources.filter(ds => !visibleIds.includes(ds.id)).map(ds => ds.id);
+    const finalOrder = [...visibleIds, ...otherIds];
+    localStorage.setItem('pulse-datasources-order', JSON.stringify(finalOrder));
+  };
+
   const fetchTemplates = async () => {
     try {
       const res = await fetch('/api/stream-templates');
@@ -60,16 +126,6 @@ export default function DataSourcesTab({
   useEffect(() => {
     fetchTemplates();
   }, []);
-
-  const filteredSources = useMemo(() => {
-    return datasources.filter(ds => {
-      const matchesSearch = ds.name.toLowerCase().includes(streamSearchQuery.toLowerCase()) ||
-                            ds.id.toLowerCase().includes(streamSearchQuery.toLowerCase()) ||
-                            (ds.description && ds.description.toLowerCase().includes(streamSearchQuery.toLowerCase()));
-      const matchesType = streamTypeFilter === 'All' || ds.type === streamTypeFilter;
-      return matchesSearch && matchesType;
-    });
-  }, [datasources, streamSearchQuery, streamTypeFilter]);
 
   const onUnbindMetric = async (id: string) => {
     await handleDeleteDataPoint(id);
@@ -110,7 +166,7 @@ export default function DataSourcesTab({
       />
 
       <div className="ds-grid">
-        {filteredSources.length === 0 ? (
+        {orderedSources.length === 0 ? (
           <div className="panel empty-state-dashed">
             <div className="empty-state-icon">📭</div>
             <h4 className="empty-state-title">No Matching Data Sources Found</h4>
@@ -119,7 +175,7 @@ export default function DataSourcesTab({
             </p>
           </div>
         ) : (
-          filteredSources.map((ds) => (
+          orderedSources.map((ds, index) => (
             <DataSourceCard
               key={ds.id}
               ds={ds}
@@ -135,6 +191,12 @@ export default function DataSourcesTab({
                 setNewDpMetric(metric);
                 setIsAddPointOpen(true);
               }}
+              index={index}
+              draggedIndex={draggedIndex}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragEnd={handleDragEnd}
             />
           ))
         )}

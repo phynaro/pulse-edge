@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Trash2, CheckCircle2, AlertCircle, Plus, Pencil, Check, X } from 'lucide-react';
 import type { DataSource, DataPoint, DriverAdapter, StreamTemplate } from '../../types';
 import { DynamicIcon, formatLiveValue } from './utils';
@@ -13,6 +13,12 @@ interface DataSourceCardProps {
   handleRenameStream: (ds: DataSource, newName: string) => Promise<void>;
   setDeletingDp: (dp: DataPoint) => void;
   onBindTag: (dsId: string, metric: string) => void;
+  index: number;
+  draggedIndex: number | null;
+  onDragStart: (e: React.DragEvent, index: number) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragEnter: (index: number) => void;
+  onDragEnd: () => void;
 }
 
 function MetricStatus({ dp, isEnabled }: { dp: DataPoint | undefined; isEnabled: boolean }) {
@@ -34,7 +40,13 @@ export default function DataSourceCard({
   handleDeleteStream,
   handleRenameStream,
   setDeletingDp,
-  onBindTag
+  onBindTag,
+  index,
+  draggedIndex,
+  onDragStart,
+  onDragOver,
+  onDragEnter,
+  onDragEnd
 }: DataSourceCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(ds.name);
@@ -148,8 +160,23 @@ export default function DataSourceCard({
     );
   };
 
+  const isDraggingThis = draggedIndex === index;
+
   return (
-    <div className={`panel ds-card ${themeClass}${ds.isEnabled ? '' : ' is-disabled'}`}>
+    <div 
+      className={`panel ds-card ${themeClass}${ds.isEnabled ? '' : ' is-disabled'}`}
+      draggable
+      onDragStart={(e) => onDragStart(e, index)}
+      onDragOver={onDragOver}
+      onDragEnter={() => onDragEnter(index)}
+      onDragEnd={onDragEnd}
+      style={{ 
+        cursor: 'grab',
+        opacity: isDraggingThis ? 0.4 : 1,
+        transition: 'opacity 0.2s ease, transform 0.2s ease',
+        transform: isDraggingThis ? 'scale(0.98)' : 'none'
+      }}
+    >
       <div>
         <div className="ds-card-header">
           <div className="ds-card-title-row">

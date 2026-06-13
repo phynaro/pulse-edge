@@ -103,10 +103,72 @@ export default function TagGroupAccordion({
   const [expandedTags, setExpandedTags] = useState<Record<string, boolean>>({});
   const [visibleLimit, setVisibleLimit] = useState(50);
 
+  const [orderedTags, setOrderedTags] = useState<DataPoint[]>([]);
+  const [draggedTagIndex, setDraggedTagIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    const savedOrder = localStorage.getItem('pulse-tags-order');
+    if (savedOrder) {
+      try {
+        const orderIds = JSON.parse(savedOrder) as string[];
+        const sorted = [...tags].sort((a, b) => {
+          const idxA = orderIds.indexOf(a.id);
+          const idxB = orderIds.indexOf(b.id);
+          if (idxA === -1 && idxB === -1) return 0;
+          if (idxA === -1) return 1;
+          if (idxB === -1) return -1;
+          return idxA - idxB;
+        });
+        setOrderedTags(sorted);
+        return;
+      } catch (e) {
+        console.error('Failed to parse saved tags order:', e);
+      }
+    }
+    setOrderedTags(tags);
+  }, [tags]);
+
+  const handleTagDragStart = (e: React.DragEvent, index: number) => {
+    e.stopPropagation();
+    setDraggedTagIndex(index);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+    }
+  };
+
+  const handleTagDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleTagDragEnter = (targetIndex: number) => {
+    if (draggedTagIndex === null || draggedTagIndex === targetIndex) return;
+
+    const updated = [...orderedTags];
+    const [draggedItem] = updated.splice(draggedTagIndex, 1);
+    updated.splice(targetIndex, 0, draggedItem);
+
+    setDraggedTagIndex(targetIndex);
+    setOrderedTags(updated);
+  };
+
+  const handleTagDragEnd = (e: React.DragEvent) => {
+    e.stopPropagation();
+    setDraggedTagIndex(null);
+    const savedOrder = localStorage.getItem('pulse-tags-order');
+    let globalOrder: string[] = [];
+    if (savedOrder) {
+      try { globalOrder = JSON.parse(savedOrder) as string[]; } catch {}
+    }
+    const localIds = orderedTags.map(t => t.id);
+    globalOrder = globalOrder.filter(id => !localIds.includes(id));
+    const finalOrder = [...localIds, ...globalOrder];
+    localStorage.setItem('pulse-tags-order', JSON.stringify(finalOrder));
+  };
+
   const isOrphan = adapter === null;
   const isEventDriven = !isOrphan && (adapter.protocol === 'WEBHOOK' || adapter.protocol === 'MQTT');
   const abnormalCount = tags.filter(dp => !!dp.lastError).length;
-  const visibleTags = tags.slice(0, visibleLimit);
+  const visibleTags = orderedTags.slice(0, visibleLimit);
   const orphanClass = isOrphan ? 'is-orphan' : 'is-normal';
 
   let pollIntervalMs: number | null = null;
@@ -228,16 +290,28 @@ export default function TagGroupAccordion({
                 </tr>
               </thead>
               <tbody>
-                {visibleTags.map(dp => {
+                {visibleTags.map((dp, index) => {
                   const isMapped = dp.dataSourceId && dp.dataSourceId !== '';
                   const detailsExpanded = !!expandedTags[dp.id];
                   const rowSelected = !!selectedTagIds[dp.id];
+                  const isDraggingThisRow = draggedTagIndex === index;
 
                   return (
                     <React.Fragment key={dp.id}>
                       <tr
                         className={`tag-table-row ${orphanClass}${rowSelected ? ' is-selected' : ''}${detailsExpanded ? ' is-expanded' : ''}`}
                         onClick={() => toggleTagDetails(dp.id)}
+                        draggable
+                        onDragStart={(e) => handleTagDragStart(e, index)}
+                        onDragOver={handleTagDragOver}
+                        onDragEnter={() => handleTagDragEnter(index)}
+                        onDragEnd={handleTagDragEnd}
+                        style={{
+                          cursor: 'grab',
+                          opacity: isDraggingThisRow ? 0.4 : 1,
+                          transition: 'opacity 0.2s ease, transform 0.2s ease',
+                          transform: isDraggingThisRow ? 'scale(0.99)' : 'none'
+                        }}
                       >
                         <td className="tag-table-cell-center" onClick={e => e.stopPropagation()}>
                           <input
