@@ -94,6 +94,7 @@ export default function TagGroupAccordion({
   const [visibleLimit, setVisibleLimit] = useState(50);
 
   const isOrphan = adapter === null;
+  const isEventDriven = !isOrphan && (adapter.protocol === 'WEBHOOK' || adapter.protocol === 'MQTT');
   const abnormalCount = tags.filter(dp => !!dp.lastError).length;
   const visibleTags = tags.slice(0, visibleLimit);
   const orphanClass = isOrphan ? 'is-orphan' : 'is-normal';
@@ -198,7 +199,7 @@ export default function TagGroupAccordion({
                   <th className="tag-table-cell-center">Status</th>
                   <th>Tag Address / Register</th>
                   <th>Data Type</th>
-                  <th>Scan Rate</th>
+                  {!isEventDriven && <th>Scan Rate</th>}
                   <th>Live Value</th>
                   <th>Mapping</th>
                   <th className="tag-actions-col">Actions</th>
@@ -249,7 +250,7 @@ export default function TagGroupAccordion({
                         <td>
                           <span className={`badge tag-dtype-badge${isOrphan ? ' is-orphan' : ''}`}>{dp.dataType}</span>
                         </td>
-                        <td>{dp.scanIntervalMs}ms</td>
+                        {!isEventDriven && <td>{dp.scanIntervalMs}ms</td>}
                         <td className={`tag-live-cell${isOrphan ? ' is-orphan' : ''}`}>
                           {isOrphan ? (
                             'Offline (No Driver)'
