@@ -29,9 +29,10 @@ cleanup() {
   echo -e "\n🛑 Stopping all services..."
   local pids=$(jobs -p)
   if [ -n "$pids" ]; then
-    kill -INT $pids 2>/dev/null
+    kill $pids 2>/dev/null
     wait $pids 2>/dev/null
   fi
+  exit 0
 }
 trap cleanup EXIT SIGINT SIGTERM
 
