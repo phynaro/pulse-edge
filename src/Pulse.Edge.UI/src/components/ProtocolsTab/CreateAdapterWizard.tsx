@@ -62,6 +62,7 @@ export default function CreateAdapterWizard({
   const [newRestHeaders, setNewRestHeaders] = useState<{ key: string; value: string }[]>([]);
   const [newRestBody, setNewRestBody] = useState<string>('');
   const [newRestTimeoutMs, setNewRestTimeoutMs] = useState<number>(5000);
+  const [newRestPollIntervalMs, setNewRestPollIntervalMs] = useState<number>(10000);
 
   const handleDiscoverOpcUa = async (host: string, port: number) => {
     if (!host) { toast.warning('Please enter a Connection Host/IP before discovering.'); return; }
@@ -189,7 +190,8 @@ export default function CreateAdapterWizard({
           Path: newRestPath,
           Headers: headersObj,
           Body: newRestBody,
-          TimeoutMs: Number(newRestTimeoutMs)
+          TimeoutMs: Number(newRestTimeoutMs),
+          PollIntervalMs: Number(newRestPollIntervalMs)
         });
       }
       const res = await fetch('/api/adapters', {
@@ -315,6 +317,7 @@ export default function CreateAdapterWizard({
                     setNewRestHeaders([]);
                     setNewRestBody('');
                     setNewRestTimeoutMs(5000);
+                    setNewRestPollIntervalMs(10000);
                   }
                   else if (nextProtocol === 'SIMULATOR') {
                     setNewAdapterHost('simulator');
@@ -773,7 +776,7 @@ export default function CreateAdapterWizard({
                       required 
                     />
                   </div>
-                  <div className="form-group form-group-flush form-grid-span-2">
+                  <div className="form-group form-group-flush">
                     <label className="form-label form-label-bold">Timeout (ms)</label>
                     <input 
                       type="number" 
@@ -782,6 +785,18 @@ export default function CreateAdapterWizard({
                       className="form-input" 
                       value={newRestTimeoutMs} 
                       onChange={(e) => setNewRestTimeoutMs(Math.max(100, Number(e.target.value) || 5000))} 
+                      required 
+                    />
+                  </div>
+                  <div className="form-group form-group-flush">
+                    <label className="form-label form-label-bold">Polling Interval (ms)</label>
+                    <input 
+                      type="number" 
+                      min="500" 
+                      max="3600000" 
+                      className="form-input" 
+                      value={newRestPollIntervalMs} 
+                      onChange={(e) => setNewRestPollIntervalMs(Math.max(500, Number(e.target.value) || 10000))} 
                       required 
                     />
                   </div>

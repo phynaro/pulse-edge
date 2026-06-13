@@ -69,6 +69,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
   });
   const [editRestBody, setEditRestBody] = useState<string>(config.Body ?? '');
   const [editRestTimeoutMs, setEditRestTimeoutMs] = useState<number>(config.TimeoutMs ?? 5000);
+  const [editRestPollIntervalMs, setEditRestPollIntervalMs] = useState<number>(config.PollIntervalMs ?? 10000);
 
   if (!adapter) return null;
 
@@ -160,6 +161,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
           Headers: headersObj,
           Body: editRestBody,
           TimeoutMs: Number(editRestTimeoutMs),
+          PollIntervalMs: Number(editRestPollIntervalMs),
           LastPayload: config.LastPayload ?? '',
           LastSeen: config.LastSeen ?? ''
         });
@@ -229,6 +231,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                   setEditRestHeaders([]);
                   setEditRestBody('');
                   setEditRestTimeoutMs(5000);
+                  setEditRestPollIntervalMs(10000);
                 }
                 else if (nextProtocol === 'SIMULATOR') {
                   setEditAdapterHost('simulator');
@@ -568,7 +571,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                       required 
                     />
                   </div>
-                  <div className="form-group form-group-flush form-grid-span-2">
+                  <div className="form-group form-group-flush">
                     <label className="form-label form-label-bold">Timeout (ms)</label>
                     <input 
                       type="number" 
@@ -577,6 +580,18 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                       className="form-input" 
                       value={editRestTimeoutMs} 
                       onChange={(e) => setEditRestTimeoutMs(Math.max(100, Number(e.target.value) || 5000))} 
+                      required 
+                    />
+                  </div>
+                  <div className="form-group form-group-flush">
+                    <label className="form-label form-label-bold">Polling Interval (ms)</label>
+                    <input 
+                      type="number" 
+                      min="500" 
+                      max="3600000" 
+                      className="form-input" 
+                      value={editRestPollIntervalMs} 
+                      onChange={(e) => setEditRestPollIntervalMs(Math.max(500, Number(e.target.value) || 10000))} 
                       required 
                     />
                   </div>

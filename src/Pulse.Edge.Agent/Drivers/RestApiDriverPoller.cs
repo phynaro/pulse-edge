@@ -19,6 +19,7 @@ public class RestApiDriverPoller : IProtocolDriver
     private readonly RestApiDriver _restApiDriver;
     private readonly QueueStorageService _storageService;
     private readonly ConcurrentDictionary<string, DateTime> _lastDbWriteTimes = new();
+    private readonly ConcurrentDictionary<string, DateTime> _lastFetchTimes = new();
 
     public string ProtocolName => "REST_API";
     public bool IsConnected => _restApiDriver.IsConnected;
@@ -56,27 +57,42 @@ public class RestApiDriverPoller : IProtocolDriver
             return;
         }
 
-        var dueDps = group.Where(dp =>
-        {
-            int baseInterval = Math.Max(dp.ScanIntervalMs > 0 ? dp.ScanIntervalMs : 1000, 100);
-            int effectiveInterval = dp.ConsecutiveFailures > 0
-                ? baseInterval * (int)Math.Pow(2, Math.Min(dp.ConsecutiveFailures, 6))
-                : baseInterval;
-            return dp.LastUpdated == null || (now - dp.LastUpdated.Value).TotalMilliseconds >= effectiveInterval;
-        }).ToList();
+        if (group.Count == 0) return;
 
-        if (dueDps.Count == 0) return;
+        // Parse PollIntervalMs from adapter ConfigJson (default 10000ms)
+        int pollIntervalMs = 10000;
+        if (!string.IsNullOrEmpty(adapter.ConfigJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(adapter.ConfigJson);
+                if (doc.RootElement.TryGetProperty("PollIntervalMs", out var prop))
+                {
+                    pollIntervalMs = prop.GetInt32();
+                }
+            }
+            catch {}
+        }
+        pollIntervalMs = Math.Max(pollIntervalMs, 500); // 500ms safety floor
+
+        // Enforce adapter-wide poll interval check
+        _lastFetchTimes.TryGetValue(adapter.Id, out var lastFetch);
+        if (lastFetch != default && (now - lastFetch).TotalMilliseconds < pollIntervalMs)
+        {
+            return;
+        }
 
         try
         {
             // Fetch the payload once for the group (since they all query the same REST endpoint)
             string payload = await _restApiDriver.FetchPayloadAsync(ct);
+            _lastFetchTimes[adapter.Id] = now;
             
             // Parse payload as JSON
             using var doc = JsonDocument.Parse(payload);
             var root = doc.RootElement;
 
-            foreach (var dp in dueDps)
+            foreach (var dp in group)
             {
                 try
                 {
@@ -197,7 +213,7 @@ public class RestApiDriverPoller : IProtocolDriver
         catch (Exception ex)
         {
             _logger.LogError(ex, "REST API fetch failed for adapter {AdapterId}", adapter.Id);
-            foreach (var dp in dueDps)
+            foreach (var dp in group)
             {
                 dp.LastError = $"Fetch failed: {ex.Message}";
                 dp.ConsecutiveFailures++;
