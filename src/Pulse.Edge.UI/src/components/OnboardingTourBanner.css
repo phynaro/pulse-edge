@@ -1,0 +1,264 @@
+/* Onboarding Tour Banner - Compact Horizontal Style */
+
+.onboarding-tour-banner {
+  position: relative;
+  width: 100%;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  background: rgba(26, 28, 35, 0.7); /* Deep dark slate to fit the edge dashboard theme */
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+  animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
+  overflow: hidden;
+}
+
+.onboarding-tour-banner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 10% 50%, rgba(60, 232, 189, 0.04), transparent 40%);
+  pointer-events: none;
+}
+
+.onboarding-tour-banner.tour-completed {
+  border-color: rgba(60, 232, 189, 0.25);
+  background: rgba(26, 28, 35, 0.85);
+  box-shadow: 0 4px 24px rgba(60, 232, 189, 0.05);
+}
+
+.onboarding-tour-banner.tour-completed::before {
+  background: radial-gradient(circle at 10% 50%, rgba(60, 232, 189, 0.08), transparent 45%);
+}
+
+.tour-content-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  gap: 16px;
+  z-index: 1;
+  position: relative;
+}
+
+/* Left Brand Badge */
+.tour-brand-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+.tour-spark-icon {
+  color: var(--primary-color, #3ce8bd);
+  animation: float 3s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.tour-completed .tour-spark-icon {
+  color: var(--primary-color, #3ce8bd);
+}
+
+.tour-title-mini {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: rgba(60, 232, 189, 0.1);
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(60, 232, 189, 0.15);
+  white-space: nowrap;
+}
+
+.tour-completed .tour-title-mini {
+  background: rgba(60, 232, 189, 0.15);
+  border-color: rgba(60, 232, 189, 0.3);
+}
+
+/* Middle Progress Steps Row */
+.tour-steps-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-grow: 1;
+  justify-content: center;
+}
+
+.tour-step-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #718096;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+}
+
+.tour-step-item.active {
+  color: var(--primary-color, #3ce8bd);
+  background: rgba(60, 232, 189, 0.06);
+  border-color: rgba(60, 232, 189, 0.12);
+}
+
+.tour-step-item.completed {
+  color: #e2e8f0;
+}
+
+.tour-step-item.incomplete {
+  color: #718096;
+}
+
+.tour-step-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tour-step-item.active:hover {
+  background: rgba(60, 232, 189, 0.1);
+  border-color: rgba(60, 232, 189, 0.2);
+}
+
+.tour-step-status-icon {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.tour-step-item:hover:not(.pending) .tour-step-status-icon {
+  transform: scale(1.1);
+}
+
+.tour-step-status-icon.is-done {
+  color: var(--primary-color, #3ce8bd);
+}
+
+.tour-step-status-icon.is-todo {
+  color: #4a5568;
+}
+
+.tour-step-item.active .tour-step-status-icon.is-todo {
+  color: var(--primary-color, #3ce8bd);
+}
+
+.tour-step-name {
+  white-space: nowrap;
+}
+
+.tour-step-arrow {
+  width: 20px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+/* Right Actions & Dismiss */
+.tour-actions-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tour-action-btn-mini {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  background: var(--primary-color, #3ce8bd);
+  color: #12131a; /* Sidebar background dark color for high contrast */
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px var(--primary-glow);
+  white-space: nowrap;
+}
+
+.tour-action-btn-mini svg {
+  transition: transform 0.2s ease;
+}
+
+.tour-action-btn-mini:hover {
+  transform: translateY(-1px);
+  background: #5efcd3;
+  box-shadow: 0 4px 12px rgba(60, 232, 189, 0.3);
+}
+
+.tour-action-btn-mini:hover svg {
+  transform: translateX(2px);
+}
+
+.tour-action-btn-mini.success {
+  background: var(--primary-color, #3ce8bd);
+  color: #12131a;
+}
+
+.tour-action-btn-mini.success:hover {
+  background: #5efcd3;
+}
+
+.tour-close-btn-mini {
+  background: transparent;
+  border: none;
+  color: #718096;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.tour-close-btn-mini:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Animations */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+  100% { transform: translateY(0); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 1024px) {
+  .tour-content-row {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px;
+    gap: 12px;
+  }
+  .tour-steps-row {
+    justify-content: flex-start;
+  }
+  .tour-brand-section {
+    justify-content: space-between;
+  }
+  .tour-actions-section {
+    justify-content: flex-end;
+  }
+}

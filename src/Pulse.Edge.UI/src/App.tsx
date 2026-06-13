@@ -32,6 +32,7 @@ import ProtocolsTab from './components/ProtocolsTab';
 import BufferTab from './components/BufferTab';
 import SettingsTab from './components/SettingsTab';
 import OnboardingWizard from './components/OnboardingWizard';
+import OnboardingTourBanner from './components/OnboardingTourBanner';
 
 const formatToLocalTimeString = (dateStr: string | null | undefined) => {
   if (!dateStr) return '';
@@ -344,6 +345,34 @@ export default function App() {
     }
   };
 
+  const handleFactoryReset = async () => {
+    try {
+      const res = await fetch('/api/settings/factory-reset', {
+        method: 'POST'
+      });
+
+      if (res.ok) {
+        toast.success('Agent has been successfully reset to factory defaults.');
+        
+        // Reset states to defaults & trigger onboarding wizard
+        setCloudEndpoint('http://localhost:3000');
+        setEdgeSerial('');
+        setIsOnboarded(false);
+        hasInitializedSettingsRef.current = false;
+        setActiveTab('dashboard');
+        
+        // Fetch new data to update UI cache (which will show empty lists / pending status)
+        void fetchData();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Failed to perform factory reset.');
+      }
+    } catch (err) {
+      console.error('Failed to factory reset:', err);
+      toast.error('An error occurred during factory reset.');
+    }
+  };
+
 
   // Poll API using user-configured polling interval
   useEffect(() => {
@@ -427,30 +456,30 @@ export default function App() {
           </button>
           
           <button 
-            className={`menu-item ${activeTab === 'datasources' ? 'active' : ''}`}
-            onClick={() => setActiveTab('datasources')}
-            title={isSidebarCollapsed ? "Config Streams" : undefined}
-          >
-            <Database size={18} />
-            {!isSidebarCollapsed && <span>Config Streams</span>}
-          </button>
-          
-          <button 
-            className={`menu-item ${activeTab === 'tags' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tags')}
-            title={isSidebarCollapsed ? "Physical Tags" : undefined}
-          >
-            <Tag size={18} />
-            {!isSidebarCollapsed && <span>Physical Tags</span>}
-          </button>
-          
-          <button 
             className={`menu-item ${activeTab === 'protocols' ? 'active' : ''}`}
             onClick={() => setActiveTab('protocols')}
             title={isSidebarCollapsed ? "Protocols" : undefined}
           >
             <Network size={18} />
             {!isSidebarCollapsed && <span>Protocols</span>}
+          </button>
+
+          <button 
+            className={`menu-item ${activeTab === 'tags' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tags')}
+            title={isSidebarCollapsed ? "Tags" : undefined}
+          >
+            <Tag size={18} />
+            {!isSidebarCollapsed && <span>Tags</span>}
+          </button>
+
+          <button 
+            className={`menu-item ${activeTab === 'datasources' ? 'active' : ''}`}
+            onClick={() => setActiveTab('datasources')}
+            title={isSidebarCollapsed ? "Streams" : undefined}
+          >
+            <Database size={18} />
+            {!isSidebarCollapsed && <span>Streams</span>}
           </button>
 
           <button 
@@ -555,6 +584,11 @@ export default function App() {
             </div>
           ) : (
             <>
+              <OnboardingTourBanner 
+                adapters={adapters}
+                datapoints={datapoints}
+                setActiveTab={setActiveTab}
+              />
               {activeTab === 'dashboard' && (
                 <DashboardTab
                   isSyncEnabled={isSyncEnabled}
@@ -640,6 +674,7 @@ export default function App() {
                   setShowLiveFeedPanel={setShowLiveFeedPanel}
                   showDiagnosticsPanel={showDiagnosticsPanel}
                   setShowDiagnosticsPanel={setShowDiagnosticsPanel}
+                  handleFactoryReset={handleFactoryReset}
                 />
               )}
             </>

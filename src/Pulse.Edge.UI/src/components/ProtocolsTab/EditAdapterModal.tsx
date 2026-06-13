@@ -42,6 +42,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
   const [editMqttUsername, setEditMqttUsername] = useState<string>(config.Username ?? '');
   const [editMqttPassword, setEditMqttPassword] = useState<string>(config.Password ?? '');
   const [webhookToken, setWebhookToken] = useState<string>(config.Token ?? '');
+  const [editSimulatorTemplate, setEditSimulatorTemplate] = useState<string>(config.Template ?? 'energy');
   const [editTestStatus, setEditTestStatus] = useState<'idle' | 'testing' | 'passed' | 'failed'>('idle');
   const [editTestMessage, setEditTestMessage] = useState('');
   const [opcEndpoints, setOpcEndpoints] = useState<OpcEndpoint[]>([]);
@@ -108,7 +109,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
   };
 
   const saveProtocol = async (id: string) => {
-    if (editAdapterProtocol !== 'WEBHOOK' && editAdapterProtocol !== 'MODBUS_RTU' && editTestStatus !== 'passed') {
+    if (editAdapterProtocol !== 'WEBHOOK' && editAdapterProtocol !== 'SIMULATOR' && editAdapterProtocol !== 'MODBUS_RTU' && editTestStatus !== 'passed') {
       const reason = editTestStatus === 'failed' ? `\nReason: ${editTestMessage}` : '\nNo connection test was run.';
       if (!window.confirm(`Warning: The connection test to ${editAdapterHost}:${editAdapterPort} did not pass.${reason}\n\nAre you sure you want to save this configuration anyway?`)) return;
     }
@@ -124,6 +125,8 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
         configJson = JSON.stringify({ ClientId: editMqttClientId, TopicPrefix: editMqttTopicPrefix, Username: editMqttUsername, Password: editMqttPassword });
       } else if (editAdapterProtocol === 'WEBHOOK') {
         configJson = JSON.stringify({ Token: webhookToken, LastPayload: config.LastPayload ?? '', LastSeen: config.LastSeen ?? '' });
+      } else if (editAdapterProtocol === 'SIMULATOR') {
+        configJson = JSON.stringify({ Template: editSimulatorTemplate });
       } else if (editAdapterProtocol === 'Ethernet/IP') {
         configJson = JSON.stringify({ PlcType: editPlcType, Protocol: editPlcProtocol, Path: editPlcPath, TimeoutMs: Number(editPlcTimeoutMs) });
       }
@@ -178,6 +181,11 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                     setWebhookToken('wh_tok_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
                   }
                 }
+                else if (nextProtocol === 'SIMULATOR') {
+                  setEditAdapterHost('simulator');
+                  setEditAdapterPort(0);
+                  setEditSimulatorTemplate('energy');
+                }
                 setEditTestStatus('idle'); setEditTestMessage('');
               }} options={[
                 { value: 'OPC_UA', label: 'OPC UA' },
@@ -185,11 +193,12 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                 { value: 'MODBUS_TCP', label: 'Modbus TCP Node' },
                 { value: 'MODBUS_RTU', label: 'Modbus RTU (Serial)' },
                 { value: 'Ethernet/IP', label: 'Ethernet/IP PLC' },
-                { value: 'WEBHOOK', label: 'REST Webhook' }
+                { value: 'WEBHOOK', label: 'REST Webhook' },
+                { value: 'SIMULATOR', label: 'Protocol Simulator' }
               ]} />
             </div>
 
-            {editAdapterProtocol !== 'WEBHOOK' && (
+            {editAdapterProtocol !== 'WEBHOOK' && editAdapterProtocol !== 'SIMULATOR' && (
               <>
                 <div className="form-group form-group-flush">
                   <label className="form-label form-label-bold">
@@ -241,6 +250,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
               {editAdapterProtocol === 'OPC_UA' && 'OPC UA Security Settings'}
               {editAdapterProtocol === 'MQTT' && 'MQTT Client Settings'}
               {editAdapterProtocol === 'WEBHOOK' && 'REST Webhook Settings'}
+              {editAdapterProtocol === 'SIMULATOR' && 'Protocol Simulator Settings'}
             </h4>
 
             {editAdapterProtocol === 'MODBUS_TCP' && (
@@ -441,6 +451,25 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                   </div>
                   <span className="text-secondary text-xs" style={{ display: 'block', marginTop: '0.25rem' }}>
                     This token is required in the query string of your HTTP POST request to authorize payload delivery.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {editAdapterProtocol === 'SIMULATOR' && (
+              <div className="form-stack-sm">
+                <div className="form-group form-group-flush">
+                  <label className="form-label form-label-bold">Simulation Template</label>
+                  <CustomSelect 
+                    value={editSimulatorTemplate} 
+                    onChange={setEditSimulatorTemplate} 
+                    options={[
+                      { value: 'energy', label: 'Energy (Voltage, Current, Power, Energy, Power Factor, Frequency)' },
+                      { value: 'production', label: 'Production (Running, Total Count, Speed, Fault Code)' }
+                    ]} 
+                  />
+                  <span className="text-secondary text-xs" style={{ display: 'block', marginTop: '0.4rem' }}>
+                    Choose the simulated template. Note: Changing the template does not automatically delete/recreate existing tags.
                   </span>
                 </div>
               </div>

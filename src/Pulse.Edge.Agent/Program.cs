@@ -20,6 +20,7 @@ builder.Services.AddSingleton<OpcUaDriver>();
 builder.Services.AddSingleton<MqttDriver>();
 builder.Services.AddSingleton<ModbusDriver>();
 builder.Services.AddSingleton<LibPlcTagDriver>();
+builder.Services.AddSingleton<SimulatorDriver>();
 
 // Register Background Worker
 builder.Services.AddHostedService<Worker>();

@@ -1,22 +1,23 @@
 import { useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, CheckCircle2 } from 'lucide-react';
 import CustomSelect from '../CustomSelect';
 import type { useToast } from '../../hooks/useToast';
 import ModalShell from '../ModalShell';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 
-interface CreateAdapterModalProps {
+interface CreateAdapterWizardProps {
   onClose: () => void;
   toast: ToastFn;
   fetchData: () => Promise<void>;
 }
 
-export default function CreateAdapterModal({
+export default function CreateAdapterWizard({
   onClose,
   toast,
   fetchData
-}: CreateAdapterModalProps) {
+}: CreateAdapterWizardProps) {
+  const [wizardStep, setWizardStep] = useState(1);
   const [newAdapterName, setNewAdapterName] = useState('');
   const [newAdapterProtocol, setNewAdapterProtocol] = useState('OPC_UA');
   const [newAdapterHost, setNewAdapterHost] = useState('127.0.0.1');
@@ -39,8 +40,12 @@ export default function CreateAdapterModal({
   const [createTestMessage, setCreateTestMessage] = useState('');
   const [opcEndpoints, setOpcEndpoints] = useState<any[]>([]);
   const [webhookToken, setWebhookToken] = useState('');
+  const [newSimulatorTemplate, setNewSimulatorTemplate] = useState<string>('energy');
   const [opcDiscoverStatus, setOpcDiscoverStatus] = useState<'idle' | 'discovering' | 'success' | 'error'>('idle');
   const [opcDiscoverMessage, setOpcDiscoverMessage] = useState('');
+  const [hostDiscoverStatus, setHostDiscoverStatus] = useState<'idle' | 'discovering' | 'success' | 'error'>('idle');
+  const [hostDiscoverMessage, setHostDiscoverMessage] = useState('');
+  const [discoveredHosts, setDiscoveredHosts] = useState<string[]>([]);
   
   const [newPlcType, setNewPlcType] = useState<string>('ControlLogix');
   const [newPlcProtocol, setNewPlcProtocol] = useState<string>('ab_eip');
@@ -78,6 +83,38 @@ export default function CreateAdapterModal({
     }
   };
 
+  const handleDiscoverHosts = async (port: number) => {
+    setHostDiscoverStatus('discovering');
+    setHostDiscoverMessage('');
+    setDiscoveredHosts([]);
+    try {
+      const res = await fetch('/api/adapters/discover-hosts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setDiscoveredHosts(data.hosts || []);
+          setHostDiscoverStatus('success');
+          if (!data.hosts?.length) {
+            setHostDiscoverMessage('No active hosts found on this port.');
+          }
+        } else {
+          setHostDiscoverStatus('error');
+          setHostDiscoverMessage(data.message || 'Discovery failed.');
+        }
+      } else {
+        setHostDiscoverStatus('error');
+        setHostDiscoverMessage(`HTTP Error ${res.status}: ${await res.text() || 'Internal Server Error'}`);
+      }
+    } catch (err) {
+      setHostDiscoverStatus('error');
+      setHostDiscoverMessage(`Network error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   const handleTestConnection = async (host: string, port: number) => {
     if (!host) { toast.warning('Please enter a Connection Host/IP before testing.'); return; }
     setCreateTestStatus('testing');
@@ -102,13 +139,12 @@ export default function CreateAdapterModal({
     }
   };
 
-  const handleCreateAdapter = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateAdapter = async () => {
     if (!newAdapterName || !newAdapterProtocol || !newAdapterHost) {
       toast.warning('Please fill in all required fields.');
       return;
     }
-    if (newAdapterProtocol !== 'WEBHOOK' && createTestStatus !== 'passed') {
+    if (newAdapterProtocol !== 'WEBHOOK' && newAdapterProtocol !== 'SIMULATOR' && createTestStatus !== 'passed') {
       const reason = createTestStatus === 'failed' ? `\nReason: ${createTestMessage}` : '\nNo connection test was run.';
       if (!window.confirm(`Warning: The connection test to ${newAdapterHost}:${newAdapterPort} did not pass.${reason}\n\nAre you sure you want to create this adapter anyway?`)) return;
     }
@@ -124,6 +160,8 @@ export default function CreateAdapterModal({
         configJson = JSON.stringify({ ClientId: newMqttClientId, TopicPrefix: newMqttTopicPrefix, Username: newMqttUsername, Password: newMqttPassword });
       } else if (newAdapterProtocol === 'WEBHOOK') {
         configJson = JSON.stringify({ Token: webhookToken, LastPayload: '', LastSeen: '' });
+      } else if (newAdapterProtocol === 'SIMULATOR') {
+        configJson = JSON.stringify({ Template: newSimulatorTemplate });
       } else if (newAdapterProtocol === 'Ethernet/IP') {
         configJson = JSON.stringify({ PlcType: newPlcType, Protocol: newPlcProtocol, Path: newPlcPath, TimeoutMs: Number(newPlcTimeoutMs) });
       }
@@ -144,82 +182,258 @@ export default function CreateAdapterModal({
     }
   };
 
+  const stepTitle =
+    wizardStep === 1 ? 'Step 1: Identify the name and communication protocol.' :
+    wizardStep === 2 ? 'Step 2: Configure connection host details and test connection.' :
+    'Step 3: Define protocol-specific credentials and driver configuration.';
+
+  const isNextDisabled =
+    (wizardStep === 1 && !newAdapterName.trim()) ||
+    (wizardStep === 2 && newAdapterProtocol !== 'WEBHOOK' && !newAdapterHost.trim());
+
+  const supportsDiscovery = ['MODBUS_TCP', 'Ethernet/IP', 'MQTT', 'OPC_UA'].includes(newAdapterProtocol);
+
   return (
     <ModalShell
-      title="Create Driver Adapter"
-      subtitle="Add a new local hardware connection driver."
-      size="xl"
+      title="Create Driver Adapter Wizard"
+      subtitle={stepTitle}
+      size="md"
       onClose={onClose}
     >
-      <form onSubmit={handleCreateAdapter} className="form-stack-lg">
-        <div className="adapter-form-cols">
-          <div className="adapter-form-col">
-            <h4 className="section-header-sm">General Settings</h4>
+      <div className="wizard-body">
+        {/* Step Progress Bar */}
+        <div className="wizard-progress">
+          <div className="wizard-step-group">
+            <span className={`wizard-step-circle ${wizardStep >= 1 ? 'is-done' : 'is-pending'}`}>1</span>
+            <span className={`wizard-step-label ${wizardStep === 1 ? 'is-current' : 'is-pending'}`}>Identify</span>
+          </div>
+          <div className="wizard-step-line" />
+          <div className="wizard-step-group">
+            <span className={`wizard-step-circle ${wizardStep >= 2 ? 'is-done' : 'is-pending'}`}>2</span>
+            <span className={`wizard-step-label ${wizardStep === 2 ? 'is-current' : 'is-pending'}`}>Connection</span>
+          </div>
+          <div className="wizard-step-line" />
+          <div className="wizard-step-group">
+            <span className={`wizard-step-circle ${wizardStep >= 3 ? 'is-done' : 'is-pending'}`}>3</span>
+            <span className={`wizard-step-label ${wizardStep === 3 ? 'is-current' : 'is-pending'}`}>Settings</span>
+          </div>
+        </div>
+
+        {/* STEP 1: General Settings */}
+        {wizardStep === 1 && (
+          <div className="form-stack" style={{ minHeight: '280px' }}>
+            <div className="form-group form-group-flush">
+              <label className="form-label form-label-bold">Protocol Type</label>
+              <CustomSelect 
+                value={newAdapterProtocol} 
+                onChange={(nextProtocol) => {
+                  setNewAdapterProtocol(nextProtocol);
+                  if (nextProtocol === 'OPC_UA') { 
+                    setNewAdapterHost('127.0.0.1'); 
+                    setNewAdapterPort(4840); 
+                    setNewOpcSecurityMode('None'); 
+                    setNewOpcSecurityPolicy('None'); 
+                    setNewOpcUsername(''); 
+                    setNewOpcPassword(''); 
+                  }
+                  else if (nextProtocol === 'MQTT') { 
+                    setNewAdapterHost('127.0.0.1');
+                    setNewAdapterPort(1883); 
+                    setNewMqttClientId('pulse-edge-agent'); 
+                    setNewMqttTopicPrefix(''); 
+                    setNewMqttUsername(''); 
+                    setNewMqttPassword(''); 
+                  }
+                  else if (nextProtocol === 'MODBUS_TCP') { 
+                    setNewAdapterHost('127.0.0.1');
+                    setNewAdapterPort(502); 
+                    setNewModbusUnitId(1); 
+                    setNewModbusTimeout(1000); 
+                    setNewModbusRetries(3); 
+                  }
+                  else if (nextProtocol === 'MODBUS_RTU') { 
+                    setNewAdapterHost('/dev/ttyUSB0'); 
+                    setNewAdapterPort(9600); 
+                    setNewModbusUnitId(1); 
+                    setNewModbusRtuParity('None'); 
+                    setNewModbusRtuStopBits('One'); 
+                    setNewModbusRtuHandshake('None'); 
+                  }
+                  else if (nextProtocol === 'Ethernet/IP') {
+                    setNewAdapterHost('127.0.0.1');
+                    setNewAdapterPort(44818);
+                    setNewPlcType('ControlLogix');
+                    setNewPlcProtocol('ab_eip');
+                    setNewPlcPath('1,0');
+                    setNewPlcTimeoutMs(5000);
+                  }
+                  else if (nextProtocol === 'WEBHOOK') {
+                    setNewAdapterHost('localhost');
+                    setNewAdapterPort(80);
+                    setWebhookToken('wh_tok_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+                  }
+                  else if (nextProtocol === 'SIMULATOR') {
+                    setNewAdapterHost('simulator');
+                    setNewAdapterPort(0);
+                    setNewSimulatorTemplate('energy');
+                  }
+                  // Reset test statuses
+                  setCreateTestStatus('idle');
+                  setCreateTestMessage('');
+                  setDiscoveredHosts([]);
+                  setHostDiscoverStatus('idle');
+                  setHostDiscoverMessage('');
+                }} 
+                options={[
+                  { value: 'OPC_UA', label: 'OPC UA' },
+                  { value: 'MQTT', label: 'MQTT Broker' },
+                  { value: 'MODBUS_TCP', label: 'Modbus TCP Node' },
+                  { value: 'MODBUS_RTU', label: 'Modbus RTU (Serial)' },
+                  { value: 'Ethernet/IP', label: 'Ethernet/IP PLC' },
+                  { value: 'WEBHOOK', label: 'REST Webhook' },
+                  { value: 'SIMULATOR', label: 'Protocol Simulator' }
+                ]} 
+              />
+            </div>
 
             <div className="form-group form-group-flush">
               <label className="form-label form-label-bold">Adapter Name</label>
-              <input type="text" className="form-input" placeholder="e.g. PLC Line 1 OPC UA"
-                value={newAdapterName} onChange={(e) => setNewAdapterName(e.target.value)} required />
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="e.g. PLC Line 1 OPC UA"
+                value={newAdapterName} 
+                onChange={(e) => setNewAdapterName(e.target.value)} 
+                required 
+              />
             </div>
+          </div>
+        )}
 
-            <div className="form-group form-group-flush">
-              <label className="form-label form-label-bold">Protocol Type</label>
-             <CustomSelect value={newAdapterProtocol} onChange={(nextProtocol) => {
-                setNewAdapterProtocol(nextProtocol);
-                if (nextProtocol === 'OPC_UA') { setNewAdapterPort(4840); setNewOpcSecurityMode('None'); setNewOpcSecurityPolicy('None'); setNewOpcUsername(''); setNewOpcPassword(''); }
-                else if (nextProtocol === 'MQTT') { setNewAdapterPort(1883); setNewMqttClientId('pulse-edge-agent'); setNewMqttTopicPrefix(''); setNewMqttUsername(''); setNewMqttPassword(''); }
-                else if (nextProtocol === 'MODBUS_TCP') { setNewAdapterPort(502); setNewModbusUnitId(1); setNewModbusTimeout(1000); setNewModbusRetries(3); }
-                else if (nextProtocol === 'MODBUS_RTU') { setNewAdapterHost('/dev/ttyUSB0'); setNewAdapterPort(9600); setNewModbusUnitId(1); setNewModbusRtuParity('None'); setNewModbusRtuStopBits('One'); setNewModbusRtuHandshake('None'); }
-                else if (nextProtocol === 'Ethernet/IP') {
-                  setNewAdapterPort(44818);
-                  setNewPlcType('ControlLogix');
-                  setNewPlcProtocol('ab_eip');
-                  setNewPlcPath('1,0');
-                  setNewPlcTimeoutMs(5000);
-                }
-                else if (nextProtocol === 'WEBHOOK') {
-                  setNewAdapterHost('localhost');
-                  setNewAdapterPort(80);
-                  setWebhookToken('wh_tok_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
-                }
-              }} options={[
-                { value: 'OPC_UA', label: 'OPC UA' },
-                { value: 'MQTT', label: 'MQTT Broker' },
-                { value: 'MODBUS_TCP', label: 'Modbus TCP Node' },
-                { value: 'MODBUS_RTU', label: 'Modbus RTU (Serial)' },
-                { value: 'Ethernet/IP', label: 'Ethernet/IP PLC' },
-                { value: 'WEBHOOK', label: 'REST Webhook' }
-              ]} />
-            </div>
-
-            {newAdapterProtocol !== 'WEBHOOK' && (
+        {/* STEP 2: Connection Details & Testing */}
+        {wizardStep === 2 && (
+          <div className="form-stack" style={{ gap: '0.75rem' }}>
+            {newAdapterProtocol === 'WEBHOOK' || newAdapterProtocol === 'SIMULATOR' ? (
+              <div 
+                style={{
+                  padding: '12px 16px',
+                  backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  color: '#34d399',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                }}
+              >
+                <CheckCircle2 size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                <span>
+                  {newAdapterProtocol === 'WEBHOOK' 
+                    ? 'REST Webhook is an inbound listener. No outbound connection settings or connection tests are required. Click Next Step to proceed.'
+                    : 'Protocol Simulator runs locally on this edge node. No outbound network connection or connection tests are required. Click Next Step to proceed.'}
+                </span>
+              </div>
+            ) : (
               <>
+                {supportsDiscovery && (
+                  <div className="opc-discover-box" style={{ marginBottom: '0.5rem' }}>
+                    <div className="opc-discover-header">
+                      <span className="opc-discover-label">Discover Available Hosts (Port {newAdapterPort})</span>
+                      <button 
+                        type="button" 
+                        onClick={() => handleDiscoverHosts(newAdapterPort)}
+                        disabled={hostDiscoverStatus === 'discovering'} 
+                        className="btn-opc-discover"
+                      >
+                        {hostDiscoverStatus === 'discovering' ? 'Scanning...' : 'Discover'}
+                      </button>
+                    </div>
+                    {hostDiscoverStatus === 'success' && discoveredHosts.length > 0 && (
+                      <div className="opc-endpoint-list" style={{ maxHeight: '120px', overflowY: 'auto', border: 'none', background: 'transparent', padding: 0 }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '8px' }}>
+                          {discoveredHosts.map((host, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setNewAdapterHost(host);
+                                setCreateTestStatus('idle');
+                                setCreateTestMessage('');
+                                toast.success(`Selected Host: ${host}`);
+                              }}
+                              className="opc-endpoint-item"
+                              style={{ 
+                                padding: '4px 8px', 
+                                borderRadius: '4px', 
+                                border: 'none', 
+                                backgroundColor: '#ffffff',
+                                color: '#1e293b',
+                                fontWeight: '600',
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                              }}
+                              onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#f1f5f9'; }}
+                              onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#ffffff'; }}
+                            >
+                              {host}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {hostDiscoverStatus === 'success' && discoveredHosts.length === 0 && (
+                      <div className="opc-discover-msg">{hostDiscoverMessage || 'No hosts found.'}</div>
+                    )}
+                    {hostDiscoverStatus === 'error' && (
+                      <div className="opc-discover-error">{hostDiscoverMessage}</div>
+                    )}
+                  </div>
+                )}
+
                 <div className="form-group form-group-flush">
                   <label className="form-label form-label-bold">
                     {newAdapterProtocol === 'MODBUS_RTU' ? 'Serial Port' : 'Connection Host / IP'}
                   </label>
-                  <input type="text" className="form-input" 
+                  <input 
+                    type="text" 
+                    className="form-input" 
                     placeholder={newAdapterProtocol === 'MODBUS_RTU' ? 'e.g. COM3 or /dev/ttyUSB0' : 'e.g. 192.168.1.50 or localhost'}
-                    value={newAdapterHost} onChange={(e) => { setNewAdapterHost(e.target.value); setCreateTestStatus('idle'); setCreateTestMessage(''); }} required />
+                    value={newAdapterHost} 
+                    onChange={(e) => { setNewAdapterHost(e.target.value); setCreateTestStatus('idle'); setCreateTestMessage(''); }} 
+                    required 
+                  />
                 </div>
 
                 <div className="form-group form-group-flush">
                   <label className="form-label form-label-bold">
                     {newAdapterProtocol === 'MODBUS_RTU' ? 'Baud Rate' : 'Port Number'}
                   </label>
-                  <input type="number" className="form-input" value={newAdapterPort}
-                    onChange={(e) => { setNewAdapterPort(Number(e.target.value)); setCreateTestStatus('idle'); setCreateTestMessage(''); }} required />
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    value={newAdapterPort}
+                    onChange={(e) => { setNewAdapterPort(Number(e.target.value)); setCreateTestStatus('idle'); setCreateTestMessage(''); }} 
+                    required 
+                  />
                 </div>
 
                 {newAdapterProtocol !== 'MODBUS_RTU' && (
-                  <div className="conn-test-section">
-                    <button type="button" onClick={() => handleTestConnection(newAdapterHost, newAdapterPort)}
-                      disabled={createTestStatus === 'testing'} className="btn-conn-test">
+                  <div className="conn-test-section" style={{ marginTop: '0.5rem', borderTop: 'none', paddingTop: 0 }}>
+                    <button 
+                      type="button" 
+                      onClick={() => handleTestConnection(newAdapterHost, newAdapterPort)}
+                      disabled={createTestStatus === 'testing'} 
+                      className="btn-conn-test"
+                    >
                       <RefreshCw size={14} className={createTestStatus === 'testing' ? 'spin' : ''} />
                       {createTestStatus === 'testing' ? 'Testing...' : 'Test Connection'}
                     </button>
                     {createTestStatus !== 'idle' && (
-                      <div className={`conn-test-result is-${createTestStatus}`}>
+                      <div className={`conn-test-result is-${createTestStatus}`} style={{ marginTop: '0.5rem' }}>
                         <div className="conn-test-result-header">
                           {createTestStatus === 'testing' && <RefreshCw size={14} className="spin" />}
                           {createTestStatus === 'passed' && <span>✓ Connection Pass</span>}
@@ -234,8 +448,11 @@ export default function CreateAdapterModal({
               </>
             )}
           </div>
+        )}
 
-          <div className="adapter-form-col">
+        {/* STEP 3: Protocol details */}
+        {wizardStep === 3 && (
+          <div className="form-stack">
             <h4 className="section-header-sm">
               {newAdapterProtocol === 'MODBUS_TCP' && 'Modbus TCP Settings'}
               {newAdapterProtocol === 'MODBUS_RTU' && 'Modbus RTU Settings'}
@@ -243,6 +460,7 @@ export default function CreateAdapterModal({
               {newAdapterProtocol === 'OPC_UA' && 'OPC UA Security Settings'}
               {newAdapterProtocol === 'MQTT' && 'MQTT Client Settings'}
               {newAdapterProtocol === 'WEBHOOK' && 'REST Webhook Settings'}
+              {newAdapterProtocol === 'SIMULATOR' && 'Protocol Simulator Settings'}
             </h4>
 
             {newAdapterProtocol === 'MODBUS_TCP' && (
@@ -340,7 +558,7 @@ export default function CreateAdapterModal({
                     </button>
                   </div>
                   {opcDiscoverStatus === 'success' && opcEndpoints.length > 0 && (
-                    <div className="opc-endpoint-list">
+                    <div className="opc-endpoint-list" style={{ maxHeight: '120px', overflowY: 'auto' }}>
                       <div className="opc-endpoint-hint">Click an endpoint to apply security settings:</div>
                       {opcEndpoints.map((ep, idx) => {
                         const mode = ep.securityMode;
@@ -436,12 +654,6 @@ export default function CreateAdapterModal({
                       type="button"
                       className="btn-secondary text-xs"
                       style={{ padding: '0.4rem 0.75rem', whiteSpace: 'nowrap' }}
-                      onClick={() => setNewAdapterProtocol('WEBHOOK')} // Force update / state refresh or do actual regen
-                    />
-                    <button
-                      type="button"
-                      className="btn-secondary text-xs"
-                      style={{ padding: '0.4rem 0.75rem', whiteSpace: 'nowrap' }}
                       onClick={() => setWebhookToken('wh_tok_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15))}
                     >
                       Regenerate
@@ -453,14 +665,69 @@ export default function CreateAdapterModal({
                 </div>
               </div>
             )}
-          </div>
-        </div>
 
-        <div className="adapter-form-footer">
-          <button type="submit" className="btn-dark-primary">Create Adapter</button>
-          <button type="button" onClick={onClose} className="btn-secondary btn-flex-1">Cancel</button>
+            {newAdapterProtocol === 'SIMULATOR' && (
+              <div className="form-stack-sm">
+                <div className="form-group form-group-flush">
+                  <label className="form-label form-label-bold">Simulation Template</label>
+                  <CustomSelect 
+                    value={newSimulatorTemplate} 
+                    onChange={setNewSimulatorTemplate} 
+                    options={[
+                      { value: 'energy', label: 'Energy (Voltage, Current, Power, Energy, Power Factor, Frequency)' },
+                      { value: 'production', label: 'Production (Running, Total Count, Speed, Fault Code)' }
+                    ]} 
+                  />
+                  <span className="text-secondary text-xs" style={{ display: 'block', marginTop: '0.4rem' }}>
+                    Choose the simulated template. Standard tags will be auto-generated for this adapter automatically.
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Wizard Footer */}
+        <div className="wizard-footer" style={{ marginTop: '1.5rem', display: 'flex', gap: '0.5rem' }}>
+          {wizardStep > 1 && (
+            <button 
+              type="button" 
+              onClick={() => setWizardStep(prev => Math.max(1, prev - 1))}
+              className="btn-secondary btn-flex-1"
+            >
+              Back
+            </button>
+          )}
+          {wizardStep === 1 && (
+            <button 
+              type="button" 
+              onClick={onClose} 
+              className="btn-secondary btn-flex-1"
+            >
+              Cancel
+            </button>
+          )}
+          {wizardStep < 3 ? (
+            <button
+              type="button"
+              onClick={() => setWizardStep(prev => prev + 1)}
+              disabled={isNextDisabled}
+              className="btn-primary btn-flex-2"
+            >
+              Next Step
+            </button>
+          ) : (
+            <button 
+              type="button" 
+              onClick={handleCreateAdapter}
+              disabled={isNextDisabled}
+              className="btn-dark-primary btn-flex-2"
+            >
+              Create Adapter
+            </button>
+          )}
         </div>
-      </form>
+      </div>
     </ModalShell>
   );
 }

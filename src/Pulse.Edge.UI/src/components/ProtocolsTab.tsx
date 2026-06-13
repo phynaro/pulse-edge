@@ -5,7 +5,7 @@ import type { useToast } from '../hooks/useToast';
 
 import AdapterCard from './ProtocolsTab/AdapterCard';
 import MqttDeviceModal from './ProtocolsTab/MqttDeviceModal';
-import CreateAdapterModal from './ProtocolsTab/CreateAdapterModal';
+import CreateAdapterWizard from './ProtocolsTab/CreateAdapterWizard';
 import EditAdapterModal from './ProtocolsTab/EditAdapterModal';
 import DeleteAdapterModal from './ProtocolsTab/DeleteAdapterModal';
 
@@ -93,7 +93,7 @@ export default function ProtocolsTab({
       )}
 
       {isCreateAdapterOpen && (
-        <CreateAdapterModal
+        <CreateAdapterWizard
           onClose={() => setIsCreateAdapterOpen(false)}
           toast={toast}
           fetchData={fetchData}

@@ -29,7 +29,7 @@ export default function ModalShell({
     : '';
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div
         className={`panel modal-dialog ${sizeClass}`.trim()}
         onClick={e => e.stopPropagation()}

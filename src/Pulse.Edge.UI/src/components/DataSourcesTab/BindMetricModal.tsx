@@ -133,7 +133,7 @@ export default function BindMetricModal({
           <label className="form-label form-label-bold">Select Connection Tag</label>
           {datapoints.length === 0 ? (
             <div className="confirm-warning-box">
-              No physical tags configured. Please configure tags under the "Physical Tags" tab first.
+              No physical tags configured. Please configure tags under the "Tags" tab first.
             </div>
           ) : (
             <>

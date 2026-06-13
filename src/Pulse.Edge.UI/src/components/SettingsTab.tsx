@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import CustomSelect from './CustomSelect';
+import FactoryResetModal from './FactoryResetModal';
 import type { DashboardData } from '../types';
 
 interface SettingsTabProps {
@@ -21,6 +23,7 @@ interface SettingsTabProps {
   setShowLiveFeedPanel: (val: boolean) => void;
   showDiagnosticsPanel: boolean;
   setShowDiagnosticsPanel: (val: boolean) => void;
+  handleFactoryReset: () => Promise<void>;
 }
 
 export default function SettingsTab({
@@ -41,8 +44,10 @@ export default function SettingsTab({
   showLiveFeedPanel,
   setShowLiveFeedPanel,
   showDiagnosticsPanel,
-  setShowDiagnosticsPanel
+  setShowDiagnosticsPanel,
+  handleFactoryReset
 }: SettingsTabProps) {
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   return (
     <>
       <div className="page-header">
@@ -167,6 +172,18 @@ export default function SettingsTab({
               </label>
             </div>
           </div>
+
+          <div className="panel">
+            <div className="panel-header">
+              <h2 className="panel-title text-danger" style={{ color: 'var(--error-color, #ef4444)' }}>Factory Default</h2>
+            </div>
+            <p className="text-secondary" style={{ fontSize: '13px', margin: '8px 0 16px 0', lineHeight: '1.5' }}>
+              Erase all database tables, resetting the Edge Agent to factory defaults. This action will delete all configurations, driver connections, streams, and buffered data, and restart the onboarding wizard.
+            </p>
+            <button type="button" className="btn-danger-solid" style={{ width: '100%' }} onClick={() => setIsResetModalOpen(true)}>
+              Reset to Factory Default
+            </button>
+          </div>
         </div>
 
         <div className="panel">
@@ -197,6 +214,16 @@ export default function SettingsTab({
           </div>
         </div>
       </div>
+
+      {isResetModalOpen && (
+        <FactoryResetModal
+          onConfirm={async () => {
+            await handleFactoryReset();
+            setIsResetModalOpen(false);
+          }}
+          onCancel={() => setIsResetModalOpen(false)}
+        />
+      )}
     </>
   );
 }

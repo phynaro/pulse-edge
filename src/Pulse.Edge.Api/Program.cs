@@ -128,6 +128,7 @@ if (isSinglePort)
     builder.Services.AddSingleton<SyncService>();
     builder.Services.AddSingleton<MqttDriver>();
     builder.Services.AddSingleton<ModbusDriver>();
+    builder.Services.AddSingleton<SimulatorDriver>();
 
     // Register background Worker process
     builder.Services.AddHostedService<Worker>();
@@ -240,6 +241,10 @@ app.MapPost("/api/adapters/test-connection", async (TestConnectionRequest reques
     {
         return Results.BadRequest(new { success = false, message = "Host/IP is required." });
     }
+    if (request.Host.Equals("simulator", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.Ok(new { success = true, message = "Successfully connected to Simulator." });
+    }
     if (request.Port <= 0 || request.Port > 65535)
     {
         return Results.BadRequest(new { success = false, message = "Invalid port number. Port must be between 1 and 65535." });
@@ -310,6 +315,94 @@ app.MapPost("/api/adapters/opcua/discover", async (DiscoverEndpointsRequest requ
     {
         return Results.Ok(new { success = false, message = $"Discovery failed: {ex.Message}" });
     }
+});
+
+// POST /api/adapters/discover-hosts - Discover active hosts on the network for a given port
+app.MapPost("/api/adapters/discover-hosts", async (DiscoverHostsRequest request) =>
+{
+    if (request.Port <= 0 || request.Port > 65535)
+    {
+        return Results.BadRequest(new { success = false, message = "Invalid port number. Port must be between 1 and 65535." });
+    }
+
+    var ipListToScan = new List<string>();
+    ipListToScan.Add("127.0.0.1");
+    ipListToScan.Add("localhost");
+
+    try
+    {
+        foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up && 
+                ni.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+            {
+                var props = ni.GetIPProperties();
+                foreach (var ip in props.UnicastAddresses)
+                {
+                    if (ip.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    {
+                        var mask = ip.IPv4Mask;
+                        if (mask != null)
+                        {
+                            byte[] ipBytes = ip.Address.GetAddressBytes();
+                            byte[] maskBytes = mask.GetAddressBytes();
+                            if (ipBytes.Length == 4 && maskBytes.Length == 4)
+                            {
+                                for (int host = 1; host <= 254; host++)
+                                {
+                                    var targetIp = $"{ipBytes[0]}.{ipBytes[1]}.{ipBytes[2]}.{host}";
+                                    if (!ipListToScan.Contains(targetIp))
+                                    {
+                                        ipListToScan.Add(targetIp);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error scanning network interfaces: {ex.Message}");
+    }
+
+    var activeHosts = new System.Collections.Concurrent.ConcurrentBag<string>();
+    
+    using (var semaphore = new System.Threading.SemaphoreSlim(50))
+    {
+        var tasks = ipListToScan.Select(async ip =>
+        {
+            await semaphore.WaitAsync();
+            try
+            {
+                using var client = new System.Net.Sockets.TcpClient();
+                var connectTask = client.ConnectAsync(ip, request.Port);
+                var delayTask = Task.Delay(500); // 500ms timeout
+                
+                var completedTask = await Task.WhenAny(connectTask, delayTask);
+                if (completedTask == connectTask)
+                {
+                    await connectTask; // verify no socket exception is thrown
+                    activeHosts.Add(ip);
+                }
+            }
+            catch
+            {
+                // Ignore connection failures
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+        
+        await Task.WhenAll(tasks);
+    }
+
+    var resultList = activeHosts.Distinct().OrderBy(h => h).ToList();
+    return Results.Ok(new { success = true, hosts = resultList });
 });
 
 // POST /api/adapters/opcua/browse - Browse OPC UA nodes hierarchically
@@ -1255,6 +1348,32 @@ app.MapPost("/api/settings", async (UpdateSettingsRequest request) =>
     return Results.Ok(config);
 });
 
+// POST /api/settings/factory-reset - Deletes all configurations and resets the edge agent to factory settings
+app.MapPost("/api/settings/factory-reset", async () =>
+{
+    using var db = new QueueDbContext();
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM DeviceConfigs;");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM QueueEvents;");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM QueueTelemetry;");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM DriverAdapters;");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM DataSources;");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM DataPoints;");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM MqttDevices;");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM StreamTemplates;");
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM MqttSeenTopics;");
+        
+        await db.SaveChangesAsync();
+        return Results.Ok(new { success = true, message = "System configuration has been reset to factory default." });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = $"Failed to factory reset: {ex.Message}" });
+    }
+});
+
+
 // POST /api/settings/validate-cloud - Validates Cloud URL sync registration
 app.MapPost("/api/settings/validate-cloud", async (ValidateCloudRequest request, CloudClient cloudClient) =>
 {
@@ -1523,6 +1642,7 @@ static void ExtractJsonPaths(System.Text.Json.JsonElement element, string curren
 
 public record TestConnectionRequest(string Host, int Port);
 public record DiscoverEndpointsRequest(string DiscoveryUrl);
+public record DiscoverHostsRequest(int Port);
 public record BrowseNodesRequest(string AdapterId, string? NodeId);
 public record UpdateSettingsRequest(string SerialNumber, string CloudEndpoint);
 public record ValidateCloudRequest(string CloudEndpoint, string SerialNumber);

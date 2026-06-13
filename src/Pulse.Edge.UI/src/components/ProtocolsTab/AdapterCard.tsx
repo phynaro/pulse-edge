@@ -65,7 +65,7 @@ export default function AdapterCard({
             <span className="adapter-info-label">Protocol: </span>
             <span className="badge primary badge-protocol">{adapter.protocol}</span>
           </div>
-          {adapter.protocol !== 'WEBHOOK' ? (
+          {adapter.protocol !== 'WEBHOOK' && adapter.protocol !== 'SIMULATOR' ? (
             <>
               <div className="adapter-info-row">
                 <span className="adapter-info-label">
@@ -80,6 +80,13 @@ export default function AdapterCard({
                 <span className="adapter-info-mono">{adapter.port}</span>
               </div>
             </>
+          ) : adapter.protocol === 'SIMULATOR' ? (
+            <div style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
+              <span className="adapter-info-label">Simulation Template: </span>
+              <span className="badge success badge-protocol" style={{ textTransform: 'capitalize' }}>
+                {config.Template || 'Energy'}
+              </span>
+            </div>
           ) : (
             <div className="webhook-copiable-url-display" style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
               <span className="adapter-info-label">Webhook URL: </span>
@@ -174,6 +181,13 @@ export default function AdapterCard({
                     {config.LastSeen && (
                       <span className="badge neutral badge-config">Last Seen: {new Date(config.LastSeen).toLocaleTimeString()}</span>
                     )}
+                  </div>
+                );
+              } else if (adapter.protocol === 'SIMULATOR') {
+                return (
+                  <div className="adapter-badge-group">
+                    <span className="badge neutral badge-config">Mode: Local Simulation</span>
+                    <span className="badge neutral badge-config">Template: {String(config.Template ?? 'energy')}</span>
                   </div>
                 );
               }

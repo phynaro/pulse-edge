@@ -237,6 +237,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                       {protocol === 'MODBUS_TCP' && 'Modbus Register Address'}
                       {protocol === 'Ethernet/IP' && 'PLC Tag Name'}
                       {protocol === 'OPC_UA' && 'OPC UA Node ID'}
+                      {protocol === 'SIMULATOR' && 'Simulated Variable Name'}
                       {protocol === 'MQTT' && (newDpMqttDeviceId
                         ? (mqttDevices.find(d => d.id === newDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'JSON Path (from device payload)' : 'MQTT Sub-topic or Metric Name')
                         : 'MQTT Topic')}
@@ -249,6 +250,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                           protocol === 'Ethernet/IP' ? 'e.g. PROGRAM:Main.Machine_Speed or MyGlobalTag' :
                           protocol === 'OPC_UA' ? 'e.g. ns=2;s=Machine_Temperature' :
                           protocol === 'WEBHOOK' ? 'e.g. $.temperature or $.sensors.humidity' :
+                          protocol === 'SIMULATOR' ? 'e.g. voltage, current, active_power, energy, running, count' :
                           newDpMqttDeviceId
                             ? (mqttDevices.find(d => d.id === newDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'e.g. $.temperature or $.sensors.humidity' : 'e.g. temperature')
                             : 'e.g. factory/casepacker/temperature'
