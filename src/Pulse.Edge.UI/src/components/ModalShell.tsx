@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 interface ModalShellProps {
-  title: string;
+  title: ReactNode;
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;

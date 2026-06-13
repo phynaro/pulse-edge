@@ -218,21 +218,25 @@ export default function BindMetricModal({
 
   return (
     <ModalShell
-      title="Bind Metric Tag"
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <span>Bind Metric Tag</span>
+          <div style={{ display: 'flex', gap: '0.35rem' }}>
+            <span className={`bind-stream-id-badge ${themeClass}`} style={{ padding: '2px 6px', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', height: 'auto', lineHeight: 'normal' }}>
+              STREAM: {activeDs?.name || dataSourceId}
+            </span>
+            <span className={`bind-stream-id-badge ${themeClass}`} style={{ padding: '2px 6px', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', height: 'auto', lineHeight: 'normal' }}>
+              ID: {dataSourceId}
+            </span>
+          </div>
+        </div>
+      }
       subtitle="Establish a telemetry source driver tag mapping."
       size="browser"
       bodyClassName="browser-modal-body"
       onClose={onClose}
     >
       <div className="form-stack" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
-          <span className={`bind-stream-id-badge ${themeClass}`} style={{ padding: '4px 8px', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', height: 'auto', lineHeight: 'normal' }}>
-            STREAM: {activeDs?.name || dataSourceId}
-          </span>
-          <span className={`bind-stream-id-badge ${themeClass}`} style={{ padding: '4px 8px', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', height: 'auto', lineHeight: 'normal' }}>
-            ID: {dataSourceId}
-          </span>
-        </div>
 
         {step === 1 ? (
           <div className="browser-layout" style={{ flex: 1, minHeight: 0 }}>
