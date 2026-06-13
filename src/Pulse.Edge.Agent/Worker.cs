@@ -26,6 +26,7 @@ public class Worker : BackgroundService
     private readonly CloudProvisioningService _provisioningService;
 
     private DateTime _lastHeartbeat = DateTime.MinValue;
+    private readonly Dictionary<string, (DateTime LastAttempt, int FailureCount)> _adapterConnectionStates = new();
 
     public Worker(
         ILogger<Worker> logger,
@@ -77,7 +78,7 @@ public class Worker : BackgroundService
         }
 
         // Start Cloud Sync Loop in the background (Non-blocking Task)
-        _ = Task.Run(() => _syncService.StartSyncLoopAsync(deviceConfig.Id, deviceConfig.ApiKey, stoppingToken), stoppingToken);
+        _ = Task.Run(() => _syncService.StartSyncLoopAsync(deviceConfig!.Id, deviceConfig!.ApiKey, stoppingToken), stoppingToken);
 
         // 3. Connect to Protocols (loaded dynamically from SQLite DB configs)
         using var db = new QueueDbContext();
@@ -177,23 +178,55 @@ public class Worker : BackgroundService
                         var poller = _pollerRegistry.GetPoller(adapter.Protocol);
                         if (poller != null && !poller.IsConnected && adapter.Protocol != "MQTT") // MQTT connects asynchronously in ConnectAsync task
                         {
+                            (DateTime LastAttempt, int FailureCount) state;
+                            lock (_adapterConnectionStates)
+                            {
+                                _adapterConnectionStates.TryGetValue(adapter.Id, out state);
+
+                                // Calculate retry delay: 5s, 10s, 20s, 40s, max 60s
+                                int failureCount = state.FailureCount;
+                                double delaySeconds = Math.Min(5 * Math.Pow(2, Math.Min(failureCount, 4)), 60);
+
+                                if (state.LastAttempt != default && (now - state.LastAttempt).TotalSeconds < delaySeconds)
+                                {
+                                    continue; // Skip this attempt (backoff active)
+                                }
+
+                                // Update last attempt time
+                                _adapterConnectionStates[adapter.Id] = (now, failureCount);
+                            }
+
                             _ = Task.Run(async () =>
                             {
                                 try
                                 {
+                                    _logger.LogInformation("Attempting reconnection to adapter {AdapterName} ({Protocol}). Attempt #{Count}...", adapter.Name, adapter.Protocol, state.FailureCount + 1);
                                     await poller.ConnectAsync(adapter, stoppingToken);
                                     using var dbH = new QueueDbContext();
-                                    var adp = await dbH.DriverAdapters.FirstOrDefaultAsync(x => x.Id == adapter.Id);
+                                    var adp = await dbH.DriverAdapters.FirstOrDefaultAsync(x => x.Id == adapter.Id, stoppingToken);
                                     if (adp != null && adp.Status != "Connected")
                                     {
                                         adp.Status = "Connected";
                                         dbH.DriverAdapters.Update(adp);
-                                        await dbH.SaveChangesAsync();
+                                        await dbH.SaveChangesAsync(stoppingToken);
+                                    }
+
+                                    // Reset backoff state on success
+                                    lock (_adapterConnectionStates)
+                                    {
+                                        _adapterConnectionStates[adapter.Id] = (DateTime.UtcNow, 0);
                                     }
                                 }
                                 catch (Exception ex)
                                 {
                                     _logger.LogError(ex, "Reconnection attempt failed for adapter {AdapterId}", adapter.Id);
+
+                                    // Increment failure count on exception
+                                    lock (_adapterConnectionStates)
+                                    {
+                                        _adapterConnectionStates.TryGetValue(adapter.Id, out var curState);
+                                        _adapterConnectionStates[adapter.Id] = (DateTime.UtcNow, curState.FailureCount + 1);
+                                    }
                                 }
                             });
                         }

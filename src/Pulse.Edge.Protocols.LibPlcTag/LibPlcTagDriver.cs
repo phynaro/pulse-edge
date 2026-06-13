@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -28,14 +29,22 @@ public class LibPlcTagDriver : IDisposable
         _logger = logger;
     }
 
-    public void Connect(string host, string plcTypeStr, string protocolStr, string path, int timeoutMs = 5000)
+    public void Connect(string host, string plcTypeStr, string protocolStr, string path, int timeoutMs = 5000, bool skipConnectionCheck = false)
     {
+        ConnectAsync(host, plcTypeStr, protocolStr, path, timeoutMs, default, skipConnectionCheck).GetAwaiter().GetResult();
+    }
+
+    public async Task ConnectAsync(string host, string plcTypeStr, string protocolStr, string path, int timeoutMs = 5000, CancellationToken cancellationToken = default, bool skipConnectionCheck = false)
+    {
+        var parsedPlcType = ParsePlcType(plcTypeStr);
+        var parsedProtocol = ParseProtocol(protocolStr);
+
         lock (_lock)
         {
             if (_isConnected && 
                 _host == host && 
-                _plcType.ToString().Equals(plcTypeStr, StringComparison.OrdinalIgnoreCase) && 
-                _protocol.ToString().Equals(protocolStr, StringComparison.OrdinalIgnoreCase) && 
+                _plcType == parsedPlcType && 
+                _protocol == parsedProtocol && 
                 _path == path && 
                 _timeoutMs == timeoutMs)
             {
@@ -45,14 +54,64 @@ public class LibPlcTagDriver : IDisposable
             Disconnect();
 
             _host = host;
-            _plcType = ParsePlcType(plcTypeStr);
-            _protocol = ParseProtocol(protocolStr);
+            _plcType = parsedPlcType;
+            _protocol = parsedProtocol;
             _path = path;
             _timeoutMs = timeoutMs;
-            
-            _logger.LogInformation("LibPlcTag Driver: Initializing connection parameters. Host: {Host}, PlcType: {PlcType}, Protocol: {Protocol}, Path: {Path}, Timeout: {Timeout}ms", host, _plcType, _protocol, path, timeoutMs);
-            
-            _isConnected = true;
+        }
+
+        _logger.LogInformation("LibPlcTag Driver: Initializing connection parameters. Host: {Host}, PlcType: {PlcType}, Protocol: {Protocol}, Path: {Path}, Timeout: {Timeout}ms", host, _plcType, _protocol, path, timeoutMs);
+
+        if (skipConnectionCheck)
+        {
+            lock (_lock)
+            {
+                _isConnected = true;
+            }
+            return;
+        }
+
+        // Perform TCP connection check to validate connectivity
+        try
+        {
+            var testHost = host;
+            var port = 44818;
+            if (testHost.Contains(':'))
+            {
+                var parts = testHost.Split(':');
+                testHost = parts[0];
+                if (parts.Length > 1 && int.TryParse(parts[1], out var parsedPort))
+                {
+                    port = parsedPort;
+                }
+            }
+
+            using var tcpClient = new TcpClient();
+            var connectTask = tcpClient.ConnectAsync(testHost, port, cancellationToken).AsTask();
+            var delayTask = Task.Delay(Math.Min(timeoutMs, 2000), cancellationToken);
+
+            var completedTask = await Task.WhenAny(connectTask, delayTask);
+            if (completedTask == connectTask)
+            {
+                await connectTask; // Throws if connection failed
+                lock (_lock)
+                {
+                    _isConnected = true;
+                }
+            }
+            else
+            {
+                throw new TimeoutException($"TCP connection to {testHost}:{port} timed out.");
+            }
+        }
+        catch (Exception ex)
+        {
+            lock (_lock)
+            {
+                _isConnected = false;
+            }
+            _logger.LogWarning(ex, "LibPlcTag Driver: TCP connectivity check failed for {Host}. Adapter will be offline.", host);
+            throw;
         }
     }
 

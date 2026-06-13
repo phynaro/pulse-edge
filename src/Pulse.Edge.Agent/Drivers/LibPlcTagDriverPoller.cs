@@ -31,11 +31,10 @@ public class LibPlcTagDriverPoller : IProtocolDriver
         _storageService = storageService;
     }
 
-    public Task ConnectAsync(DriverAdapter adapter, CancellationToken ct)
+    public async Task ConnectAsync(DriverAdapter adapter, CancellationToken ct)
     {
         var (plcType, protocol, path, timeoutMs) = ParseLibPlcTagConfig(adapter);
-        _libPlcTagDriver.Connect(adapter.Host, plcType, protocol, path, timeoutMs);
-        return Task.CompletedTask;
+        await _libPlcTagDriver.ConnectAsync(adapter.Host, plcType, protocol, path, timeoutMs, ct);
     }
 
     public Task DisconnectAsync(CancellationToken ct)

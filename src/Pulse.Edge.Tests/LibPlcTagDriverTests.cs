@@ -18,7 +18,7 @@ public class LibPlcTagDriverTests
     public void TestDriver_ConnectConfiguresState()
     {
         using var driver = new LibPlcTagDriver(NullLogger<LibPlcTagDriver>.Instance);
-        driver.Connect("192.168.1.50", "ControlLogix", "Ethernet/IP", "1,0", 3000);
+        driver.Connect("192.168.1.50", "ControlLogix", "Ethernet/IP", "1,0", 3000, skipConnectionCheck: true);
         
         Assert.True(driver.IsConnected);
         
@@ -27,10 +27,18 @@ public class LibPlcTagDriverTests
     }
 
     [Fact]
+    public void TestDriver_ConnectToInvalidHostThrows()
+    {
+        using var driver = new LibPlcTagDriver(NullLogger<LibPlcTagDriver>.Instance);
+        // Connect should fail and throw an exception on non-existent IP
+        Assert.ThrowsAny<Exception>(() => driver.Connect("192.0.2.1", "ControlLogix", "Ethernet/IP", "1,0", 100));
+    }
+
+    [Fact]
     public void TestDriver_InvalidDataTypeThrows()
     {
         using var driver = new LibPlcTagDriver(NullLogger<LibPlcTagDriver>.Instance);
-        driver.Connect("192.168.1.50", "ControlLogix", "Ethernet/IP", "1,0", 3000);
+        driver.Connect("192.168.1.50", "ControlLogix", "Ethernet/IP", "1,0", 3000, skipConnectionCheck: true);
 
         Assert.Throws<NotSupportedException>(() => driver.ReadTag("SomeTag", "InvalidType"));
     }

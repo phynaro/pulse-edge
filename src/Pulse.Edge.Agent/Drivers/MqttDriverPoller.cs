@@ -61,6 +61,7 @@ public class MqttDriverPoller : IProtocolDriver
 
     private async Task OnMessageReceivedAsync(string topic, string payload)
     {
+        var safePayload = payload ?? string.Empty;
         _logger.LogInformation("[MQTT Link] Telemetry packet intercepted on topic '{Topic}'. Resolving mapping...", topic);
 
         var receivedAt = DateTime.UtcNow;
@@ -71,7 +72,7 @@ public class MqttDriverPoller : IProtocolDriver
         {
             await dbLookup.Database.ExecuteSqlRawAsync(
                 "INSERT INTO MqttSeenTopics (Topic, Payload, LastSeen) VALUES ({0}, {1}, {2}) ON CONFLICT(Topic) DO UPDATE SET Payload = {1}, LastSeen = {2};",
-                topic, payload ?? string.Empty, receivedAt.ToString("o"));
+                topic, safePayload, receivedAt.ToString("o"));
         }
         catch (Exception ex)
         {
@@ -85,8 +86,8 @@ public class MqttDriverPoller : IProtocolDriver
 
         foreach (var dev in lwtDevices)
         {
-            bool isOffline = string.Equals(payload, dev.LwtOfflinePayload, StringComparison.OrdinalIgnoreCase);
-            bool isOnline = string.Equals(payload, dev.LwtOnlinePayload, StringComparison.OrdinalIgnoreCase);
+            bool isOffline = string.Equals(safePayload, dev.LwtOfflinePayload, StringComparison.OrdinalIgnoreCase);
+            bool isOnline = string.Equals(safePayload, dev.LwtOnlinePayload, StringComparison.OrdinalIgnoreCase);
 
             if (isOffline)
             {
@@ -189,11 +190,11 @@ public class MqttDriverPoller : IProtocolDriver
                 System.Text.Json.JsonDocument? jsonDoc = null;
                 try
                 {
-                    jsonDoc = System.Text.Json.JsonDocument.Parse(payload);
+                    jsonDoc = System.Text.Json.JsonDocument.Parse(safePayload);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "[MQTT Device Link] Failed to parse payload as JSON on topic '{Topic}': {Payload}", topic, payload);
+                    _logger.LogError(ex, "[MQTT Device Link] Failed to parse payload as JSON on topic '{Topic}': {Payload}", topic, safePayload);
                     dev.Status = "Error";
                     dev.LastError = "Failed to parse JSON payload";
                     dev.ConsecutiveFailures++;
@@ -222,7 +223,7 @@ public class MqttDriverPoller : IProtocolDriver
                     foreach (var dp in deviceDps)
                     {
                         string? jsonPath = !string.IsNullOrEmpty(dp.MqttJsonPath) ? dp.MqttJsonPath : dp.Address;
-                        string? extractedValue = GetJsonValueByPath(payload, jsonPath ?? string.Empty);
+                        string? extractedValue = GetJsonValueByPath(safePayload, jsonPath ?? string.Empty);
 
                         if (extractedValue == null)
                         {
@@ -262,11 +263,11 @@ public class MqttDriverPoller : IProtocolDriver
                     string? extractedValue = null;
                     if (dp.MqttParseMode == "JSON")
                     {
-                        extractedValue = GetJsonValueByPath(payload, dp.MqttJsonPath ?? string.Empty);
+                        extractedValue = GetJsonValueByPath(safePayload, dp.MqttJsonPath ?? string.Empty);
                     }
                     else
                     {
-                        extractedValue = payload;
+                        extractedValue = safePayload;
                     }
 
                     if (extractedValue == null)
@@ -304,11 +305,11 @@ public class MqttDriverPoller : IProtocolDriver
             {
                 try
                 {
-                    jsonDoc = System.Text.Json.JsonDocument.Parse(payload);
+                    jsonDoc = System.Text.Json.JsonDocument.Parse(safePayload);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "[MQTT Legacy Link] Failed to parse payload as JSON on topic '{Topic}': {Payload}", topic, payload);
+                    _logger.LogError(ex, "[MQTT Legacy Link] Failed to parse payload as JSON on topic '{Topic}': {Payload}", topic, safePayload);
                 }
             }
 
@@ -331,7 +332,7 @@ public class MqttDriverPoller : IProtocolDriver
                         }
                         else
                         {
-                            extractedValue = GetJsonValueByPath(payload, dp.MqttJsonPath ?? string.Empty);
+                            extractedValue = GetJsonValueByPath(safePayload, dp.MqttJsonPath ?? string.Empty);
                             if (extractedValue == null)
                             {
                                 dp.LastError = $"JSON path '{dp.MqttJsonPath}' not found";
@@ -344,7 +345,7 @@ public class MqttDriverPoller : IProtocolDriver
                     }
                     else
                     {
-                        extractedValue = payload;
+                        extractedValue = safePayload;
                     }
 
                     if (!extractedOk)
