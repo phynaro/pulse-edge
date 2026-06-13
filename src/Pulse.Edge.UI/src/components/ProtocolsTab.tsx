@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Network, Plus, RefreshCw } from 'lucide-react';
+import { Network, Plus } from 'lucide-react';
 import type { DriverAdapter, DataPoint, MqttDevice } from '../types';
 import type { useToast } from '../hooks/useToast';
 
@@ -51,13 +51,6 @@ export default function ProtocolsTab({
             Add Driver Adapter
           </button>
         </div>
-      </div>
-
-      <div className="banner-info">
-        <RefreshCw size={18} className="spin-slow" />
-        <span>
-          <strong>Dynamic Socket Synchronization:</strong> Active. Changes made to communication channels are saved instantly to the local SQLite database. The background C# Edge Agent dynamically reloads and re-establishes connections in real-time (within 5 seconds).
-        </span>
       </div>
 
       <div className="adapter-grid">
