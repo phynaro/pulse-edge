@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Network, Plus } from 'lucide-react';
 import type { DriverAdapter, DataPoint, MqttDevice } from '../types';
 import type { useToast } from '../hooks/useToast';
@@ -87,19 +87,25 @@ export default function ProtocolsTab({
     localStorage.setItem('pulse-adapters-order', JSON.stringify(orderIds));
   };
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const [columnsCount, setColumnsCount] = useState(2);
 
   useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 900) {
-        setColumnsCount(1);
-      } else {
-        setColumnsCount(2);
+    if (typeof ResizeObserver === 'undefined' || !containerRef.current) {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        // Min column width is 320px, gap is 24px
+        const count = Math.max(1, Math.floor((width + 24) / 344));
+        setColumnsCount(count);
       }
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
   }, []);
 
   const columns = useMemo(() => {
@@ -131,7 +137,11 @@ export default function ProtocolsTab({
         </div>
       </div>
 
-      <div className="adapter-grid" style={{ display: 'flex', gap: '24px', width: '100%', alignItems: 'flex-start' }}>
+      <div 
+        ref={containerRef}
+        className="adapter-grid" 
+        style={{ display: 'flex', gap: '24px', width: '100%', alignItems: 'flex-start' }}
+      >
         {columns.map((column, colIdx) => (
           <div key={colIdx} style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1, minWidth: 0 }}>
             {column.map((proto) => {
