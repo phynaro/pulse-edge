@@ -300,6 +300,7 @@ public class LibPlcTagDriver : IDisposable
         public string DataType { get; set; } = string.Empty;
         public string TypeHex { get; set; } = string.Empty;
         public uint[] Dimensions { get; set; } = Array.Empty<uint>();
+        public ushort TemplateId { get; set; }
     }
 
     public List<DiscoveredTag> BrowseTags()
@@ -332,7 +333,8 @@ public class LibPlcTagDriver : IDisposable
                     Name = tag.Name,
                     DataType = MapCipTypeToDataType(tag.Type),
                     TypeHex = $"0x{tag.Type:X4}",
-                    Dimensions = tag.Dimensions
+                    Dimensions = tag.Dimensions,
+                    TemplateId = (ushort)(tag.Type & 0x0FFF)
                 });
             }
         }
@@ -369,11 +371,93 @@ public class LibPlcTagDriver : IDisposable
                     Name = tag.Name,
                     DataType = MapCipTypeToDataType(tag.Type),
                     TypeHex = $"0x{tag.Type:X4}",
-                    Dimensions = tag.Dimensions
+                    Dimensions = tag.Dimensions,
+                    TemplateId = (ushort)(tag.Type & 0x0FFF)
                 });
             }
         }
         return result;
+    }
+
+    public async Task<List<StructureMember>> GetStructureTemplateAsync(ushort templateId, CancellationToken cancellationToken = default)
+    {
+        if (!_isConnected)
+        {
+            throw new InvalidOperationException("LibPlcTag Driver is not connected.");
+        }
+
+        var timeout = TimeSpan.FromMilliseconds(_timeoutMs);
+        using var tag = new Tag
+        {
+            Name = $"@template/{templateId}",
+            Gateway = _host,
+            Path = _path,
+            PlcType = _plcType,
+            Protocol = _protocol,
+            Timeout = timeout
+        };
+
+        await tag.ReadAsync(cancellationToken);
+
+        var members = new List<StructureMember>();
+        int totalSize = tag.GetInt32(0);
+        ushort memberCount = (ushort)tag.GetInt16(4);
+        
+        int offset = 8;
+        // Skip structure UDT name
+        while (offset < totalSize && tag.GetUInt8(offset) != 0)
+        {
+            offset++;
+        }
+        offset++; // Skip null terminator
+
+        for (int i = 0; i < memberCount; i++)
+        {
+            if (offset >= totalSize) break;
+
+            ushort info = (ushort)tag.GetInt16(offset);
+            ushort typeId = (ushort)tag.GetInt16(offset + 2);
+            uint memberOffset = (uint)tag.GetInt32(offset + 4);
+
+            int nameStart = offset + 8;
+            int current = nameStart;
+            while (current < totalSize && tag.GetUInt8(current) != 0)
+            {
+                current++;
+            }
+
+            var nameBytes = new List<byte>();
+            for (int j = nameStart; j < current; j++)
+            {
+                nameBytes.Add(tag.GetUInt8(j));
+            }
+            string memberName = System.Text.Encoding.ASCII.GetString(nameBytes.ToArray());
+            offset = current + 1;
+
+            if (memberName.StartsWith("__")) continue;
+
+            members.Add(new StructureMember
+            {
+                Name = memberName,
+                DataType = MapCipTypeToDataType(typeId),
+                TypeId = typeId,
+                Offset = memberOffset,
+                IsStructure = (typeId & 0x8000) != 0,
+                TemplateId = (ushort)(typeId & 0x0FFF)
+            });
+        }
+
+        return members;
+    }
+
+    public class StructureMember
+    {
+        public string Name { get; set; } = string.Empty;
+        public string DataType { get; set; } = string.Empty;
+        public ushort TypeId { get; set; }
+        public uint Offset { get; set; }
+        public bool IsStructure { get; set; }
+        public ushort TemplateId { get; set; }
     }
 
     private string MapCipTypeToDataType(ushort cipType)

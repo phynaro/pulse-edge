@@ -12,6 +12,7 @@ interface DiscoveredTag {
   dataType: string;
   typeHex: string;
   dimensions: number[];
+  templateId?: number;
 }
 
 interface EipConfiguringTag {
@@ -31,6 +32,184 @@ interface EthernetIpBrowserModalProps {
   onSaveSuccess: () => void;
 }
 
+interface BrowseTreeNodeProps {
+  name: string;
+  label: string;
+  dataType: string;
+  isStructure: boolean;
+  templateId?: number;
+  dimensions?: number[];
+  adapterId: string;
+  onToggleSelect: (name: string, dataType: string) => void;
+  selectedTags: Record<string, DiscoveredTag>;
+}
+
+function BrowseTreeNode({
+  name,
+  label,
+  dataType,
+  isStructure,
+  templateId,
+  dimensions,
+  adapterId,
+  onToggleSelect,
+  selectedTags
+}: BrowseTreeNodeProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [children, setChildren] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const handleExpand = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isExpanded) {
+      setIsExpanded(false);
+      return;
+    }
+
+    setIsExpanded(true);
+
+    if (isStructure && templateId && children.length === 0) {
+      setLoading(true);
+      try {
+        const res = await fetch('/api/adapters/ethernetip/template', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ adapterId, templateId })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setChildren(data.members || []);
+        }
+      } catch (err) {
+        console.error("Failed to load struct members:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const hasArray = dimensions && dimensions.length > 0 && dimensions[0] > 0;
+  const isExpandable = isStructure || hasArray;
+  const isSelected = !!selectedTags[name];
+
+  return (
+    <div className="tree-node" style={{ display: 'flex', flexDirection: 'column' }}>
+      <div 
+        className={`browser-node-item${isSelected ? ' is-selected' : ''}`}
+        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '6px 12px', minHeight: '40px' }}
+        onClick={() => {
+          if (!isStructure || hasArray) {
+            onToggleSelect(name, dataType);
+          } else {
+            handleExpand({ stopPropagation: () => {} } as any);
+          }
+        }}
+      >
+        {isExpandable ? (
+          <button 
+            type="button" 
+            onClick={handleExpand} 
+            className="btn-expand-chevron"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--text-muted, #94a3b8)',
+              padding: '2px 6px',
+              fontSize: '11px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: '20px'
+            }}
+          >
+            {isExpanded ? '▼' : '▶'}
+          </button>
+        ) : (
+          <div style={{ width: '20px' }} />
+        )}
+        
+        <input 
+          type="checkbox" 
+          checked={isSelected}
+          onChange={(e) => {
+            e.stopPropagation();
+            onToggleSelect(name, dataType);
+          }}
+          disabled={isStructure && !hasArray}
+          className="browser-checkbox"
+          onClick={(e) => e.stopPropagation()}
+        />
+        
+        <div className="browser-node-details" style={{ flex: 1 }}>
+          <div className="browser-node-name" style={{ fontSize: '13px', fontWeight: isStructure ? '600' : 'normal' }}>
+            {label}
+            {hasArray && ` [${dimensions[0]}]`}
+          </div>
+        </div>
+        
+        {dataType && (
+          <span 
+            className="browser-type-chip" 
+            style={{ 
+              fontSize: '10px', 
+              padding: '2px 6px', 
+              borderRadius: '4px', 
+              background: isStructure ? 'rgba(14, 165, 233, 0.15)' : 'rgba(255, 255, 255, 0.08)',
+              color: isStructure ? '#38bdf8' : 'var(--text-muted)'
+            }}
+          >
+            {dataType}
+          </span>
+        )}
+      </div>
+
+      {isExpanded && (
+        <div className="tree-node-children" style={{ paddingLeft: '1.25rem', borderLeft: '1px dashed rgba(255, 255, 255, 0.1)', marginLeft: '1.25rem' }}>
+          {loading && (
+            <div style={{ padding: '6px 12px', color: 'var(--text-muted)', fontSize: '12px' }}>
+              Loading members...
+            </div>
+          )}
+          
+          {isStructure && children.map(member => (
+            <BrowseTreeNode 
+              key={member.name}
+              name={`${name}.${member.name}`}
+              label={member.name}
+              dataType={member.dataType}
+              isStructure={member.isStructure}
+              templateId={member.templateId}
+              adapterId={adapterId}
+              onToggleSelect={onToggleSelect}
+              selectedTags={selectedTags}
+            />
+          ))}
+
+          {hasArray && Array.from({ length: Math.min(dimensions[0], 256) }).map((_, idx) => (
+            <BrowseTreeNode 
+              key={idx}
+              name={`${name}[${idx}]`}
+              label={`[${idx}]`}
+              dataType={dataType}
+              isStructure={false}
+              adapterId={adapterId}
+              onToggleSelect={onToggleSelect}
+              selectedTags={selectedTags}
+            />
+          ))}
+          
+          {hasArray && dimensions[0] > 256 && (
+            <div style={{ padding: '4px 12px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              Showing first 256 elements of {dimensions[0]}...
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EthernetIpBrowserModal({
   isOpen,
   onClose,
@@ -43,6 +222,24 @@ export default function EthernetIpBrowserModal({
   const [error, setError] = useState('');
   const [discoveredTags, setDiscoveredTags] = useState<DiscoveredTag[]>([]);
   const [selectedTags, setSelectedTags] = useState<Record<string, DiscoveredTag>>({});
+
+  const handleToggleNode = (name: string, dataType: string) => {
+    setSelectedTags(prev => {
+      const next = { ...prev };
+      if (next[name]) {
+        delete next[name];
+      } else {
+        next[name] = {
+          name,
+          dataType,
+          typeHex: '0x00',
+          dimensions: [],
+          templateId: 0
+        };
+      }
+      return next;
+    });
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const [step, setStep] = useState(1);
   const [configuringTags, setConfiguringTags] = useState<EipConfiguringTag[]>([]);
@@ -267,35 +464,21 @@ export default function EthernetIpBrowserModal({
                     {discoveredTags.length === 0 ? 'No controller tags were discovered. Ensure this Logix PLC supports symbol listing.' : 'No symbols match your filter.'}
                   </div>
                 ) : (
-                  <div className="browser-node-list">
-                    {filteredDiscoveredTags.map((tag) => {
-                      const isSelected = !!selectedTags[tag.name];
-                      const dimSuffix = tag.dimensions.length > 0 && tag.dimensions[0] > 0
-                        ? `[${tag.dimensions.join(',')}]`
-                        : '';
-                      return (
-                        <div
-                          key={tag.name}
-                          className={`browser-node-item${isSelected ? ' is-selected' : ''}`}
-                          onClick={() => handleToggleTag(tag)}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleToggleTag(tag)}
-                            className="browser-checkbox"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <div className="browser-node-details">
-                            <div className="browser-node-name">{tag.name}{dimSuffix}</div>
-                            <div className="browser-node-id" style={{ color: 'var(--text-muted)' }}>
-                              Type ID: {tag.typeHex}
-                            </div>
-                          </div>
-                          {tag.dataType && <span className="browser-type-chip">{tag.dataType}</span>}
-                        </div>
-                      );
-                    })}
+                  <div className="browser-node-list" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {filteredDiscoveredTags.map((tag) => (
+                      <BrowseTreeNode
+                        key={tag.name}
+                        name={tag.name}
+                        label={tag.name}
+                        dataType={tag.dataType}
+                        isStructure={tag.dataType.toUpperCase() === 'STRUCTURE'}
+                        templateId={tag.templateId}
+                        dimensions={tag.dimensions}
+                        adapterId={adapterId}
+                        onToggleSelect={handleToggleNode}
+                        selectedTags={selectedTags}
+                      />
+                    ))}
                   </div>
                 )}
               </div>

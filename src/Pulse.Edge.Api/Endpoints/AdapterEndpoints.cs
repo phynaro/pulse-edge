@@ -492,6 +492,61 @@ public static class AdapterEndpoints
             }
         });
 
+        // POST /api/adapters/ethernetip/template - Retrieve Logix UDT structure template members
+        routes.MapPost("/api/adapters/ethernetip/template", async (EthernetIpTemplateRequest request, LibPlcTagDriver libPlcTagDriver, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.AdapterId))
+            {
+                return Results.BadRequest(new { success = false, message = "AdapterId is required." });
+            }
+
+            try
+            {
+                using var db = new QueueDbContext();
+                var adapter = await db.DriverAdapters.FirstOrDefaultAsync(x => x.Id == request.AdapterId);
+                if (adapter == null)
+                {
+                    return Results.NotFound(new { success = false, message = "Adapter not found." });
+                }
+
+                if (adapter.Protocol != "Ethernet/IP")
+                {
+                    return Results.BadRequest(new { success = false, message = "Selected adapter is not an Ethernet/IP adapter." });
+                }
+
+                string plcType = "ControlLogix";
+                string protocol = "ab_eip";
+                string path = "1,0";
+                int timeoutMs = 5000;
+
+                if (!string.IsNullOrWhiteSpace(adapter.ConfigJson))
+                {
+                    try
+                    {
+                        var doc = System.Text.Json.JsonDocument.Parse(adapter.ConfigJson);
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("PlcType", out var ptProp)) plcType = ptProp.GetString() ?? plcType;
+                        if (root.TryGetProperty("Protocol", out var protoProp)) protocol = protoProp.GetString() ?? protocol;
+                        if (root.TryGetProperty("Path", out var pathProp)) path = pathProp.GetString() ?? path;
+                        if (root.TryGetProperty("TimeoutMs", out var toProp)) timeoutMs = toProp.GetInt32();
+                    }
+                    catch (Exception) { }
+                }
+
+                if (!libPlcTagDriver.IsConnected)
+                {
+                    libPlcTagDriver.Connect(adapter.Host, plcType, protocol, path, timeoutMs);
+                }
+
+                var members = await libPlcTagDriver.GetStructureTemplateAsync(request.TemplateId, cancellationToken);
+                return Results.Ok(new { success = true, members });
+            }
+            catch (Exception ex)
+            {
+                return Results.Ok(new { success = false, message = $"Failed to read UDT template: {ex.Message}" });
+            }
+        });
+
         // POST /api/adapters/siemens-s7/browse - Browse Siemens S7 PLC tags
         routes.MapPost("/api/adapters/siemens-s7/browse", async (SiemensS7BrowseRequest request, S7NetDriver s7NetDriver, CancellationToken cancellationToken) =>
         {
@@ -956,3 +1011,4 @@ public record MqttJsonKeyItem(string Path, string DataType, string Value);
 public record WebhookBrowseRequest(string AdapterId);
 public record EthernetIpBrowseRequest(string AdapterId);
 public record SiemensS7BrowseRequest(string AdapterId);
+public record EthernetIpTemplateRequest(string AdapterId, ushort TemplateId);
