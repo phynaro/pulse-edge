@@ -39,7 +39,7 @@ builder.Services.AddSingleton<IProtocolDriver, S7DriverPoller>();
 builder.Services.AddSingleton<IProtocolDriver, RestApiDriverPoller>();
 builder.Services.AddSingleton<IProtocolDriver, BacnetDriverPoller>();
 builder.Services.AddSingleton<IProtocolDriver, SimulatorDriverPoller>();
-builder.Services.AddSingleton<CustomSimulatedDriverPoller>();
+
 
 // Register Registry
 builder.Services.AddSingleton<DriverPollerRegistry>();

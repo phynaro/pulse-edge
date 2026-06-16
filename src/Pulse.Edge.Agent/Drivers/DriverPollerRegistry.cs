@@ -7,23 +7,18 @@ namespace Pulse.Edge.Agent.Drivers;
 public class DriverPollerRegistry
 {
     private readonly Dictionary<string, IProtocolDriver> _drivers;
-    private readonly CustomSimulatedDriverPoller _fallbackDriver;
 
-    public DriverPollerRegistry(
-        IEnumerable<IProtocolDriver> drivers,
-        CustomSimulatedDriverPoller fallbackDriver)
+    public DriverPollerRegistry(IEnumerable<IProtocolDriver> drivers)
     {
         _drivers = drivers
-            .Where(x => x.ProtocolName != "CUSTOM_SIMULATED")
             .ToDictionary(
                 x => x.ProtocolName.ToUpperInvariant(),
                 x => x);
-        _fallbackDriver = fallbackDriver;
     }
 
-    public IProtocolDriver GetPoller(string protocol)
+    public IProtocolDriver? GetPoller(string protocol)
     {
-        if (string.IsNullOrWhiteSpace(protocol)) return _fallbackDriver;
+        if (string.IsNullOrWhiteSpace(protocol)) return null;
 
         var normalized = protocol.ToUpperInvariant();
 
@@ -33,6 +28,6 @@ public class DriverPollerRegistry
             normalized = "MODBUS_TCP";
         }
 
-        return _drivers.TryGetValue(normalized, out var driver) ? driver : _fallbackDriver;
+        return _drivers.TryGetValue(normalized, out var driver) ? driver : null;
     }
 }

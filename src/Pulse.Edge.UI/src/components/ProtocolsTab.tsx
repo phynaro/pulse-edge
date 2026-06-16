@@ -83,10 +83,12 @@ export default function ProtocolsTab({
   const handleDrop = (e: React.DragEvent, targetIndex: number) => {
     e.preventDefault();
     setDragOverIndex(null);
-    if (draggedIndex === null || draggedIndex === targetIndex) return;
+    const sourceIndex = draggedIndex;
+    setDraggedIndex(null); // Clear dragged index immediately on drop!
+    if (sourceIndex === null || sourceIndex === targetIndex) return;
 
     const updated = [...orderedAdapters];
-    const [draggedItem] = updated.splice(draggedIndex, 1);
+    const [draggedItem] = updated.splice(sourceIndex, 1);
     updated.splice(targetIndex, 0, draggedItem);
 
     setOrderedAdapters(updated);
