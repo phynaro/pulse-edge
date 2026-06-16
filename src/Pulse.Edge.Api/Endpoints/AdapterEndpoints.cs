@@ -1083,69 +1083,8 @@ public static class AdapterEndpoints
         });
     }
 
-    // JSON parsing helper functions
-    private static string? GetJsonValueByElement(System.Text.Json.JsonElement element, string path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-            return null;
-
-        try
-        {
-            var cleanPath = path;
-            if (cleanPath.StartsWith("$.")) cleanPath = cleanPath[2..];
-            else if (cleanPath.StartsWith("$")) cleanPath = cleanPath[1..];
-            
-            var parts = cleanPath.Split('.', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var part in parts)
-            {
-                var cleanPart = part;
-                int arrayIndex = -1;
-                
-                if (part.EndsWith("]") && part.Contains("["))
-                {
-                    int openBracket = part.IndexOf("[");
-                    cleanPart = part[..openBracket];
-                    string indexStr = part[(openBracket + 1)..^1];
-                    int.TryParse(indexStr, out arrayIndex);
-                }
-
-                if (element.ValueKind == System.Text.Json.JsonValueKind.Object && element.TryGetProperty(cleanPart, out var child))
-                {
-                    element = child;
-                }
-                else
-                {
-                    return null;
-                }
-
-                if (arrayIndex >= 0)
-                {
-                    if (element.ValueKind == System.Text.Json.JsonValueKind.Array && arrayIndex < element.GetArrayLength())
-                    {
-                        element = element[arrayIndex];
-                    }
-                    else
-                    {
-                        return null;
-                    }
-                }
-            }
-            
-            return element.ValueKind switch
-            {
-                System.Text.Json.JsonValueKind.String => element.GetString(),
-                System.Text.Json.JsonValueKind.Number => element.GetRawText(),
-                System.Text.Json.JsonValueKind.True => "true",
-                System.Text.Json.JsonValueKind.False => "false",
-                System.Text.Json.JsonValueKind.Null => null,
-                _ => element.GetRawText()
-            };
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    private static string? GetJsonValueByElement(System.Text.Json.JsonElement element, string path) =>
+        Pulse.Edge.Storage.Helpers.JsonPathHelper.GetJsonValueByElement(element, path);
 
     private static void ExtractJsonPaths(System.Text.Json.JsonElement element, string currentPath, List<MqttJsonKeyItem> paths)
     {
