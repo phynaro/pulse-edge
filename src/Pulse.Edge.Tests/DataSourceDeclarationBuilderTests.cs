@@ -39,9 +39,9 @@ public class DataSourceDeclarationBuilderTests
     [InlineData("MODBUS_TCP", "modbus")]
     [InlineData("MODBUS_RTU", "modbus")]
     [InlineData("MQTT", "mqtt")]
-    [InlineData("WEBHOOK", "mqtt")]
-    [InlineData("REST_API", "mqtt")]
-    [InlineData("Ethernet/IP", "opcua")]
+    [InlineData("WEBHOOK", "webhook")]
+    [InlineData("REST_API", "restapi")]
+    [InlineData("Ethernet/IP", "ethernetip")]
     public void NormalizeProtocol_MapsAdapterProtocols(string adapterProtocol, string expected)
     {
         Assert.Equal(expected, DataSourceDeclarationBuilder.NormalizeProtocol(adapterProtocol));

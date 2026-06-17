@@ -80,44 +80,41 @@ public class SimulatorDriverPoller : IProtocolDriver
 
         if (dueDps.Count == 0) return;
 
+        // Group readings by DataSourceId to batch enqueue them at the end
+        var readingsByDataSource = new Dictionary<string, Dictionary<string, (double? Value, string Quality)>>();
+
         foreach (var dp in dueDps)
         {
+            double? processedVal = null;
+            string quality = "Good";
+
             try
             {
                 double rawVal = _simulatorDriver.ReadValue(adapterId, dp.Address);
-                double processedVal = (rawVal * dp.ScaleFactor) + dp.Offset;
+                double val = (rawVal * dp.ScaleFactor) + dp.Offset;
 
-                _logger.LogInformation("[Simulator Read] Adapter: {AdapterName} | Address: {Address} | Raw: {Raw} | Processed: {Value}", adapter.Name, dp.Address, rawVal, processedVal);
+                _logger.LogInformation("[Simulator Read] Adapter: {AdapterName} | Address: {Address} | Raw: {Raw} | Processed: {Value}", adapter.Name, dp.Address, rawVal, val);
 
                 if (dp.DataType.Equals("Boolean", StringComparison.OrdinalIgnoreCase))
                 {
-                    dp.LastValue = (processedVal > 0.5) ? "True" : "False";
+                    dp.LastValue = (val > 0.5) ? "True" : "False";
                 }
                 else if (dp.DataType.Equals("Int16", StringComparison.OrdinalIgnoreCase) || 
                          dp.DataType.Equals("Int32", StringComparison.OrdinalIgnoreCase) ||
                          dp.DataType.Equals("UInt16", StringComparison.OrdinalIgnoreCase) ||
                          dp.DataType.Equals("UInt32", StringComparison.OrdinalIgnoreCase))
                 {
-                    dp.LastValue = ((int)Math.Round(processedVal)).ToString();
+                    dp.LastValue = ((int)Math.Round(val)).ToString();
                 }
                 else
                 {
-                    dp.LastValue = processedVal.ToString("F2");
+                    dp.LastValue = val.ToString("F2");
                 }
 
                 dp.LastError = null;
                 dp.ConsecutiveFailures = 0;
                 dp.LastUpdated = now;
-                AddDirtyIfNeeded(dp, now, dirtyDps);
-
-                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-                {
-                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                    {
-                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
-                        _logger.LogInformation("[Queue Buffer] Enqueued Simulator telemetry | Stream: {Source} Metric: {Metric} Val: {Val}", dp.DataSourceId, dp.Metric, processedVal);
-                    }
-                }
+                processedVal = val;
             }
             catch (Exception ex)
             {
@@ -125,15 +122,34 @@ public class SimulatorDriverPoller : IProtocolDriver
                 dp.LastError = ex.Message;
                 dp.ConsecutiveFailures++;
                 dp.LastUpdated = now;
-                AddDirtyIfNeeded(dp, now, dirtyDps);
+                quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+            }
 
-                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+            AddDirtyIfNeeded(dp, now, dirtyDps);
+
+            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+            {
+                if (!readingsByDataSource.TryGetValue(dp.DataSourceId, out var dict))
                 {
-                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                    {
-                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
-                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
-                    }
+                    dict = new Dictionary<string, (double? Value, string Quality)>();
+                    readingsByDataSource[dp.DataSourceId] = dict;
+                }
+                dict[dp.Metric] = (processedVal, quality);
+            }
+        }
+
+        // Enqueue readings in batch per DataSourceId
+        foreach (var kvp in readingsByDataSource)
+        {
+            var dataSourceId = kvp.Key;
+            var metrics = kvp.Value;
+
+            if (await _storageService.IsDataSourceEnabledAsync(dataSourceId))
+            {
+                await _storageService.EnqueueTelemetryBatchAsync(dataSourceId, now, metrics);
+                foreach (var metricKvp in metrics)
+                {
+                    _logger.LogInformation("[Queue Buffer] Enqueued Simulator telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
                 }
             }
         }

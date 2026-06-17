@@ -1,25 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, Edit, Trash2 } from 'lucide-react';
 import type { DataPoint, DriverAdapter, MqttDevice } from '../../types';
+import TagDiagnosticDrawer from './TagDiagnosticDrawer';
 
-const formatToLocalTimeString = (dateStr: string | null | undefined) => {
-  if (!dateStr) return '';
-  let utcStr = dateStr;
-  if (!utcStr.endsWith('Z') && !utcStr.includes('+') && !utcStr.includes('GMT')) {
-    utcStr = utcStr.replace(' ', 'T') + 'Z';
-  }
-  return new Date(utcStr).toLocaleTimeString();
-};
 
-const isNumericType = (dataType: string): boolean => {
-  const lower = (dataType || '').toLowerCase();
-  return (
-    lower.includes('int') ||
-    lower.includes('float') ||
-    lower.includes('double') ||
-    lower.includes('uint')
-  );
-};
 
 const formatLiveValue = (value: string | null | undefined, dataType: string): string => {
   if (value === null || value === undefined || value === '') return '—';
@@ -415,49 +399,7 @@ export default function TagGroupAccordion({
                       {detailsExpanded && (
                         <tr className={`tag-detail-row ${orphanClass}`}>
                           <td colSpan={9} onClick={e => e.stopPropagation()}>
-                            <div className="tag-detail-grid">
-                              <div className={`tag-detail-divider ${orphanClass}`}>
-                                <div className={`detail-label${isOrphan ? ' is-orphan' : ''}`}>Description</div>
-                                <div className={`tag-detail-desc-value${dp.description ? '' : ' is-empty'}`}>
-                                  {dp.description || 'No description provided.'}
-                                </div>
-                              </div>
-                              {isNumericType(dp.dataType) && (
-                                <div className="tag-detail-section">
-                                  <div className={`detail-label${isOrphan ? ' is-orphan' : ''}`}>Scaling & Math</div>
-                                  <div className="detail-value">Scale Factor: <span className="tag-detail-mono">x{dp.scaleFactor}</span></div>
-                                  <div className="detail-value detail-value-mt">Offset: <span className="tag-detail-mono">+{dp.offset}</span></div>
-                                </div>
-                              )}
-                              {!isOrphan && adapter.protocol === 'MODBUS_TCP' && (
-                                <div className="tag-detail-section">
-                                  <div className="detail-label">Endianness (Modbus Only)</div>
-                                  <div className="detail-value tag-detail-mono">
-                                    Byte Order: {dp.byteOrder || (dp.dataType === 'Int16' || dp.dataType === 'UInt16' ? 'AB' : 'ABCD')}
-                                  </div>
-                                </div>
-                              )}
-                              <div className="tag-detail-section">
-                                <div className={`detail-label${isOrphan ? ' is-orphan' : ''}`}>Diagnostics Metadata</div>
-                                <div className={`detail-meta-mono${isOrphan ? ' is-orphan' : ''}`}>UUID: {dp.id}</div>
-                                <div className={`detail-meta${isOrphan ? ' is-orphan' : ''}`}>
-                                  {isOrphan
-                                    ? `Adapter ID: ${dp.adapterId} (Deleted / Not Found)`
-                                    : `Last Evaluated: ${dp.lastUpdated ? formatToLocalTimeString(dp.lastUpdated) : 'Never'}`}
-                                </div>
-                                {!isOrphan && dp.consecutiveFailures !== undefined && dp.consecutiveFailures > 0 && (
-                                  <div className="tag-detail-failures">
-                                    Consecutive Failures: {dp.consecutiveFailures} (Scan rate backed off to {Math.min(64, Math.pow(2, Math.min(dp.consecutiveFailures, 6)))}x)
-                                  </div>
-                                )}
-                              </div>
-                              {!isOrphan && dp.lastError && (
-                                <div className="tag-detail-full">
-                                  <div className="detail-label is-orphan">Trace Error Log</div>
-                                  <div className="tag-error-box">{dp.lastError}</div>
-                                </div>
-                              )}
-                            </div>
+                            <TagDiagnosticDrawer dp={dp} adapter={adapter} isOrphan={isOrphan} />
                           </td>
                         </tr>
                       )}

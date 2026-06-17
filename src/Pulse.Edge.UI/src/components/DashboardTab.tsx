@@ -1,4 +1,5 @@
-import { Cpu, Play, Pause, Activity } from 'lucide-react';
+import { useMemo } from 'react';
+import { Cpu, Play, Pause, Activity, HardDrive, Clock } from 'lucide-react';
 import CustomSelect from './CustomSelect';
 import type {
   DiagnosticData,
@@ -76,6 +77,80 @@ export default function DashboardTab({
       return true;
     })
     .slice(0, maxLiveLogs);
+
+  // Helper to parse CPU percentage
+  const cpuPercent = useMemo(() => {
+    if (!diagnostics?.cpuUsage) return 0;
+    const match = diagnostics.cpuUsage.match(/(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+  }, [diagnostics?.cpuUsage]);
+
+  // Helper to parse Memory usage and percentage (budget 512MB for lightweight agent)
+  const memUsageMb = useMemo(() => {
+    if (!diagnostics?.memoryUsage) return 0;
+    const match = diagnostics.memoryUsage.match(/(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+  }, [diagnostics?.memoryUsage]);
+  
+  const memPercent = useMemo(() => {
+    const maxAgentMemory = 512; // budget limit for edge agent in MB
+    return Math.min(100, Math.round((memUsageMb / maxAgentMemory) * 100));
+  }, [memUsageMb]);
+
+  // Helper to parse Disk usage and percentage
+  const diskInfo = useMemo(() => {
+    if (!diagnostics?.diskSpace) return { used: 0, total: 100, percent: 0 };
+    const matches = diagnostics.diskSpace.match(/([\d.]+)\s*GB\s*\/\s*([\d.]+)\s*GB/i);
+    if (matches && matches.length >= 3) {
+      const used = parseFloat(matches[1]);
+      const total = parseFloat(matches[2]);
+      const percent = Math.min(100, Math.round((used / total) * 100));
+      return { used, total, percent };
+    }
+    return { used: 0, total: 100, percent: 0 };
+  }, [diagnostics?.diskSpace]);
+
+  // Helper to format payload JSON nicely
+  const renderPayload = (payloadStr: string) => {
+    try {
+      const parsed = JSON.parse(payloadStr);
+      if (parsed && typeof parsed === 'object') {
+        return (
+          <div className="telemetry-pill-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {Object.entries(parsed).map(([key, val]) => {
+              let displayVal = '';
+              if (val === null || val === undefined) displayVal = 'null';
+              else if (typeof val === 'object') displayVal = JSON.stringify(val);
+              else displayVal = typeof val === 'number' ? parseFloat(val.toFixed(3)).toString() : String(val);
+
+              return (
+                <div 
+                  key={key} 
+                  className="telemetry-pill-badge"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    backgroundColor: 'var(--bg-color, #f4f5f7)',
+                    border: '1px solid var(--border-color, #e2e8f0)',
+                    borderRadius: '12px',
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    fontFamily: 'var(--font-code, Space Mono)'
+                  }}
+                >
+                  <span style={{ color: 'var(--text-secondary)', marginRight: '4px', fontWeight: 600 }}>{key}:</span>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{displayVal}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      }
+    } catch (e) {
+      // ignore
+    }
+    return <span className="cell-mono-code">{payloadStr}</span>;
+  };
 
   const telemetryDanger = bufferTelemetry.length >= telemetryWarningThreshold;
   const eventsDanger = bufferEvents.length >= eventWarningThreshold;
@@ -227,15 +302,15 @@ export default function DashboardTab({
                       <tr>
                         <th>Timestamp</th>
                         <th>Source/Topic</th>
-                        <th>Payload JSON</th>
+                        <th>Payload Metrics</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredLiveFeed.map((item, idx) => (
-                        <tr key={idx}>
+                        <tr key={`${item.time}-${item.source}-${idx}`} className="flash-new-row">
                           <td className="cell-mono-secondary">{item.time}</td>
                           <td className="cell-highlight">{item.source}</td>
-                          <td className="cell-mono-code">{item.payload}</td>
+                          <td>{renderPayload(item.payload)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -246,36 +321,100 @@ export default function DashboardTab({
           )}
 
           {showDiagnosticsPanel && (
-            <div className="panel">
+            <div className="panel diagnostics-panel-visual">
               <div className="panel-header">
                 <h2 className="panel-title">System Diagnostics</h2>
                 <Cpu size={16} className="text-secondary" />
               </div>
 
-              <table className="data-table">
-                <tbody>
-                  <tr>
-                    <td className="cell-bold">Daemon Uptime</td>
-                    <td className="cell-mono">{diagnostics?.uptime || 'N/A'}</td>
-                  </tr>
-                  <tr>
-                    <td className="cell-bold">CPU Usage</td>
-                    <td className="cell-mono">{diagnostics?.cpuUsage || 'N/A'}</td>
-                  </tr>
-                  <tr>
-                    <td className="cell-bold">Memory Footprint</td>
-                    <td className="cell-mono">{diagnostics?.memoryUsage || 'N/A'}</td>
-                  </tr>
-                  <tr>
-                    <td className="cell-bold">Disk Available</td>
-                    <td className="cell-mono">{diagnostics?.diskSpace || 'N/A'}</td>
-                  </tr>
-                  <tr>
-                    <td className="cell-bold">Database File</td>
-                    <td className="cell-mono-xs">~/.pulse/edge.db</td>
-                  </tr>
-                </tbody>
-              </table>
+              <div className="diag-visual-grid" style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
+                
+                {/* CPU Usage */}
+                <div className="diag-item-bar">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px' }}>
+                    <span className="font-bold" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)' }}>
+                      <Cpu size={14} className="text-secondary" />
+                      CPU Usage
+                    </span>
+                    <span className="cell-mono font-bold" style={{ color: 'var(--text-primary)' }}>{diagnostics?.cpuUsage || 'N/A'}</span>
+                  </div>
+                  <div className="progress-bg" style={{ height: '8px', background: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div className="progress-fill" style={{ 
+                      height: '100%', 
+                      width: `${cpuPercent}%`, 
+                      background: cpuPercent > 80 ? 'var(--danger-color)' : cpuPercent > 50 ? 'var(--warning-color)' : 'var(--primary-color)',
+                      borderRadius: '4px',
+                      transition: 'width 0.5s ease-in-out'
+                    }} />
+                  </div>
+                </div>
+
+                {/* Memory Usage */}
+                <div className="diag-item-bar">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px' }}>
+                    <span className="font-bold" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)' }}>
+                      <HardDrive size={14} className="text-secondary" />
+                      Memory Footprint
+                    </span>
+                    <span className="cell-mono font-bold" style={{ color: 'var(--text-primary)' }}>
+                      {diagnostics?.memoryUsage || 'N/A'}{' '}
+                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 400 }}>
+                        ({memPercent}% of budget)
+                      </span>
+                    </span>
+                  </div>
+                  <div className="progress-bg" style={{ height: '8px', background: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div className="progress-fill" style={{ 
+                      height: '100%', 
+                      width: `${memPercent}%`, 
+                      background: memPercent > 80 ? 'var(--danger-color)' : memPercent > 50 ? 'var(--warning-color)' : 'var(--primary-color)',
+                      borderRadius: '4px',
+                      transition: 'width 0.5s ease-in-out'
+                    }} />
+                  </div>
+                </div>
+
+                {/* Disk Space */}
+                <div className="diag-item-bar">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px' }}>
+                    <span className="font-bold" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)' }}>
+                      <HardDrive size={14} className="text-secondary" />
+                      Disk Allocation
+                    </span>
+                    <span className="cell-mono font-bold" style={{ color: 'var(--text-primary)' }}>
+                      {diskInfo.used} GB / {diskInfo.total} GB{' '}
+                      <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 400 }}>
+                        ({diskInfo.percent}% used)
+                      </span>
+                    </span>
+                  </div>
+                  <div className="progress-bg" style={{ height: '8px', background: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div className="progress-fill" style={{ 
+                      height: '100%', 
+                      width: `${diskInfo.percent}%`, 
+                      background: diskInfo.percent > 90 ? 'var(--danger-color)' : diskInfo.percent > 75 ? 'var(--warning-color)' : 'var(--primary-color)',
+                      borderRadius: '4px',
+                      transition: 'width 0.5s ease-in-out'
+                    }} />
+                  </div>
+                </div>
+
+                {/* Uptime and DB File */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '4px', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                  <div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Clock size={12} />
+                      Uptime
+                    </div>
+                    <div className="cell-mono font-bold" style={{ fontSize: '14px', marginTop: '2px', color: 'var(--text-primary)' }}>{diagnostics?.uptime || 'N/A'}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Database File</div>
+                    <div className="cell-mono-xs" style={{ fontSize: '12px', marginTop: '2px', wordBreak: 'break-all', color: 'var(--text-primary)' }}>~/.pulse/edge.db</div>
+                  </div>
+                </div>
+
+              </div>
             </div>
           )}
         </div>

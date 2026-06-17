@@ -267,7 +267,7 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
           {orderedAdapters.map((adapter, index) => {
             const adapterTags = filteredDatapoints.filter(dp => dp.adapterId === adapter.id);
             const hasMatchingTags = adapterTags.length > 0;
-            if (isSearchActive && !hasMatchingTags) return null;
+            if (!hasMatchingTags) return null;
             const isDraggingThis = draggedAdapterIndex === index;
             return (
               <div

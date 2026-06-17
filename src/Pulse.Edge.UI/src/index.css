@@ -226,6 +226,475 @@ body {
   margin-top: 1rem;
 }
 
+/* Micro-interaction: new telemetry row flashing effect */
+@keyframes pulse-row-flash {
+  0% {
+    background-color: rgba(60, 232, 189, 0.18);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
 
+.flash-new-row {
+  animation: pulse-row-flash 1.5s ease-out;
+}
 
+/* Enhanced System Diagnostics Visual styling */
+.diagnostics-panel-visual .diag-item-bar {
+  padding: 12px 14px;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
+}
 
+.diagnostics-panel-visual .diag-item-bar:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+}
+
+.diagnostics-panel-visual .progress-bg {
+  background-color: #f1f5f9 !important;
+}
+
+.diagnostics-panel-visual .progress-fill {
+  background-image: linear-gradient(90deg, var(--primary-color) 0%, var(--primary-dark) 100%) !important;
+  box-shadow: 0 0 8px rgba(60, 232, 189, 0.3);
+}
+
+/* Micro-interaction: Telemetry Stream badge effects */
+.telemetry-pill-badge {
+  transition: transform 0.15s ease, border-color 0.15s ease;
+  cursor: default;
+}
+
+.telemetry-pill-badge:hover {
+  transform: translateY(-1px);
+  border-color: var(--primary-color) !important;
+}
+
+/* SQLite Buffer Explorer Quality statuses overrides */
+.metric-chip {
+  transition: all 0.2s ease;
+}
+
+.metric-chip.is-timeout {
+  background-color: rgba(245, 158, 11, 0.08) !important;
+  border-color: rgba(245, 158, 11, 0.25) !important;
+}
+
+.metric-chip.is-timeout .metric-chip-value {
+  color: #d97706 !important;
+  font-weight: 700;
+}
+
+.metric-chip.is-error {
+  background-color: rgba(239, 68, 68, 0.08) !important;
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+.metric-chip.is-error .metric-chip-value {
+  color: #dc2626 !important;
+  font-weight: 700;
+}
+
+/* Sizing constraints for split dashboard view */
+.dashboard-grid.is-split {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 24px !important;
+  align-items: stretch !important;
+}
+
+.dashboard-grid.is-split .live-feed-panel {
+  flex: 2.8 !important;
+  min-width: 0 !important;
+}
+
+.dashboard-grid.is-split .diagnostics-panel-visual {
+  flex: 1 !important;
+  min-width: 280px !important;
+  max-width: 360px !important;
+}
+
+/* Real-Time Tag Diagnostic Drawer Styling */
+.tag-diag-drawer {
+  padding: 8px 4px;
+}
+
+.tag-diag-meta .detail-row-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.diag-field-box {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  padding: 10px 12px;
+  border-radius: 6px;
+}
+
+.tag-diag-chart-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 320px;
+}
+
+.diag-chart-container {
+  flex: 1;
+  background: var(--bg-color, #1a202c);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  min-height: 150px;
+  position: relative;
+  display: flex;
+  overflow: hidden;
+}
+
+.diag-chart-fallback {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.svg-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  padding: 10px 5px;
+}
+
+.tag-diag-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diag-controls-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.diag-badges-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diag-badge-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-hover, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+@media (min-width: 900px) {
+  .tag-diag-drawer .tag-detail-grid {
+    grid-template-columns: 260px 1fr 180px !important;
+  }
+  .tag-diag-drawer .tag-detail-grid.no-trend {
+    grid-template-columns: 1fr 180px !important;
+  }
+}
+
+.diag-badge-card.is-good {
+  border-color: rgba(72, 187, 120, 0.3);
+  background: rgba(72, 187, 120, 0.04);
+}
+
+.diag-badge-card.is-bad {
+  border-color: rgba(229, 62, 62, 0.3);
+  background: rgba(229, 62, 62, 0.04);
+}
+
+.diag-badge-card.is-metric {
+  border-color: rgba(159, 122, 234, 0.3);
+  background: rgba(159, 122, 234, 0.04);
+}
+
+.badge-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.badge-card-icon .text-green {
+  color: #48bb78 !important;
+}
+
+.badge-card-icon .text-red {
+  color: #f56565 !important;
+}
+
+.badge-card-icon .text-purple {
+  color: #9f7aea !important;
+}
+
+.badge-card-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.badge-card-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.badge-card-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.btn-diag-poll {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background-image: linear-gradient(135deg, var(--primary-color, #3ce8bd) 0%, var(--primary-dark, #2b6cb0) 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(60, 232, 189, 0.2);
+  transition: all 0.2s ease;
+  font-family: var(--font-body);
+}
+
+.btn-diag-poll:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(60, 232, 189, 0.35);
+  filter: brightness(1.05);
+}
+
+.btn-diag-poll:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-diag-poll:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.diag-failures-alert {
+  padding: 8px 12px;
+  background: rgba(221, 107, 32, 0.08);
+  border: 1px solid rgba(221, 107, 32, 0.25);
+  border-radius: 6px;
+  color: #dd6b20;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.diag-error-trace {
+  margin-top: 16px;
+}
+
+.diag-error-trace .text-red {
+  color: #e53e3e !important;
+}
+
+/* Helpers for layout */
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.justify-center { justify-content: center; }
+.gap-sm { gap: 6px; }
+.gap-md { gap: 12px; }
+.mb-xs { margin-bottom: 4px; }
+.mt-xs { margin-top: 4px; }
+.font-bold { font-weight: 700; }
+.text-xs { font-size: 11px; }
+.text-mono-xs { font-size: 11px; font-family: var(--font-mono); }
+.text-secondary { color: var(--text-secondary); }
+
+/* Ping animation for real-time diagnostic chart last dot */
+@keyframes diagnostic-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.animate-ping {
+  animation: diagnostic-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.btn-trend-pause {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  background: transparent;
+  color: var(--text-secondary, #718096);
+  cursor: pointer;
+  margin-left: 10px;
+  transition: all 0.2s ease;
+  line-height: 1;
+  height: 18px;
+}
+
+.btn-trend-pause:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  color: var(--text-primary, #ffffff);
+  border-color: var(--text-secondary, #718096);
+}
+
+.btn-trend-pause.is-paused {
+  background: rgba(60, 232, 189, 0.1);
+  color: var(--primary-color, #3ce8bd);
+  border-color: rgba(60, 232, 189, 0.3);
+}
+
+.btn-trend-pause.is-paused:hover {
+  background: rgba(60, 232, 189, 0.15);
+  border-color: var(--primary-color, #3ce8bd);
+}
+
+/* Floating interactive trend chart tooltip */
+.trend-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(26, 32, 44, 0.95);
+  border: 1px solid var(--primary-color, #3ce8bd);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  border-radius: 6px;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 10;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  min-width: 80px;
+}
+
+/* Tooltip positioned above the point */
+.trend-tooltip.is-above {
+  transform: translate(-50%, -100%);
+}
+
+.trend-tooltip.is-above::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: rgba(26, 32, 44, 0.95);
+  border-right: 1px solid var(--primary-color, #3ce8bd);
+  border-bottom: 1px solid var(--primary-color, #3ce8bd);
+}
+
+/* Tooltip positioned below the point (when point is near top border) */
+.trend-tooltip.is-below {
+  transform: translate(-50%, 0);
+}
+
+.trend-tooltip.is-below::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: rgba(26, 32, 44, 0.95);
+  border-left: 1px solid var(--primary-color, #3ce8bd);
+  border-top: 1px solid var(--primary-color, #3ce8bd);
+}
+
+.tooltip-value {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary-color, #3ce8bd);
+  font-family: var(--font-mono);
+}
+
+.tooltip-time {
+  font-size: 9px;
+  color: var(--text-secondary, #718096);
+  margin-top: 2px;
+}
+
+/* Segmented control for time window adjustment (1m, 5m, 15m, All) */
+.time-select-group {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 4px;
+  padding: 1px;
+  margin-left: 12px;
+  height: 18px;
+  align-items: center;
+}
+
+.btn-time-window {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #718096);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.15s ease;
+  line-height: 1;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-time-window:hover {
+  color: var(--text-primary, #ffffff);
+}
+
+.btn-time-window.is-active {
+  background: var(--primary-color, #3ce8bd);
+  color: var(--bg-color, #1a202c) !important;
+}
+
+/* Make each metric card/row wider and display the full address without truncation */
+.metric-grid {
+  grid-template-columns: repeat(auto-fill, minmax(450px, 1fr)) !important;
+}
+
+.metric-addr {
+  white-space: normal !important;
+  word-break: break-all !important;
+}

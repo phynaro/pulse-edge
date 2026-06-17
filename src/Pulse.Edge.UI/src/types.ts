@@ -63,6 +63,7 @@ export interface DataPoint {
   lastValue?: string | null;
   lastError?: string | null;
   lastUpdated?: string | null;
+  lastLatencyMs?: number | null;
   consecutiveFailures?: number;
 }
 
@@ -94,6 +95,7 @@ export interface BufferTelemetryItem {
   dataSourceId: string;
   /** MetricsJson: merged dict e.g. {"temperature":85.3,"good_count":142} */
   metricsJson: string;
+  qualitiesJson?: string;
   timestamp: string;
   retryCount: number;
   isSending: boolean;

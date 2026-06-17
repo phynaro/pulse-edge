@@ -269,6 +269,7 @@ public class Worker : BackgroundService
                             dbEntry.LastValue = dirty.LastValue;
                             dbEntry.LastError = dirty.LastError;
                             dbEntry.LastUpdated = dirty.LastUpdated;
+                            dbEntry.LastLatencyMs = dirty.LastLatencyMs;
                             dbEntry.ConsecutiveFailures = dirty.ConsecutiveFailures;
                             dbWrite.DataPoints.Update(dbEntry);
                         }

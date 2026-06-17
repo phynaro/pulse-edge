@@ -84,6 +84,9 @@ public class OpcUaDriverPoller : IProtocolDriver
 
         var nodeIds = dueDps.Select(dp => dp.Address).ToList();
 
+        // Group readings by DataSourceId to batch enqueue them at the end
+        var readingsByDataSource = new Dictionary<string, Dictionary<string, (double? Value, string Quality)>>();
+
         Dictionary<string, OpcUaReadResult> batchResult;
         try
         {
@@ -101,11 +104,24 @@ public class OpcUaDriverPoller : IProtocolDriver
 
                 if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
                 {
-                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                    if (!readingsByDataSource.TryGetValue(dp.DataSourceId, out var dict))
                     {
-                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
-                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
+                        dict = new Dictionary<string, (double? Value, string Quality)>();
+                        readingsByDataSource[dp.DataSourceId] = dict;
                     }
+                    string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                    dict[dp.Metric] = (null, quality);
+                }
+            }
+
+            // Enqueue batch results on read failure
+            foreach (var kvp in readingsByDataSource)
+            {
+                var dataSourceId = kvp.Key;
+                var metrics = kvp.Value;
+                if (await _storageService.IsDataSourceEnabledAsync(dataSourceId))
+                {
+                    await _storageService.EnqueueTelemetryBatchAsync(dataSourceId, now, metrics);
                 }
             }
 
@@ -125,65 +141,72 @@ public class OpcUaDriverPoller : IProtocolDriver
 
         foreach (var dp in dueDps)
         {
+            double? processedVal = null;
+            string quality = "Good";
+
             if (!batchResult.TryGetValue(dp.Address, out var readRes) || readRes == null)
             {
                 dp.LastError = "Tag value was not returned in batch result";
                 dp.ConsecutiveFailures++;
                 dp.LastUpdated = now;
-                AddDirtyIfNeeded(dp, now, dirtyDps);
-
-                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-                {
-                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                    {
-                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
-                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
-                    }
-                }
-                continue;
+                quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
             }
-
-            if (!readRes.Success)
+            else if (!readRes.Success)
             {
                 dp.LastError = readRes.ErrorMessage ?? "Unknown OPC UA read error";
                 dp.ConsecutiveFailures++;
                 dp.LastUpdated = now;
-                AddDirtyIfNeeded(dp, now, dirtyDps);
-
-                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-                {
-                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                    {
-                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
-                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
-                    }
-                }
-                continue;
+                quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
             }
-
-            try
+            else
             {
-                double currentVal = readRes.Value;
-                double processedVal = (currentVal * dp.ScaleFactor) + dp.Offset;
-                _logger.LogInformation("[Telemetry Read] Node: {Node} | Raw: {Raw} | Processed: {Value}", dp.Address, currentVal, processedVal);
-                dp.LastValue = processedVal.ToString("F2");
-                dp.LastError = null;
-                dp.ConsecutiveFailures = 0;
-                dp.LastUpdated = now;
-                AddDirtyIfNeeded(dp, now, dirtyDps);
-
-                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                try
                 {
-                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                    {
-                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
-                        _logger.LogInformation("[Queue Buffer] Enqueued OPC UA telemetry | Stream: {Source} Metric: {Metric}", dp.DataSourceId, dp.Metric);
-                    }
+                    double currentVal = readRes.Value;
+                    double val = (currentVal * dp.ScaleFactor) + dp.Offset;
+                    _logger.LogInformation("[Telemetry Read] Node: {Node} | Raw: {Raw} | Processed: {Value}", dp.Address, currentVal, val);
+                    dp.LastValue = val.ToString("F2");
+                    dp.LastError = null;
+                    dp.ConsecutiveFailures = 0;
+                    dp.LastUpdated = now;
+                    processedVal = val;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to parse OPC UA telemetry for Node {Node}", dp.Address);
+                    dp.LastError = ex.Message;
+                    dp.ConsecutiveFailures++;
+                    dp.LastUpdated = now;
+                    quality = "DriverError";
                 }
             }
-            catch (Exception ex)
+
+            AddDirtyIfNeeded(dp, now, dirtyDps);
+
+            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
             {
-                _logger.LogError(ex, "Failed to enqueue OPC UA telemetry for Node {Node}", dp.Address);
+                if (!readingsByDataSource.TryGetValue(dp.DataSourceId, out var dict))
+                {
+                    dict = new Dictionary<string, (double? Value, string Quality)>();
+                    readingsByDataSource[dp.DataSourceId] = dict;
+                }
+                dict[dp.Metric] = (processedVal, quality);
+            }
+        }
+
+        // Enqueue readings in batch per DataSourceId
+        foreach (var kvp in readingsByDataSource)
+        {
+            var dataSourceId = kvp.Key;
+            var metrics = kvp.Value;
+
+            if (await _storageService.IsDataSourceEnabledAsync(dataSourceId))
+            {
+                await _storageService.EnqueueTelemetryBatchAsync(dataSourceId, now, metrics);
+                foreach (var metricKvp in metrics)
+                {
+                    _logger.LogInformation("[Queue Buffer] Enqueued OPC UA telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
+                }
             }
         }
     }

@@ -117,6 +117,21 @@ public class ModbusDriverPoller : IProtocolDriver
     {
         // Step 1 — filter due tags and parse addresses
         var dueMetas = new List<ModbusTagMeta>();
+        var readingsByDataSource = new Dictionary<string, Dictionary<string, (double? Value, string Quality)>>();
+
+        void AddReading(DataPoint dp, double? value, string quality)
+        {
+            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+            {
+                if (!readingsByDataSource.TryGetValue(dp.DataSourceId, out var dict))
+                {
+                    dict = new Dictionary<string, (double? Value, string Quality)>();
+                    readingsByDataSource[dp.DataSourceId] = dict;
+                }
+                dict[dp.Metric] = (value, quality);
+            }
+        }
+
         foreach (var dp in allTags)
         {
             int baseInterval = Math.Max(dp.ScanIntervalMs > 0 ? dp.ScanIntervalMs : 1000, 100);
@@ -137,7 +152,8 @@ public class ModbusDriverPoller : IProtocolDriver
                 // Only HR and IR support block reads; Coil/DI fall back to single reads
                 if (regType == ModbusDriver.RegisterType.Coil || regType == ModbusDriver.RegisterType.DiscreteInput)
                 {
-                    await PollSingleModbusTagAsync(dp, unitId, now, dirtyDps, ct);
+                    var (val, qual) = await PollSingleModbusTagAsync(dp, unitId, now, dirtyDps, ct);
+                    AddReading(dp, val, qual);
                     continue;
                 }
                 int words = _modbusDriver.GetWordCount(dp.DataType);
@@ -150,201 +166,191 @@ public class ModbusDriverPoller : IProtocolDriver
                 dp.ConsecutiveFailures++;
                 dp.LastUpdated = now;
                 AddDirtyIfNeeded(dp, now, dirtyDps);
+                AddReading(dp, null, "DriverError");
             }
         }
 
-        if (dueMetas.Count == 0) return;
-
-        // Step 2 — group by (ScanIntervalMs, RegisterType) then sort by offset
-        var rateRegGroups = dueMetas
-            .GroupBy(m => (m.Dp.ScanIntervalMs, m.RegType))
-            .ToList();
-
-        foreach (var rateGroup in rateRegGroups)
+        if (dueMetas.Count > 0)
         {
-            var sorted = rateGroup.OrderBy(m => m.Offset).ToList();
+            // Step 2 — group by (ScanIntervalMs, RegisterType) then sort by offset
+            var rateRegGroups = dueMetas
+                .GroupBy(m => (m.Dp.ScanIntervalMs, m.RegType))
+                .ToList();
 
-            // Step 3 — split into perfectly contiguous blocks (gap = 0)
-            var blocks = new List<List<ModbusTagMeta>>();
-            foreach (var meta in sorted)
+            foreach (var rateGroup in rateRegGroups)
             {
-                var lastBlock = blocks.LastOrDefault();
-                var lastMeta  = lastBlock?.LastOrDefault();
+                var sorted = rateGroup.OrderBy(m => m.Offset).ToList();
 
-                if (lastMeta == null || meta.Offset != lastMeta.Offset + lastMeta.WordCount)
+                // Step 3 — split into perfectly contiguous blocks (gap = 0)
+                var blocks = new List<List<ModbusTagMeta>>();
+                foreach (var meta in sorted)
                 {
-                    // Gap detected (or first tag) — start a new block
-                    blocks.Add(new List<ModbusTagMeta> { meta });
-                }
-                else
-                {
-                    // Perfectly adjacent — extend current block
-                    lastBlock!.Add(meta);
-                }
-            }
+                    var lastBlock = blocks.LastOrDefault();
+                    var lastMeta  = lastBlock?.LastOrDefault();
 
-            // Step 4 — execute one read per block
-            foreach (var block in blocks)
-            {
-                int blockStart = block.First().Offset;
-                int blockWords = block.Last().Offset + block.Last().WordCount - blockStart;
-                var regType   = block.First().RegType;
-                string regLabel = regType == ModbusDriver.RegisterType.HoldingRegister ? "HR" : "IR";
-
-                _logger.LogDebug(
-                    "[Modbus Block] {Reg} @{Start}..{End} ({Words} words, {Count} tag(s) merged)",
-                    regLabel, blockStart, blockStart + blockWords - 1, blockWords, block.Count);
-
-                ushort[] buffer;
-                try
-                {
-                    buffer = regType == ModbusDriver.RegisterType.HoldingRegister
-                        ? await _modbusDriver.ReadBlockHoldingAsync(blockStart, blockWords, unitId, ct)
-                        : await _modbusDriver.ReadBlockInputAsync(blockStart, blockWords, unitId, ct);
-                }
-                catch (Exception ex)
-                {
-                    // Block read failed — degrade to individual reads with retries!
-                    _logger.LogWarning(ex,
-                        "[Modbus Block] {Reg} block read failed @{Start} ({Words} words). Degrading to individual tag reads...",
-                        regLabel, blockStart, blockWords);
-
-                    foreach (var meta in block)
+                    if (lastMeta == null || meta.Offset != lastMeta.Offset + lastMeta.WordCount)
                     {
-                        var dp = meta.Dp;
-                        int maxRetries = 3;
-                        double rawVal = 0;
-                        bool readSuccess = false;
-                        string lastOpError = "";
-
-                        for (int attempt = 1; attempt <= maxRetries; attempt++)
-                        {
-                            try
-                            {
-                                rawVal = await _modbusDriver.ReadRegisterAsync(dp.Address, dp.DataType, unitId, dp.ByteOrder, ct);
-                                readSuccess = true;
-                                break;
-                            }
-                            catch (Exception ex2)
-                            {
-                                lastOpError = ex2.Message;
-                                if (attempt < maxRetries)
-                                    await Task.Delay(150, ct);
-                            }
-                        }
-
-                        if (readSuccess)
-                        {
-                            try
-                            {
-                                double processedVal = (rawVal * dp.ScaleFactor) + dp.Offset;
-                                _logger.LogInformation(
-                                    "[Modbus Degraded Success] Tag {Addr} read successfully after degradation. Raw: {Raw} Processed: {Proc}",
-                                    dp.Address, rawVal, processedVal);
-                                dp.LastValue = processedVal.ToString("F2");
-                                dp.LastError = null;
-                                dp.ConsecutiveFailures = 0;
-                                dp.LastUpdated = now;
-
-                                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-                                {
-                                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                                    {
-                                        await _storageService.EnqueueTelemetryAsync(
-                                            dp.DataSourceId, now, dp.Metric, processedVal, "Good");
-                                    }
-                                }
-                            }
-                            catch (Exception ex3)
-                            {
-                                _logger.LogError(ex3, "[Modbus Degraded] Error enqueuing telemetry for tag {Addr}", dp.Address);
-                            }
-                        }
-                        else
-                        {
-                            _logger.LogError(
-                                "[Modbus Degraded Failure] Tag {Addr} failed all {Retries} individual read retries. Last error: {Error}",
-                                dp.Address, maxRetries, lastOpError);
-                            dp.LastError = lastOpError;
-                            dp.ConsecutiveFailures++;
-                            dp.LastUpdated = now;
-
-                            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-                            {
-                                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                                {
-                                    string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
-                                    await _storageService.EnqueueTelemetryAsync(
-                                        dp.DataSourceId, now, dp.Metric, null, quality);
-                                }
-                            }
-                        }
-
-                        AddDirtyIfNeeded(dp, now, dirtyDps);
+                        // Gap detected (or first tag) — start a new block
+                        blocks.Add(new List<ModbusTagMeta> { meta });
                     }
-                    continue;
+                    else
+                    {
+                        // Perfectly adjacent — extend current block
+                        lastBlock!.Add(meta);
+                    }
                 }
 
-                // Step 5 — slice buffer and convert each tag
-                foreach (var meta in block)
+                // Step 4 — execute one read per block
+                foreach (var block in blocks)
                 {
+                    int blockStart = block.First().Offset;
+                    int blockWords = block.Last().Offset + block.Last().WordCount - blockStart;
+                    var regType   = block.First().RegType;
+                    string regLabel = regType == ModbusDriver.RegisterType.HoldingRegister ? "HR" : "IR";
+
+                    _logger.LogDebug(
+                        "[Modbus Block] {Reg} @{Start}..{End} ({Words} words, {Count} tag(s) merged)",
+                        regLabel, blockStart, blockStart + blockWords - 1, blockWords, block.Count);
+
+                    ushort[] buffer;
                     try
                     {
-                        int sliceStart = meta.Offset - blockStart;
-                        var slice = buffer.Skip(sliceStart).Take(meta.WordCount).ToArray();
-
-                        double rawVal      = _modbusDriver.ConvertToDouble(slice, meta.Dp.DataType, meta.Dp.ByteOrder);
-                        double processedVal = (rawVal * meta.Dp.ScaleFactor) + meta.Dp.Offset;
-
-                        _logger.LogDebug(
-                            "[Modbus Block]   └─ {Addr} ({Type}) slice[{S}..{E}] Raw:{Raw} → Processed:{Proc}",
-                            meta.Dp.Address, meta.Dp.DataType,
-                            sliceStart, sliceStart + meta.WordCount - 1,
-                            rawVal, processedVal);
-
-                        meta.Dp.LastValue  = processedVal.ToString("F2");
-                        meta.Dp.LastError  = null;
-                        meta.Dp.ConsecutiveFailures = 0;
-                        meta.Dp.LastUpdated = now;
-
-                        // Enqueue telemetry if this tag is mapped to a data stream
-                        if (!string.IsNullOrEmpty(meta.Dp.DataSourceId) && !string.IsNullOrEmpty(meta.Dp.Metric))
-                        {
-                            if (await _storageService.IsDataSourceEnabledAsync(meta.Dp.DataSourceId))
-                            {
-                                // Pass the block-read `now` so contiguous Modbus tags merge into one row
-                                await _storageService.EnqueueTelemetryAsync(
-                                    meta.Dp.DataSourceId, now, meta.Dp.Metric, processedVal, "Good");
-                                _logger.LogInformation(
-                                    "[Queue Buffer] Enqueued Modbus telemetry | Stream: {Source} Metric: {Metric}",
-                                    meta.Dp.DataSourceId, meta.Dp.Metric);
-                            }
-                        }
+                        buffer = regType == ModbusDriver.RegisterType.HoldingRegister
+                            ? await _modbusDriver.ReadBlockHoldingAsync(blockStart, blockWords, unitId, ct)
+                            : await _modbusDriver.ReadBlockInputAsync(blockStart, blockWords, unitId, ct);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "[Modbus Block] Conversion error for tag {Addr}", meta.Dp.Address);
-                        meta.Dp.LastError  = ex.Message;
-                        meta.Dp.ConsecutiveFailures++;
-                        meta.Dp.LastUpdated = now;
+                        // Block read failed — degrade to individual reads with retries!
+                        _logger.LogWarning(ex,
+                            "[Modbus Block] {Reg} block read failed @{Start} ({Words} words). Degrading to individual tag reads...",
+                            regLabel, blockStart, blockWords);
 
-                        if (!string.IsNullOrEmpty(meta.Dp.DataSourceId) && !string.IsNullOrEmpty(meta.Dp.Metric))
+                        foreach (var meta in block)
                         {
-                            if (await _storageService.IsDataSourceEnabledAsync(meta.Dp.DataSourceId))
+                            var dp = meta.Dp;
+                            int maxRetries = 3;
+                            double rawVal = 0;
+                            bool readSuccess = false;
+                            string lastOpError = "";
+
+                            for (int attempt = 1; attempt <= maxRetries; attempt++)
                             {
-                                await _storageService.EnqueueTelemetryAsync(
-                                    meta.Dp.DataSourceId, now, meta.Dp.Metric, null, "DriverError");
+                                try
+                                {
+                                    rawVal = await _modbusDriver.ReadRegisterAsync(dp.Address, dp.DataType, unitId, dp.ByteOrder, ct);
+                                    readSuccess = true;
+                                    break;
+                                }
+                                catch (Exception ex2)
+                                {
+                                    lastOpError = ex2.Message;
+                                    if (attempt < maxRetries)
+                                        await Task.Delay(150, ct);
+                                }
                             }
+
+                            double? processedVal = null;
+                            string quality = "Good";
+
+                            if (readSuccess)
+                            {
+                                try
+                                {
+                                    double val = (rawVal * dp.ScaleFactor) + dp.Offset;
+                                    _logger.LogInformation(
+                                        "[Modbus Degraded Success] Tag {Addr} read successfully after degradation. Raw: {Raw} Processed: {Proc}",
+                                        dp.Address, rawVal, val);
+                                    dp.LastValue = val.ToString("F2");
+                                    dp.LastError = null;
+                                    dp.ConsecutiveFailures = 0;
+                                    dp.LastUpdated = now;
+                                    processedVal = val;
+                                }
+                                catch (Exception ex3)
+                                {
+                                    _logger.LogError(ex3, "[Modbus Degraded] Error processing telemetry for tag {Addr}", dp.Address);
+                                    dp.LastError = ex3.Message;
+                                    quality = "DriverError";
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogError(
+                                    "[Modbus Degraded Failure] Tag {Addr} failed all {Retries} individual read retries. Last error: {Error}",
+                                    dp.Address, maxRetries, lastOpError);
+                                dp.LastError = lastOpError;
+                                dp.ConsecutiveFailures++;
+                                dp.LastUpdated = now;
+                                quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+                            }
+
+                            AddReading(dp, processedVal, quality);
+                            AddDirtyIfNeeded(dp, now, dirtyDps);
                         }
+                        continue;
                     }
 
-                    AddDirtyIfNeeded(meta.Dp, now, dirtyDps);
+                    // Step 5 — slice buffer and convert each tag
+                    foreach (var meta in block)
+                    {
+                        double? processedVal = null;
+                        string quality = "Good";
+
+                        try
+                        {
+                            int sliceStart = meta.Offset - blockStart;
+                            var slice = buffer.Skip(sliceStart).Take(meta.WordCount).ToArray();
+
+                            double rawVal      = _modbusDriver.ConvertToDouble(slice, meta.Dp.DataType, meta.Dp.ByteOrder);
+                            double val = (rawVal * meta.Dp.ScaleFactor) + meta.Dp.Offset;
+
+                            _logger.LogDebug(
+                                "[Modbus Block]   └─ {Addr} ({Type}) slice[{S}..{E}] Raw:{Raw} → Processed:{Proc}",
+                                meta.Dp.Address, meta.Dp.DataType,
+                                sliceStart, sliceStart + meta.WordCount - 1,
+                                rawVal, val);
+
+                            meta.Dp.LastValue  = val.ToString("F2");
+                            meta.Dp.LastError  = null;
+                            meta.Dp.ConsecutiveFailures = 0;
+                            meta.Dp.LastUpdated = now;
+                            processedVal = val;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "[Modbus Block] Conversion error for tag {Addr}", meta.Dp.Address);
+                            meta.Dp.LastError  = ex.Message;
+                            meta.Dp.ConsecutiveFailures++;
+                            meta.Dp.LastUpdated = now;
+                            quality = "DriverError";
+                        }
+
+                        AddReading(meta.Dp, processedVal, quality);
+                        AddDirtyIfNeeded(meta.Dp, now, dirtyDps);
+                    }
+                }
+            }
+        }
+
+        // Enqueue readings in batch per DataSourceId
+        foreach (var kvp in readingsByDataSource)
+        {
+            var dataSourceId = kvp.Key;
+            var metrics = kvp.Value;
+
+            if (await _storageService.IsDataSourceEnabledAsync(dataSourceId))
+            {
+                await _storageService.EnqueueTelemetryBatchAsync(dataSourceId, now, metrics);
+                foreach (var metricKvp in metrics)
+                {
+                    _logger.LogInformation("[Queue Buffer] Enqueued Modbus telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
                 }
             }
         }
     }
 
-    private async Task PollSingleModbusTagAsync(
+    private async Task<(double? Value, string Quality)> PollSingleModbusTagAsync(
         DataPoint dp, byte unitId, DateTime now,
         List<DataPoint> dirtyDps,
         CancellationToken ct)
@@ -370,27 +376,26 @@ public class ModbusDriverPoller : IProtocolDriver
             }
         }
 
+        double? processedVal = null;
+        string quality = "Good";
+
         if (readSuccess)
         {
             try
             {
-                double processedVal = (rawVal * dp.ScaleFactor) + dp.Offset;
-                _logger.LogDebug("[Modbus] {Addr} Raw:{Raw} → Processed:{Proc}", dp.Address, rawVal, processedVal);
-                dp.LastValue = processedVal.ToString("F2");
+                double val = (rawVal * dp.ScaleFactor) + dp.Offset;
+                _logger.LogDebug("[Modbus] {Addr} Raw:{Raw} → Processed:{Proc}", dp.Address, rawVal, val);
+                dp.LastValue = val.ToString("F2");
                 dp.LastError = null;
                 dp.ConsecutiveFailures = 0;
                 dp.LastUpdated = now;
-
-                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-                {
-                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
-                }
+                processedVal = val;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[Modbus] Error enqueuing telemetry for {Addr}", dp.Address);
+                _logger.LogError(ex, "[Modbus] Error processing telemetry for {Addr}", dp.Address);
                 dp.LastError = ex.Message;
+                quality = "DriverError";
             }
         }
         else
@@ -399,17 +404,10 @@ public class ModbusDriverPoller : IProtocolDriver
             dp.LastError = lastOpError;
             dp.ConsecutiveFailures++;
             dp.LastUpdated = now;
-
-            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-            {
-                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                {
-                    string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
-                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
-                }
-            }
+            quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
         }
         AddDirtyIfNeeded(dp, now, dirtyDps);
+        return (processedVal, quality);
     }
 
     private void AddDirtyIfNeeded(DataPoint dp, DateTime now, List<DataPoint> dirtyDps)

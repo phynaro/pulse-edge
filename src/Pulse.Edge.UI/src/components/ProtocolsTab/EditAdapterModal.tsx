@@ -4,6 +4,7 @@ import type { DriverAdapter } from '../../types';
 import CustomSelect from '../CustomSelect';
 import type { useToast } from '../../hooks/useToast';
 import ModalShell from '../ModalShell';
+import { useConfirm } from '../../hooks/useConfirm';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 
@@ -20,6 +21,7 @@ interface EditAdapterModalProps {
 }
 
 export default function EditAdapterModal({ onClose, adapter, toast, fetchData }: EditAdapterModalProps) {
+  const confirm = useConfirm();
   const config = (() => { try { return JSON.parse(adapter.configJson || '{}'); } catch { return {}; } })();
 
   const [editAdapterName, setEditAdapterName] = useState(adapter.name);
@@ -110,7 +112,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
       const res = await fetch('/api/adapters/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host, port })
+        body: JSON.stringify({ host, port, protocol: editAdapterProtocol })
       });
       if (res.ok) {
         const data = await res.json();
@@ -129,7 +131,13 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
   const saveProtocol = async (id: string) => {
     if (editAdapterProtocol !== 'WEBHOOK' && editAdapterProtocol !== 'SIMULATOR' && editAdapterProtocol !== 'MODBUS_RTU' && editTestStatus !== 'passed') {
       const reason = editTestStatus === 'failed' ? `\nReason: ${editTestMessage}` : '\nNo connection test was run.';
-      if (!window.confirm(`Warning: The connection test to ${editAdapterHost}:${editAdapterPort} did not pass.${reason}\n\nAre you sure you want to save this configuration anyway?`)) return;
+      const confirmed = await confirm({
+        title: 'Connection Test Warning',
+        message: `Warning: The connection test to ${editAdapterHost}:${editAdapterPort} did not pass.${reason}\n\nAre you sure you want to save this configuration anyway?`,
+        confirmText: 'Save Anyway',
+        variant: 'warning'
+      });
+      if (!confirmed) return;
     }
     try {
       let configJson = '{}';

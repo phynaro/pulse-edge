@@ -26,5 +26,6 @@ public class DataPoint
     public string? LastValue { get; set; }
     public string? LastError { get; set; }
     public DateTime? LastUpdated { get; set; }
+    public double? LastLatencyMs { get; set; }
     public int ConsecutiveFailures { get; set; } = 0;
 }

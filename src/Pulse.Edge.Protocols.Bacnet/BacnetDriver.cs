@@ -231,8 +231,13 @@ public class BacnetDriver : IDisposable
                 success = client.ReadPropertyRequest(targetAddress, deviceObjectId, BacnetPropertyIds.PROP_OBJECT_LIST, out objectList);
             }, cancellationToken);
 
+            if (!success)
+            {
+                throw new InvalidOperationException("Failed to read PROP_OBJECT_LIST property from BACnet device.");
+            }
+
             var tags = new List<DiscoveredTag>();
-            if (success && objectList != null)
+            if (objectList != null)
             {
                 foreach (var value in objectList)
                 {
@@ -252,17 +257,12 @@ public class BacnetDriver : IDisposable
                 }
             }
 
-            if (tags.Count == 0)
-            {
-                tags.AddRange(GetMockDiscoveredTags());
-            }
-
             return tags;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "BACnet Driver: Failed to query object list from device. Falling back to default list.");
-            return GetMockDiscoveredTags();
+            _logger.LogError(ex, "BACnet Driver: Failed to query object list from device.");
+            throw;
         }
     }
 
@@ -277,23 +277,6 @@ public class BacnetDriver : IDisposable
             default:
                 return "Float";
         }
-    }
-
-    private List<DiscoveredTag> GetMockDiscoveredTags()
-    {
-        return new List<DiscoveredTag>
-        {
-            new() { Name = "AnalogInput:0", DataType = "Float", TypeHex = "0x00" },
-            new() { Name = "AnalogInput:1", DataType = "Float", TypeHex = "0x00" },
-            new() { Name = "AnalogOutput:0", DataType = "Float", TypeHex = "0x01" },
-            new() { Name = "AnalogValue:0", DataType = "Float", TypeHex = "0x02" },
-            new() { Name = "BinaryInput:0", DataType = "Boolean", TypeHex = "0x03" },
-            new() { Name = "BinaryInput:1", DataType = "Boolean", TypeHex = "0x03" },
-            new() { Name = "BinaryOutput:0", DataType = "Boolean", TypeHex = "0x04" },
-            new() { Name = "BinaryValue:0", DataType = "Boolean", TypeHex = "0x05" },
-            new() { Name = "MultiStateInput:0", DataType = "Int16", TypeHex = "0x0D" },
-            new() { Name = "MultiStateValue:0", DataType = "Int16", TypeHex = "0x13" }
-        };
     }
 
     public void Dispose()

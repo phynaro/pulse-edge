@@ -252,6 +252,7 @@ public class QueueStorageService
                     LastValue TEXT NULL,
                     LastError TEXT NULL,
                     LastUpdated TEXT NULL,
+                    LastLatencyMs REAL NULL,
                     ConsecutiveFailures INTEGER NOT NULL DEFAULT 0
                 );
             ");
@@ -300,6 +301,11 @@ public class QueueStorageService
         try
         {
             await db.Database.ExecuteSqlRawAsync("ALTER TABLE DataPoints ADD COLUMN LastUpdated TEXT NULL;");
+        }
+        catch {}
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE DataPoints ADD COLUMN LastLatencyMs REAL NULL;");
         }
         catch {}
         // Add diagnostic columns to existing DataPoints table if missing
@@ -530,6 +536,122 @@ public class QueueStorageService
         ");
 
         // Enforce buffer limits after every write
+        await EnforceBufferCapAsync(db);
+    }
+
+    /// <summary>
+    /// Enqueues a batch of metric readings for a single DataSourceId under the same timestamp
+    /// into the merged-metrics telemetry buffer with their quality statuses.
+    /// This prevents interleaving sync tasks from locking out partially enqueued metrics.
+    /// </summary>
+    public async Task EnqueueTelemetryBatchAsync(string dataSourceId, DateTime timestamp, Dictionary<string, (double? Value, string Quality)> metrics)
+    {
+        if (metrics == null || metrics.Count == 0) return;
+
+        using var db = new QueueDbContext();
+
+        // Truncate to millisecond precision — stable, consistent UNIQUE key
+        var ts = new DateTime(
+            timestamp.Year, timestamp.Month, timestamp.Day,
+            timestamp.Hour, timestamp.Minute, timestamp.Second,
+            timestamp.Millisecond, DateTimeKind.Utc);
+
+        // Build initial JSONs for a brand-new row
+        var initialMetricsDict = new Dictionary<string, double>();
+        var initialQualitiesDict = new Dictionary<string, string>();
+        foreach (var kvp in metrics)
+        {
+            if (kvp.Value.Value.HasValue)
+            {
+                initialMetricsDict[kvp.Key] = kvp.Value.Value.Value;
+            }
+            initialQualitiesDict[kvp.Key] = kvp.Value.Quality;
+        }
+
+        var initialMetrics = JsonSerializer.Serialize(initialMetricsDict);
+        var initialQualities = JsonSerializer.Serialize(initialQualitiesDict);
+
+        // Step 1: Insert a new row only if no row exists for this (stream, tick).
+        //         INSERT OR IGNORE silently skips if the UNIQUE constraint fires.
+        await db.Database.ExecuteSqlInterpolatedAsync($@"
+            INSERT OR IGNORE INTO QueueTelemetry (DataSourceId, Timestamp, MetricsJson, QualitiesJson, RetryCount, IsSending)
+            VALUES ({dataSourceId}, {ts}, {initialMetrics}, {initialQualities}, 0, 0)
+        ");
+
+        // Step 2 & 3: Merge the metrics and qualities into the existing row (in case it already existed and wasn't inserted).
+        var setParams = new List<object>();
+        var removeParams = new List<object>();
+        var qualityParams = new List<object>();
+
+        foreach (var kvp in metrics)
+        {
+            var jsonPath = "$." + kvp.Key;
+            if (kvp.Value.Value.HasValue)
+            {
+                setParams.Add(jsonPath);
+                setParams.Add(kvp.Value.Value.Value);
+            }
+            else
+            {
+                removeParams.Add(jsonPath);
+            }
+
+            qualityParams.Add(jsonPath);
+            qualityParams.Add(kvp.Value.Quality);
+        }
+
+        // Apply json_set for values
+        if (setParams.Count > 0)
+        {
+            var args = new List<object> { dataSourceId, ts };
+            var placeholders = new List<string>();
+            for (int i = 0; i < setParams.Count; i++)
+            {
+                placeholders.Add($"{{{args.Count}}}");
+                args.Add(setParams[i]);
+            }
+            string query = $@"
+                UPDATE QueueTelemetry
+                SET MetricsJson = json_set(MetricsJson, {string.Join(", ", placeholders)})
+                WHERE DataSourceId = {{0}} AND Timestamp = {{1}} AND IsSending = 0";
+            await db.Database.ExecuteSqlRawAsync(query, args.ToArray());
+        }
+
+        // Apply json_remove for null values
+        if (removeParams.Count > 0)
+        {
+            var args = new List<object> { dataSourceId, ts };
+            var placeholders = new List<string>();
+            for (int i = 0; i < removeParams.Count; i++)
+            {
+                placeholders.Add($"{{{args.Count}}}");
+                args.Add(removeParams[i]);
+            }
+            string query = $@"
+                UPDATE QueueTelemetry
+                SET MetricsJson = json_remove(MetricsJson, {string.Join(", ", placeholders)})
+                WHERE DataSourceId = {{0}} AND Timestamp = {{1}} AND IsSending = 0";
+            await db.Database.ExecuteSqlRawAsync(query, args.ToArray());
+        }
+
+        // Apply json_set for qualities
+        if (qualityParams.Count > 0)
+        {
+            var args = new List<object> { dataSourceId, ts };
+            var placeholders = new List<string>();
+            for (int i = 0; i < qualityParams.Count; i++)
+            {
+                placeholders.Add($"{{{args.Count}}}");
+                args.Add(qualityParams[i]);
+            }
+            string query = $@"
+                UPDATE QueueTelemetry
+                SET QualitiesJson = json_set(QualitiesJson, {string.Join(", ", placeholders)})
+                WHERE DataSourceId = {{0}} AND Timestamp = {{1}} AND IsSending = 0";
+            await db.Database.ExecuteSqlRawAsync(query, args.ToArray());
+        }
+
+        // Enforce buffer limits
         await EnforceBufferCapAsync(db);
     }
 

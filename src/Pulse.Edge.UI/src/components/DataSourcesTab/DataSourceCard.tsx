@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Trash2, CheckCircle2, AlertCircle, Plus, Pencil, Check, X } from 'lucide-react';
 import type { DataSource, DataPoint, DriverAdapter, StreamTemplate } from '../../types';
 import { DynamicIcon, formatLiveValue } from './utils';
+import { useConfirm } from '../../hooks/useConfirm';
 
 interface DataSourceCardProps {
   ds: DataSource;
@@ -48,6 +49,7 @@ export default function DataSourceCard({
   onDragEnter,
   onDragEnd
 }: DataSourceCardProps) {
+  const confirm = useConfirm();
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(ds.name);
 
@@ -234,9 +236,15 @@ export default function DataSourceCard({
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      if (window.confirm(`Are you sure you want to delete stream '${ds.name}' (${ds.id})? All associated physical tags will be unbound.`)) {
+                      const confirmed = await confirm({
+                        title: 'Delete Data Stream',
+                        message: `Are you sure you want to delete stream '${ds.name}' (${ds.id})? All associated physical tags will be unbound.`,
+                        confirmText: 'Delete Stream',
+                        variant: 'danger'
+                      });
+                      if (confirmed) {
                         handleDeleteStream(ds.id);
                       }
                     }}
@@ -258,7 +266,20 @@ export default function DataSourceCard({
               <input
                 type="checkbox"
                 checked={ds.isEnabled}
-                onChange={() => handleToggleStreamEnabled(ds)}
+                onChange={async () => {
+                  const action = ds.isEnabled ? 'Pause' : 'Resume';
+                  const confirmed = await confirm({
+                    title: `${action} Telemetry Stream?`,
+                    message: ds.isEnabled
+                      ? `Are you sure you want to pause the telemetry stream '${ds.name}'? Ingestion and buffering of metrics for this stream will stop.`
+                      : `Are you sure you want to resume the telemetry stream '${ds.name}'? Ingestion and buffering of metrics will start immediately.`,
+                    confirmText: `${action} Stream`,
+                    variant: ds.isEnabled ? 'warning' : 'primary'
+                  });
+                  if (confirmed) {
+                    void handleToggleStreamEnabled(ds);
+                  }
+                }}
               />
             </label>
           </div>

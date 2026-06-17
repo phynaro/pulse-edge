@@ -86,6 +86,42 @@ public static class AdapterEndpoints
                 }
             }
 
+            if (request.Protocol?.Equals("BACnet", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                try
+                {
+                    bool receivedIAm = false;
+                    using var transport = new System.IO.BACnet.BacnetIpUdpProtocolTransport(0, false);
+                    using var client = new System.IO.BACnet.BacnetClient(transport);
+                    client.Start();
+                    client.OnIam += (sender, adr, deviceId, maxApdu, segmentation, vendorId) =>
+                    {
+                        receivedIAm = true;
+                    };
+
+                    var targetAddress = new System.IO.BACnet.BacnetAddress(System.IO.BACnet.BacnetAddressTypes.IP, $"{targetHost}:{targetPort}");
+                    client.WhoIs(-1, -1, receiver: targetAddress, source: null);
+
+                    for (int i = 0; i < 20 && !receivedIAm; i++)
+                    {
+                        await Task.Delay(100);
+                    }
+
+                    if (receivedIAm)
+                    {
+                        return Results.Ok(new { success = true, message = $"Successfully connected to BACnet device at {targetHost}:{targetPort}." });
+                    }
+                    else
+                    {
+                        return Results.Ok(new { success = false, message = $"BACnet discovery query (Who-Is) timed out after 2000ms attempting to reach {targetHost}:{targetPort}. Make sure the simulation server is running and configured correctly." });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return Results.Ok(new { success = false, message = $"BACnet UDP error: {ex.Message}. Verify connection parameters." });
+                }
+            }
+
             try
             {
                 using var client = new TcpClient();
@@ -565,10 +601,7 @@ public static class AdapterEndpoints
                     catch (Exception) { }
                 }
 
-                if (!libPlcTagDriver.IsConnected)
-                {
-                    libPlcTagDriver.Connect(adapter.Host, plcType, protocol, path, timeoutMs);
-                }
+                libPlcTagDriver.Connect(adapter.Host, plcType, protocol, path, timeoutMs);
 
                 var tags = await libPlcTagDriver.BrowseTagsAsync(cancellationToken);
                 return Results.Ok(new { success = true, tags });
@@ -620,10 +653,7 @@ public static class AdapterEndpoints
                     catch (Exception) { }
                 }
 
-                if (!libPlcTagDriver.IsConnected)
-                {
-                    libPlcTagDriver.Connect(adapter.Host, plcType, protocol, path, timeoutMs);
-                }
+                libPlcTagDriver.Connect(adapter.Host, plcType, protocol, path, timeoutMs);
 
                 var members = await libPlcTagDriver.GetStructureTemplateAsync(request.TemplateId, cancellationToken);
                 return Results.Ok(new { success = true, members });
@@ -680,10 +710,7 @@ public static class AdapterEndpoints
                     catch (Exception) { }
                 }
 
-                if (!libPlcTagDriver.IsConnected)
-                {
-                    libPlcTagDriver.Connect(adapter.Host, plcType, protocol, path, timeoutMs);
-                }
+                libPlcTagDriver.Connect(adapter.Host, plcType, protocol, path, timeoutMs);
 
                 var tags = await libPlcTagDriver.BrowseProgramTagsAsync(request.ProgramName, cancellationToken);
                 return Results.Ok(new { success = true, tags });
@@ -735,10 +762,7 @@ public static class AdapterEndpoints
                     catch (Exception) { }
                 }
 
-                if (!s7NetDriver.IsConnected)
-                {
-                    await s7NetDriver.ConnectAsync(adapter.Host, cpuType, rack, slot, timeoutMs, cancellationToken);
-                }
+                await s7NetDriver.ConnectAsync(adapter.Host, cpuType, rack, slot, timeoutMs, cancellationToken);
 
                 var tags = await s7NetDriver.BrowseTagsAsync(cancellationToken);
                 return Results.Ok(new { success = true, tags });
@@ -780,10 +804,7 @@ public static class AdapterEndpoints
                     catch (Exception) { }
                 }
 
-                if (!bacnetDriver.IsConnected)
-                {
-                    await bacnetDriver.ConnectAsync(adapter.Host, deviceId, port, cancellationToken);
-                }
+                await bacnetDriver.ConnectAsync(adapter.Host, deviceId, port, cancellationToken);
 
                 var tags = await bacnetDriver.BrowseTagsAsync(cancellationToken);
                 return Results.Ok(new { success = true, tags });
@@ -1132,7 +1153,7 @@ public static class AdapterEndpoints
 }
 
 // Request and Response Records local to AdapterEndpoints
-public record TestConnectionRequest(string Host, int Port);
+public record TestConnectionRequest(string Host, int Port, string? Protocol = null);
 public record DiscoverEndpointsRequest(string DiscoveryUrl);
 public record DiscoverHostsRequest(int Port);
 public record BrowseNodesRequest(string AdapterId, string? NodeId);

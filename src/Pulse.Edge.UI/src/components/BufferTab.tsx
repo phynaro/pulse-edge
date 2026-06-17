@@ -10,10 +10,24 @@ const formatToLocalTime = (dateStr: string | null | undefined) => {
   return new Date(utcStr).toLocaleString();
 };
 
-function parseMetrics(metricsJson: string): [string, number][] {
+interface MetricWithQuality {
+  name: string;
+  value: number | null;
+  quality: string;
+}
+
+function parseMetricsAndQualities(metricsJson: string, qualitiesJson?: string): MetricWithQuality[] {
   try {
-    const obj = JSON.parse(metricsJson) as Record<string, number>;
-    return Object.entries(obj).sort(([a], [b]) => a.localeCompare(b));
+    const metrics = JSON.parse(metricsJson || '{}') as Record<string, number | null>;
+    const qualities = JSON.parse(qualitiesJson || '{}') as Record<string, string>;
+    
+    const allKeys = Array.from(new Set([...Object.keys(metrics), ...Object.keys(qualities)])).sort();
+    
+    return allKeys.map(name => ({
+      name,
+      value: metrics[name] !== undefined ? metrics[name] : null,
+      quality: qualities[name] || 'Good'
+    }));
   } catch {
     return [];
   }
@@ -73,23 +87,33 @@ export default function BufferTab({ bufferTelemetry, bufferEvents }: BufferTabPr
               </thead>
               <tbody>
                 {bufferTelemetry.map((item) => {
-                  const metrics = parseMetrics(item.metricsJson);
+                  const combinedMetrics = parseMetricsAndQualities(item.metricsJson, item.qualitiesJson);
                   return (
                     <tr key={item.id}>
                       <td className="cell-mono-secondary">#{item.id}</td>
                       <td><span className="stream-badge">{item.dataSourceId}</span></td>
                       <td className="cell-mono-nowrap">{formatToLocalTime(item.timestamp)}</td>
                       <td>
-                        {metrics.length === 0 ? (
+                        {combinedMetrics.length === 0 ? (
                           <span className="metric-empty">{item.metricsJson}</span>
                         ) : (
                           <div className="metric-chip-list">
-                            {metrics.map(([name, val]) => (
-                              <span key={name} title={`${name} = ${val}`} className="metric-chip">
-                                <span className="metric-chip-name">{name}</span>
-                                <span className="metric-chip-value">{fmtVal(val)}</span>
-                              </span>
-                            ))}
+                            {combinedMetrics.map(({ name, value, quality }) => {
+                              const isGood = quality === 'Good';
+                              const qualityClass = isGood ? 'is-good' : quality.toLowerCase().includes('timeout') ? 'is-timeout' : 'is-error';
+                              const displayVal = value !== null ? fmtVal(value) : quality;
+                              
+                              return (
+                                <span 
+                                  key={name} 
+                                  title={`${name} = ${value !== null ? value : 'N/A'} (Quality: ${quality})`} 
+                                  className={`metric-chip ${qualityClass}`}
+                                >
+                                  <span className="metric-chip-name">{name}</span>
+                                  <span className="metric-chip-value">{displayVal}</span>
+                                </span>
+                              );
+                            })}
                           </div>
                         )}
                       </td>

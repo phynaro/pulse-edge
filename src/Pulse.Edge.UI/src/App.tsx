@@ -27,6 +27,7 @@ import OnboardingWizard from './components/OnboardingWizard';
 import OnboardingTourBanner from './components/OnboardingTourBanner';
 
 import { EdgeProvider, useEdge } from './context/EdgeContext';
+import { ConfirmProvider } from './context/ConfirmProvider';
 import { useDashboardData } from './hooks/useDashboardData';
 import { useBufferStatus } from './hooks/useBufferStatus';
 import { useAdaptersList } from './hooks/useAdaptersList';
@@ -560,7 +561,9 @@ function EdgeInner() {
 export default function App() {
   return (
     <EdgeProvider>
-      <EdgeInner />
+      <ConfirmProvider>
+        <EdgeInner />
+      </ConfirmProvider>
     </EdgeProvider>
   );
 }

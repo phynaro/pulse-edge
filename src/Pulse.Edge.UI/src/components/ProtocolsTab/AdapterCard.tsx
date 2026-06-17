@@ -3,6 +3,7 @@ import React from 'react';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import type { DriverAdapter, MqttDevice } from '../../types';
 import type { useToast } from '../../hooks/useToast';
+import { useConfirm } from '../../hooks/useConfirm';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 
@@ -43,6 +44,7 @@ export default function AdapterCard({
   onDrop,
   onDragEnd
 }: AdapterCardProps) {
+  const confirm = useConfirm();
 
 
   const adapterMqttDevices = mqttDevices.filter(d => d.adapterId === adapter.id);
@@ -50,7 +52,13 @@ export default function AdapterCard({
   try { config = JSON.parse(adapter.configJson || '{}'); } catch {}
 
   const handleDeleteMqttDevice = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this MQTT Device? Any associated metrics will be unlinked.')) {
+    const confirmed = await confirm({
+      title: 'Delete MQTT Device',
+      message: 'Are you sure you want to delete this MQTT Device? Any associated metrics will be unlinked.',
+      confirmText: 'Delete Device',
+      variant: 'danger'
+    });
+    if (!confirmed) {
       return;
     }
 

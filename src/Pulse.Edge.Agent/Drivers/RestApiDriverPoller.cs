@@ -82,6 +82,9 @@ public class RestApiDriverPoller : IProtocolDriver
             return;
         }
 
+        // Group readings by DataSourceId to batch enqueue them at the end
+        var readingsByDataSource = new Dictionary<string, Dictionary<string, (double? Value, string Quality)>>();
+
         try
         {
             // Fetch the payload once for the group (since they all query the same REST endpoint)
@@ -94,6 +97,9 @@ public class RestApiDriverPoller : IProtocolDriver
 
             foreach (var dp in group)
             {
+                double? processedVal = null;
+                string quality = "Good";
+
                 try
                 {
                     string? jsonPath = !string.IsNullOrEmpty(dp.MqttJsonPath) ? dp.MqttJsonPath : dp.Address;
@@ -104,114 +110,75 @@ public class RestApiDriverPoller : IProtocolDriver
                         dp.LastError = $"JSON path '{jsonPath}' not found";
                         dp.ConsecutiveFailures++;
                         dp.LastUpdated = now;
-                        AddDirtyIfNeeded(dp, now, dirtyDps);
-                        
-                        if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-                        {
-                            if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                            {
-                                await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, "DriverError");
-                            }
-                        }
-                        continue;
-                    }
-
-                    // Process value
-                    bool isOfflineSignal = false;
-                    var trimmed = extractedValue.Trim();
-                    if (string.Equals(trimmed, "null", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(trimmed, "offline", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(trimmed, "timeout", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(trimmed, "none", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(trimmed, "", StringComparison.OrdinalIgnoreCase))
-                    {
-                        isOfflineSignal = true;
-                    }
-
-                    if (isOfflineSignal)
-                    {
-                        dp.LastError = "Device reported offline / timeout via REST API payload";
-                        dp.ConsecutiveFailures++;
-                        dp.LastUpdated = now;
-                        AddDirtyIfNeeded(dp, now, dirtyDps);
-
-                        if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-                        {
-                            if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                            {
-                                string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
-                                await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
-                            }
-                        }
-                        continue;
-                    }
-
-                    bool isString = string.Equals(dp.DataType, "String", StringComparison.OrdinalIgnoreCase);
-
-                    if (isString)
-                    {
-                        dp.LastValue = extractedValue;
-                        dp.LastError = null;
-                        dp.ConsecutiveFailures = 0;
-                        dp.LastUpdated = now;
-
-                        if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-                        {
-                            if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                            {
-                                await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, "Good");
-                                _logger.LogInformation("[Queue Buffer] Enqueued REST API string telemetry | Stream: {Source} Metric: {Metric} Val: {Val}", dp.DataSourceId, dp.Metric, extractedValue);
-                            }
-                        }
+                        quality = "DriverError";
                     }
                     else
                     {
-                        double val;
-                        bool parseSuccess = false;
-                        if (double.TryParse(extractedValue, out val))
+                        // Process value
+                        bool isOfflineSignal = false;
+                        var trimmed = extractedValue.Trim();
+                        if (string.Equals(trimmed, "null", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(trimmed, "offline", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(trimmed, "timeout", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(trimmed, "none", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(trimmed, "", StringComparison.OrdinalIgnoreCase))
                         {
-                            parseSuccess = true;
-                        }
-                        else if (bool.TryParse(extractedValue, out bool boolVal))
-                        {
-                            val = boolVal ? 1.0 : 0.0;
-                            parseSuccess = true;
+                            isOfflineSignal = true;
                         }
 
-                        if (parseSuccess)
+                        if (isOfflineSignal)
                         {
-                            double processedVal = (val * dp.ScaleFactor) + dp.Offset;
-                            dp.LastValue = processedVal.ToString("F2");
-                            dp.LastError = null;
-                            dp.ConsecutiveFailures = 0;
+                            dp.LastError = "Device reported offline / timeout via REST API payload";
+                            dp.ConsecutiveFailures++;
                             dp.LastUpdated = now;
-
-                            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-                            {
-                                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                                {
-                                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
-                                    _logger.LogInformation("[Queue Buffer] Enqueued REST API telemetry | Stream: {Source} Metric: {Metric} Val: {Val}", dp.DataSourceId, dp.Metric, processedVal);
-                                }
-                            }
+                            quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
                         }
                         else
                         {
-                            dp.LastError = $"Failed to parse extracted value '{extractedValue}' as double or boolean";
-                            dp.ConsecutiveFailures++;
-                            dp.LastUpdated = now;
+                            bool isString = string.Equals(dp.DataType, "String", StringComparison.OrdinalIgnoreCase);
 
-                            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                            if (isString)
                             {
-                                if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                                dp.LastValue = extractedValue;
+                                dp.LastError = null;
+                                dp.ConsecutiveFailures = 0;
+                                dp.LastUpdated = now;
+                                // For string metrics, the database stores null value but Quality="Good", while the text goes to LastValue
+                                processedVal = null;
+                            }
+                            else
+                            {
+                                double val;
+                                bool parseSuccess = false;
+                                if (double.TryParse(extractedValue, out val))
                                 {
-                                    await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, "DriverError");
+                                    parseSuccess = true;
+                                }
+                                else if (bool.TryParse(extractedValue, out bool boolVal))
+                                {
+                                    val = boolVal ? 1.0 : 0.0;
+                                    parseSuccess = true;
+                                }
+
+                                if (parseSuccess)
+                                {
+                                    double pVal = (val * dp.ScaleFactor) + dp.Offset;
+                                    dp.LastValue = pVal.ToString("F2");
+                                    dp.LastError = null;
+                                    dp.ConsecutiveFailures = 0;
+                                    dp.LastUpdated = now;
+                                    processedVal = pVal;
+                                }
+                                else
+                                {
+                                    dp.LastError = $"Failed to parse extracted value '{extractedValue}' as double or boolean";
+                                    dp.ConsecutiveFailures++;
+                                    dp.LastUpdated = now;
+                                    quality = "DriverError";
                                 }
                             }
                         }
                     }
-
-                    AddDirtyIfNeeded(dp, now, dirtyDps);
                 }
                 catch (Exception ex)
                 {
@@ -219,15 +186,19 @@ public class RestApiDriverPoller : IProtocolDriver
                     dp.LastError = ex.Message;
                     dp.ConsecutiveFailures++;
                     dp.LastUpdated = now;
-                    AddDirtyIfNeeded(dp, now, dirtyDps);
+                    quality = "DriverError";
+                }
 
-                    if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                AddDirtyIfNeeded(dp, now, dirtyDps);
+
+                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+                {
+                    if (!readingsByDataSource.TryGetValue(dp.DataSourceId, out var dict))
                     {
-                        if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                        {
-                            await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, "DriverError");
-                        }
+                        dict = new Dictionary<string, (double? Value, string Quality)>();
+                        readingsByDataSource[dp.DataSourceId] = dict;
                     }
+                    dict[dp.Metric] = (processedVal, quality);
                 }
             }
         }
@@ -243,10 +214,28 @@ public class RestApiDriverPoller : IProtocolDriver
 
                 if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
                 {
-                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
+                    if (!readingsByDataSource.TryGetValue(dp.DataSourceId, out var dict))
                     {
-                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, "DriverError");
+                        dict = new Dictionary<string, (double? Value, string Quality)>();
+                        readingsByDataSource[dp.DataSourceId] = dict;
                     }
+                    dict[dp.Metric] = (null, "DriverError");
+                }
+            }
+        }
+
+        // Enqueue readings in batch per DataSourceId
+        foreach (var kvp in readingsByDataSource)
+        {
+            var dataSourceId = kvp.Key;
+            var metrics = kvp.Value;
+
+            if (await _storageService.IsDataSourceEnabledAsync(dataSourceId))
+            {
+                await _storageService.EnqueueTelemetryBatchAsync(dataSourceId, now, metrics);
+                foreach (var metricKvp in metrics)
+                {
+                    _logger.LogInformation("[Queue Buffer] Enqueued REST API telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
                 }
             }
         }

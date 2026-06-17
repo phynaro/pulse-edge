@@ -4,9 +4,13 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Pulse.Edge.Storage;
 using Pulse.Edge.Storage.Models;
+using Pulse.Edge.Agent.Drivers;
+using Pulse.Edge.Agent.Services;
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Pulse.Edge.Api.Endpoints;
 
@@ -185,6 +189,151 @@ public static class DataPointEndpoints
             db.MqttDevices.Remove(existing);
             await db.SaveChangesAsync();
             return Results.Ok(new { success = true });
+        });
+
+        // POST /api/datapoints/poll/{id} - Force-polls a tag directly from its driver for diagnostics
+        routes.MapPost("/api/datapoints/poll/{id}", async (string id, IServiceProvider serviceProvider) =>
+        {
+            var pollerRegistry = serviceProvider.GetService<DriverPollerRegistry>();
+            var configMonitor = serviceProvider.GetService<EdgeConfigMonitor>();
+
+            using var db = new QueueDbContext();
+            var dp = await db.DataPoints.FirstOrDefaultAsync(x => x.Id == id);
+            if (dp == null) return Results.NotFound("DataPoint not found.");
+
+            if (pollerRegistry == null || configMonitor == null)
+            {
+                // Multi-process mode: trigger a poll by setting LastUpdated = null in the DB
+                var originalUpdated = dp.LastUpdated;
+                dp.LastUpdated = null;
+                dp.LastValue = null;
+                db.DataPoints.Update(dp);
+                await db.SaveChangesAsync();
+
+                // Wait for the background agent to poll the tag (up to 4 seconds)
+                var waitStart = DateTime.UtcNow;
+                DataPoint? updatedDp = null;
+                while ((DateTime.UtcNow - waitStart).TotalSeconds < 4.0)
+                {
+                    await Task.Delay(150);
+                    using var tempDb = new QueueDbContext();
+                    updatedDp = await tempDb.DataPoints.FirstOrDefaultAsync(x => x.Id == id);
+                    if (updatedDp != null && updatedDp.LastUpdated != null && updatedDp.LastUpdated != originalUpdated)
+                    {
+                        break;
+                    }
+                }
+
+                if (updatedDp != null && updatedDp.LastUpdated != null)
+                {
+                    var latency = updatedDp.LastLatencyMs ?? (updatedDp.LastUpdated.Value - waitStart).TotalMilliseconds;
+                    if (latency < 0) latency = 0;
+                    return Results.Ok(new
+                    {
+                        success = string.IsNullOrEmpty(updatedDp.LastError),
+                        value = updatedDp.LastValue,
+                        error = updatedDp.LastError,
+                        latencyMs = Math.Round(latency, 1),
+                        lastUpdated = updatedDp.LastUpdated,
+                        consecutiveFailures = updatedDp.ConsecutiveFailures,
+                        isCached = false
+                    });
+                }
+
+                return Results.Ok(new
+                {
+                    success = string.IsNullOrEmpty(dp.LastError),
+                    value = dp.LastValue,
+                    error = dp.LastError,
+                    latencyMs = 0.0,
+                    lastUpdated = dp.LastUpdated,
+                    consecutiveFailures = dp.ConsecutiveFailures,
+                    isCached = true
+                });
+            }
+
+            var adapter = configMonitor.CurrentAdapters.FirstOrDefault(a => a.Id == dp.AdapterId);
+            if (adapter == null) return Results.BadRequest("Adapter not found or is disabled.");
+
+            var poller = pollerRegistry.GetPoller(adapter.Protocol);
+            if (poller == null) return Results.BadRequest("Poller driver not found.");
+
+            if (!poller.IsConnected)
+            {
+                return Results.Json(new { success = false, error = "Driver is disconnected or offline." }, statusCode: 503);
+            }
+
+            // Create a temporary clone with LastUpdated = null to bypass driver scan rate check
+            var testDp = new DataPoint
+            {
+                Id = dp.Id,
+                AdapterId = dp.AdapterId,
+                DataSourceId = dp.DataSourceId,
+                Metric = dp.Metric,
+                Address = dp.Address,
+                DataType = dp.DataType,
+                ScanIntervalMs = dp.ScanIntervalMs,
+                ScaleFactor = dp.ScaleFactor,
+                Offset = dp.Offset,
+                IsEnabled = dp.IsEnabled,
+                ByteOrder = dp.ByteOrder,
+                Description = dp.Description,
+                MqttDeviceId = dp.MqttDeviceId,
+                MqttParseMode = dp.MqttParseMode,
+                MqttJsonPath = dp.MqttJsonPath,
+                LastValue = dp.LastValue,
+                LastError = dp.LastError,
+                LastUpdated = null, // Set null to force bypass filter check
+                ConsecutiveFailures = dp.ConsecutiveFailures
+            };
+
+            var startTime = DateTime.UtcNow;
+            var list = new System.Collections.Generic.List<DataPoint> { testDp };
+            var dirtyDps = new System.Collections.Generic.List<DataPoint>();
+            
+            try
+            {
+                await poller.PollGroupAsync(list, adapter, DateTime.UtcNow, dirtyDps, CancellationToken.None);
+                var elapsed = (DateTime.UtcNow - startTime).TotalMilliseconds;
+
+                var resultDp = dirtyDps.FirstOrDefault() ?? testDp;
+
+                // Persist the updated values immediately
+                var dbEntry = await db.DataPoints.FirstOrDefaultAsync(x => x.Id == dp.Id);
+                if (dbEntry != null)
+                {
+                    dbEntry.LastValue = resultDp.LastValue;
+                    dbEntry.LastError = resultDp.LastError;
+                    dbEntry.LastUpdated = resultDp.LastUpdated ?? DateTime.UtcNow;
+                    dbEntry.LastLatencyMs = elapsed;
+                    dbEntry.ConsecutiveFailures = resultDp.ConsecutiveFailures;
+                    db.DataPoints.Update(dbEntry);
+                    await db.SaveChangesAsync();
+                }
+                
+                return Results.Ok(new
+                {
+                    success = string.IsNullOrEmpty(resultDp.LastError),
+                    value = resultDp.LastValue,
+                    error = resultDp.LastError,
+                    latencyMs = Math.Round(elapsed, 1),
+                    lastUpdated = resultDp.LastUpdated,
+                    consecutiveFailures = resultDp.ConsecutiveFailures,
+                    isCached = false
+                });
+            }
+            catch (Exception ex)
+            {
+                return Results.Ok(new
+                {
+                    success = false,
+                    value = (string?)null,
+                    error = ex.Message,
+                    latencyMs = Math.Round((DateTime.UtcNow - startTime).TotalMilliseconds, 1),
+                    lastUpdated = DateTime.UtcNow,
+                    isCached = false
+                });
+            }
         });
     }
 }

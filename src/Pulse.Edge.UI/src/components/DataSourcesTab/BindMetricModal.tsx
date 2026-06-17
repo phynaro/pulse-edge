@@ -45,7 +45,15 @@ export default function BindMetricModal({
   onClose
 }: BindMetricModalProps) {
   const [step, setStep] = useState(1);
-  const [selectedTagIds, setSelectedTagIds] = useState<Record<string, boolean>>({});
+  const [selectedTagIds, setSelectedTagIds] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    datapoints.forEach(dp => {
+      if (dp.dataSourceId === dataSourceId) {
+        initial[dp.id] = true;
+      }
+    });
+    return initial;
+  });
   const [tagSearchQuery, setTagSearchQuery] = useState('');
   const [tagAdapterFilter, setTagAdapterFilter] = useState('All');
   const [tagMappingFilter, setTagMappingFilter] = useState('Free');
@@ -131,9 +139,10 @@ export default function BindMetricModal({
       const dp = datapoints.find(x => x.id === tagId);
       const address = dp?.address || '';
 
-      // Auto-populate default metric key
-      let metric = '';
-      if (isTemplate) {
+      let metric: string;
+      if (dp?.dataSourceId === dataSourceId && dp?.metric) {
+        metric = dp.metric;
+      } else if (isTemplate) {
         if (index === 0 && initialMetric) {
           metric = initialMetric;
         } else {

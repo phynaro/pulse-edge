@@ -66,28 +66,25 @@ public class S7DriverPoller : IProtocolDriver
 
         if (dueDps.Count == 0) return;
 
+        // Group readings by DataSourceId to batch enqueue them at the end
+        var readingsByDataSource = new Dictionary<string, Dictionary<string, (double? Value, string Quality)>>();
+
         foreach (var dp in dueDps)
         {
+            double? processedVal = null;
+            string quality = "Good";
+
             try
             {
                 double rawVal = await _s7NetDriver.ReadTagAsync(dp.Address, dp.DataType, ct);
-                double processedVal = (rawVal * dp.ScaleFactor) + dp.Offset;
-                _logger.LogInformation("[Siemens S7 Read] Address: {Address} | Raw: {Raw} | Processed: {Value}", dp.Address, rawVal, processedVal);
+                double val = (rawVal * dp.ScaleFactor) + dp.Offset;
+                _logger.LogInformation("[Siemens S7 Read] Address: {Address} | Raw: {Raw} | Processed: {Value}", dp.Address, rawVal, val);
                 
-                dp.LastValue = processedVal.ToString("F2");
+                dp.LastValue = val.ToString("F2");
                 dp.LastError = null;
                 dp.ConsecutiveFailures = 0;
                 dp.LastUpdated = now;
-                AddDirtyIfNeeded(dp, now, dirtyDps);
-
-                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
-                {
-                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                    {
-                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, processedVal, "Good");
-                        _logger.LogInformation("[Queue Buffer] Enqueued Siemens S7 telemetry | Stream: {Source} Metric: {Metric}", dp.DataSourceId, dp.Metric);
-                    }
-                }
+                processedVal = val;
             }
             catch (Exception ex)
             {
@@ -95,15 +92,34 @@ public class S7DriverPoller : IProtocolDriver
                 dp.LastError = ex.Message;
                 dp.ConsecutiveFailures++;
                 dp.LastUpdated = now;
-                AddDirtyIfNeeded(dp, now, dirtyDps);
+                quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
+            }
 
-                if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+            AddDirtyIfNeeded(dp, now, dirtyDps);
+
+            if (!string.IsNullOrEmpty(dp.DataSourceId) && !string.IsNullOrEmpty(dp.Metric))
+            {
+                if (!readingsByDataSource.TryGetValue(dp.DataSourceId, out var dict))
                 {
-                    if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
-                    {
-                        string quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
-                        await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, now, dp.Metric, null, quality);
-                    }
+                    dict = new Dictionary<string, (double? Value, string Quality)>();
+                    readingsByDataSource[dp.DataSourceId] = dict;
+                }
+                dict[dp.Metric] = (processedVal, quality);
+            }
+        }
+
+        // Enqueue readings in batch per DataSourceId
+        foreach (var kvp in readingsByDataSource)
+        {
+            var dataSourceId = kvp.Key;
+            var metrics = kvp.Value;
+
+            if (await _storageService.IsDataSourceEnabledAsync(dataSourceId))
+            {
+                await _storageService.EnqueueTelemetryBatchAsync(dataSourceId, now, metrics);
+                foreach (var metricKvp in metrics)
+                {
+                    _logger.LogInformation("[Queue Buffer] Enqueued Siemens S7 telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
                 }
             }
         }

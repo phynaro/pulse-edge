@@ -3,6 +3,7 @@ import { RefreshCw, CheckCircle2 } from 'lucide-react';
 import CustomSelect from '../CustomSelect';
 import type { useToast } from '../../hooks/useToast';
 import ModalShell from '../ModalShell';
+import { useConfirm } from '../../hooks/useConfirm';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 
@@ -17,6 +18,7 @@ export default function CreateAdapterWizard({
   toast,
   fetchData
 }: CreateAdapterWizardProps) {
+  const confirm = useConfirm();
   const [wizardStep, setWizardStep] = useState(1);
   const [newAdapterName, setNewAdapterName] = useState('');
   const [newAdapterProtocol, setNewAdapterProtocol] = useState('OPC_UA');
@@ -136,7 +138,7 @@ export default function CreateAdapterWizard({
       const res = await fetch('/api/adapters/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host, port })
+        body: JSON.stringify({ host, port, protocol: newAdapterProtocol })
       });
       if (res.ok) {
         const data = await res.json();
@@ -159,7 +161,13 @@ export default function CreateAdapterWizard({
     }
     if (newAdapterProtocol !== 'WEBHOOK' && newAdapterProtocol !== 'SIMULATOR' && createTestStatus !== 'passed') {
       const reason = createTestStatus === 'failed' ? `\nReason: ${createTestMessage}` : '\nNo connection test was run.';
-      if (!window.confirm(`Warning: The connection test to ${newAdapterHost}:${newAdapterPort} did not pass.${reason}\n\nAre you sure you want to create this adapter anyway?`)) return;
+      const confirmed = await confirm({
+        title: 'Connection Test Warning',
+        message: `Warning: The connection test to ${newAdapterHost}:${newAdapterPort} did not pass.${reason}\n\nAre you sure you want to create this adapter anyway?`,
+        confirmText: 'Create Anyway',
+        variant: 'warning'
+      });
+      if (!confirmed) return;
     }
     try {
       let configJson = '{}';
