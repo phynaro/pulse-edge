@@ -260,6 +260,31 @@ function EdgeInner() {
     }
   };
 
+  const handleSoftReset = async () => {
+    try {
+      const res = await fetch('/api/settings/soft-reset', {
+        method: 'POST'
+      });
+
+      if (res.ok) {
+        toast.success('Agent cloud pairing has been successfully reset. Configurations preserved.');
+        
+        localStorage.removeItem('pulse_onboarding_tour_dismissed');
+        setIsOnboarded(false);
+        setHasInitializedSettings(false);
+        setActiveTab('dashboard');
+        
+        void fetchStaticData();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Failed to perform soft reset.');
+      }
+    } catch (err) {
+      console.error('Failed to soft reset:', err);
+      toast.error('An error occurred during soft reset.');
+    }
+  };
+
   // UI config persistence effects
   useEffect(() => {
     localStorage.setItem('pulse_ui_polling_interval', pollingInterval.toString());
@@ -495,6 +520,7 @@ function EdgeInner() {
                   showDiagnosticsPanel={showDiagnosticsPanel}
                   setShowDiagnosticsPanel={setShowDiagnosticsPanel}
                   handleFactoryReset={handleFactoryReset}
+                  handleSoftReset={handleSoftReset}
                 />
               )}
             </>

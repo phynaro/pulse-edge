@@ -160,6 +160,57 @@ public static class SettingsEndpoints
             }
         });
 
+        // POST /api/settings/soft-reset - Resets the cloud pairing credentials but preserves local configurations
+        routes.MapPost("/api/settings/soft-reset", async (IEnumerable<IHostedService> hostedServices) =>
+        {
+            using var db = new QueueDbContext();
+            try
+            {
+                var config = await db.DeviceConfigs.FirstOrDefaultAsync();
+                if (config != null)
+                {
+                    string generateClaimSecret()
+                    {
+                        var secretBytes = new byte[24];
+                        using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                        {
+                            rng.GetBytes(secretBytes);
+                        }
+                        return Convert.ToHexString(secretBytes).ToLowerInvariant();
+                    }
+
+                    // Generate a new hardware identity (DeviceId UUID and raw secret) so it registers as a new entity in the new organization.
+                    config.Id = Guid.NewGuid().ToString();
+                    config.ClaimSecret = generateClaimSecret();
+                    config.PairingToken = generateClaimSecret();
+                    
+                    // Clear all cloud association fields
+                    config.CloudEdgeId = "";
+                    config.ApiKey = "";
+                    config.OrganizationId = "";
+                    config.OrganizationName = "";
+                    config.SiteId = "";
+                    config.SiteName = "";
+                    config.PairingShortCode = "";
+                    config.PairingExpiresAt = null;
+                    config.PairingBaseUrl = "";
+                    config.CloudStatus = "PendingApproval";
+
+                    db.DeviceConfigs.Update(config);
+                    await db.SaveChangesAsync();
+                }
+
+                var worker = hostedServices.OfType<Worker>().FirstOrDefault();
+                worker?.WakeUpProvisioning();
+
+                return Results.Ok(new { success = true, message = "System configuration has been soft reset. Cloud pairing cleared, local driver configurations preserved." });
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { error = $"Failed to soft reset: {ex.Message}" });
+            }
+        });
+
         // POST /api/settings/validate-cloud - Validates Cloud URL sync registration
         routes.MapPost("/api/settings/validate-cloud", async (ValidateCloudRequest request, CloudClient cloudClient) =>
         {
@@ -178,8 +229,8 @@ public static class SettingsEndpoints
                 using var httpClient = new HttpClient();
                 httpClient.Timeout = TimeSpan.FromSeconds(5);
                 
-                var baseUri = new Uri(request.CloudEndpoint.TrimEnd('/'));
-                var healthUri = new Uri(baseUri, "/health");
+                var baseEndpoint = request.CloudEndpoint.TrimEnd('/');
+                var healthUri = new Uri($"{baseEndpoint}/health");
                 
                 var response = await httpClient.GetAsync(healthUri);
                 if (!response.IsSuccessStatusCode)

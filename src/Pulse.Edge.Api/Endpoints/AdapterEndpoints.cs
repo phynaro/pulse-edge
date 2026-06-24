@@ -32,6 +32,112 @@ public static class AdapterEndpoints
             return Results.Ok(list);
         });
 
+        // GET /api/adapters/templates/modbus-power-meters - Returns pre-defined Modbus power meter templates
+        routes.MapGet("/api/adapters/templates/modbus-power-meters", () =>
+        {
+            return Results.Ok(PowerMeterTemplatesCatalog.Templates);
+        });
+
+        // POST /api/adapters/power-meter - Creates a power meter adapter, its datasource (stream), and templates-based datapoints (tags)
+        routes.MapPost("/api/adapters/power-meter", async (CreatePowerMeterAdapterRequest request) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.AdapterName) ||
+                string.IsNullOrWhiteSpace(request.Host) ||
+                string.IsNullOrWhiteSpace(request.TemplateId) ||
+                string.IsNullOrWhiteSpace(request.DataSourceName))
+            {
+                return Results.BadRequest(new { success = false, message = "Missing required parameters." });
+            }
+
+            var template = PowerMeterTemplatesCatalog.Templates.FirstOrDefault(t => t.Id == request.TemplateId);
+            if (template == null)
+            {
+                return Results.BadRequest(new { success = false, message = $"Template '{request.TemplateId}' not found." });
+            }
+
+            using var db = new QueueDbContext();
+            using var transaction = await db.Database.BeginTransactionAsync();
+
+            try
+            {
+                // 1. Create Adapter
+                var adapterId = Guid.NewGuid().ToString();
+                var configJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    UnitId = request.SlaveId,
+                    TimeoutMs = 5000,
+                    Retries = 3
+                });
+
+                var adapter = new DriverAdapter
+                {
+                    Id = adapterId,
+                    Name = request.AdapterName,
+                    Protocol = "MODBUS_TCP",
+                    Host = request.Host,
+                    Port = request.Port,
+                    ConfigJson = configJson,
+                    IsEnabled = true,
+                    Status = "Offline"
+                };
+
+                db.DriverAdapters.Add(adapter);
+
+                // 2. Create DataSource
+                var dataSourceId = Guid.NewGuid().ToString();
+                var dataSource = new DataSource
+                {
+                    Id = dataSourceId,
+                    Name = request.DataSourceName,
+                    Type = "Energy",
+                    Description = $"Auto-created from {template.Name} template",
+                    IsEnabled = true
+                };
+
+                db.DataSources.Add(dataSource);
+
+                // 3. Create DataPoints for each metric
+                var dataPoints = new List<DataPoint>();
+                foreach (var metric in template.Metrics)
+                {
+                    var dataPoint = new DataPoint
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        AdapterId = adapterId,
+                        DataSourceId = dataSourceId,
+                        Metric = metric.Metric,
+                        Address = metric.Address,
+                        DataType = metric.DataType,
+                        ScanIntervalMs = request.ScanIntervalMs,
+                        ScaleFactor = metric.ScaleFactor,
+                        Offset = 0.0,
+                        IsEnabled = true,
+                        ByteOrder = metric.ByteOrder,
+                        MqttParseMode = "Plaintext"
+                    };
+
+                    db.DataPoints.Add(dataPoint);
+                    dataPoints.Add(dataPoint);
+                }
+
+                await db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Results.Created($"/api/adapters/{adapterId}", new
+                {
+                    success = true,
+                    adapter,
+                    dataSource,
+                    dataPoints
+                });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return Results.Problem($"Failed to create power meter: {ex.Message}");
+            }
+        });
+
         // POST /api/adapters - Updates or inserts a connection adapter configuration
         routes.MapPost("/api/adapters", async (DriverAdapter updated) =>
         {
@@ -1167,3 +1273,14 @@ public record SiemensS7BrowseRequest(string AdapterId);
 public record BacnetBrowseRequest(string AdapterId);
 public record EthernetIpTemplateRequest(string AdapterId, ushort TemplateId);
 public record EthernetIpProgramTagsRequest(string AdapterId, string ProgramName);
+
+public record CreatePowerMeterAdapterRequest(
+    string AdapterName,
+    string Host,
+    int Port,
+    int SlaveId,
+    int ScanIntervalMs,
+    string TemplateId,
+    string DataSourceName
+);
+

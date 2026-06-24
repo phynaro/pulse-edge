@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle2 } from 'lucide-react';
 import CustomSelect from '../CustomSelect';
 import type { useToast } from '../../hooks/useToast';
@@ -66,6 +66,21 @@ export default function CreateAdapterWizard({
   const [newRestTimeoutMs, setNewRestTimeoutMs] = useState<number>(5000);
   const [newRestPollIntervalMs, setNewRestPollIntervalMs] = useState<number>(10000);
   const [newBacnetDeviceId, setNewBacnetDeviceId] = useState<number>(123);
+
+  const [selectedTemplateId, setSelectedTemplateId] = useState('schneider_pm5350');
+  const [newDataSourceName, setNewDataSourceName] = useState('');
+  const [newPowerMeterScanInterval, setNewPowerMeterScanInterval] = useState<number>(5000);
+  const [powerMeterTemplates, setPowerMeterTemplates] = useState<any[]>([]);
+  const [createdSummary, setCreatedSummary] = useState<any | null>(null);
+
+  useEffect(() => {
+    fetch('/api/adapters/templates/modbus-power-meters')
+      .then(res => res.json())
+      .then(data => {
+        setPowerMeterTemplates(data || []);
+      })
+      .catch(err => console.error('Failed to fetch templates:', err));
+  }, []);
 
   const handleDiscoverOpcUa = async (host: string, port: number) => {
     if (!host) { toast.warning('Please enter a Connection Host/IP before discovering.'); return; }
@@ -154,7 +169,60 @@ export default function CreateAdapterWizard({
     }
   };
 
+  const handleCreatePowerMeter = async () => {
+    if (!newAdapterName || !newDataSourceName || !newAdapterHost) {
+      toast.warning('Please fill in all required fields.');
+      return;
+    }
+    if (createTestStatus !== 'passed') {
+      const reason = createTestStatus === 'failed' ? `\nReason: ${createTestMessage}` : '\nNo connection test was run.';
+      const confirmed = await confirm({
+        title: 'Connection Test Warning',
+        message: `Warning: The connection test to ${newAdapterHost}:${newAdapterPort} did not pass.${reason}\n\nAre you sure you want to create this adapter anyway?`,
+        confirmText: 'Create Anyway',
+        variant: 'warning'
+      });
+      if (!confirmed) return;
+    }
+
+    try {
+      const res = await fetch('/api/adapters/power-meter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adapterName: newAdapterName,
+          host: newAdapterHost,
+          port: Number(newAdapterPort),
+          slaveId: Number(newModbusUnitId),
+          scanIntervalMs: Number(newPowerMeterScanInterval),
+          templateId: selectedTemplateId,
+          dataSourceName: newDataSourceName
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setCreatedSummary(data);
+          setWizardStep(3);
+          toast.success('Modbus Power Meter created successfully.');
+        } else {
+          toast.error(data.message || 'Failed to create Modbus Power Meter.');
+        }
+      } else {
+        toast.error(`Failed to create power meter. HTTP Error ${res.status}`);
+      }
+    } catch (err) {
+      console.error('Failed to create power meter:', err);
+      toast.error('Failed to create Modbus Power Meter.');
+    }
+  };
+
   const handleCreateAdapter = async () => {
+    if (newAdapterProtocol === 'MODBUS_POWER_METER') {
+      await handleCreatePowerMeter();
+      return;
+    }
     if (!newAdapterName || !newAdapterProtocol || !newAdapterHost) {
       toast.warning('Please fill in all required fields.');
       return;
@@ -224,14 +292,14 @@ export default function CreateAdapterWizard({
 
   const stepTitle =
     wizardStep === 1 ? 'Step 1: Identify the name and communication protocol.' :
-    wizardStep === 2 ? 'Step 2: Configure connection host details and test connection.' :
-    'Step 3: Define protocol-specific credentials and driver configuration.';
+    wizardStep === 2 ? (newAdapterProtocol === 'MODBUS_POWER_METER' ? 'Step 2: Configure Modbus connection and select template.' : 'Step 2: Configure connection host details and test connection.') :
+    (newAdapterProtocol === 'MODBUS_POWER_METER' ? 'Step 3: Review created power meter components.' : 'Step 3: Define protocol-specific credentials and driver configuration.');
 
   const isNextDisabled =
-    (wizardStep === 1 && !newAdapterName.trim()) ||
-    (wizardStep === 2 && newAdapterProtocol !== 'WEBHOOK' && !newAdapterHost.trim());
+    (wizardStep === 1 && (!newAdapterName.trim() || (newAdapterProtocol === 'MODBUS_POWER_METER' && !newDataSourceName.trim()))) ||
+    (wizardStep === 2 && newAdapterProtocol !== 'WEBHOOK' && newAdapterProtocol !== 'SIMULATOR' && !newAdapterHost.trim());
 
-  const supportsDiscovery = ['MODBUS_TCP', 'Ethernet/IP', 'MQTT', 'OPC_UA', 'Siemens S7'].includes(newAdapterProtocol);
+  const supportsDiscovery = ['MODBUS_TCP', 'MODBUS_POWER_METER', 'Ethernet/IP', 'MQTT', 'OPC_UA', 'Siemens S7'].includes(newAdapterProtocol);
 
   return (
     <ModalShell
@@ -255,7 +323,9 @@ export default function CreateAdapterWizard({
           <div className="wizard-step-line" />
           <div className="wizard-step-group">
             <span className={`wizard-step-circle ${wizardStep >= 3 ? 'is-done' : 'is-pending'}`}>3</span>
-            <span className={`wizard-step-label ${wizardStep === 3 ? 'is-current' : 'is-pending'}`}>Settings</span>
+            <span className={`wizard-step-label ${wizardStep === 3 ? 'is-current' : 'is-pending'}`}>
+              {newAdapterProtocol === 'MODBUS_POWER_METER' ? 'Summary' : 'Settings'}
+            </span>
           </div>
         </div>
 
@@ -298,6 +368,14 @@ export default function CreateAdapterWizard({
                     setNewModbusRtuParity('None'); 
                     setNewModbusRtuStopBits('One'); 
                     setNewModbusRtuHandshake('None'); 
+                  }
+                  else if (nextProtocol === 'MODBUS_POWER_METER') {
+                    setNewAdapterHost('127.0.0.1');
+                    setNewAdapterPort(502);
+                    setNewModbusUnitId(1);
+                    setNewPowerMeterScanInterval(5000);
+                    setSelectedTemplateId('schneider_pm5350');
+                    setNewDataSourceName('');
                   }
                   else if (nextProtocol === 'Ethernet/IP') {
                     setNewAdapterHost('127.0.0.1');
@@ -351,6 +429,7 @@ export default function CreateAdapterWizard({
                   { value: 'OPC_UA', label: 'OPC UA' },
                   { value: 'MQTT', label: 'MQTT Broker' },
                   { value: 'MODBUS_TCP', label: 'Modbus TCP Node' },
+                  { value: 'MODBUS_POWER_METER', label: 'Modbus Power Meter (Pre-defined)' },
                   { value: 'MODBUS_RTU', label: 'Modbus RTU (Serial)' },
                   { value: 'Ethernet/IP', label: 'Ethernet/IP PLC' },
                   { value: 'Siemens S7', label: 'Siemens S7 PLC' },
@@ -373,6 +452,39 @@ export default function CreateAdapterWizard({
                 required 
               />
             </div>
+
+            {newAdapterProtocol === 'MODBUS_POWER_METER' && (
+              <>
+                <div className="form-group form-group-flush">
+                  <label className="form-label form-label-bold">Power Meter Template</label>
+                  <CustomSelect
+                    value={selectedTemplateId}
+                    onChange={setSelectedTemplateId}
+                    options={powerMeterTemplates.map(t => ({ value: t.id, label: t.name }))}
+                  />
+                  {powerMeterTemplates.length > 0 && (
+                    <span className="text-secondary text-xs" style={{ display: 'block', marginTop: '0.4rem' }}>
+                      {powerMeterTemplates.find(t => t.id === selectedTemplateId)?.description}
+                    </span>
+                  )}
+                </div>
+
+                <div className="form-group form-group-flush">
+                  <label className="form-label form-label-bold">Data Source (Stream) Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. Main Incomer Stream"
+                    value={newDataSourceName}
+                    onChange={(e) => setNewDataSourceName(e.target.value)}
+                    required
+                  />
+                  <span className="text-secondary text-xs" style={{ display: 'block', marginTop: '0.4rem' }}>
+                    A new Data Source of type 'Energy' will be created with this name to receive all metrics.
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -487,6 +599,41 @@ export default function CreateAdapterWizard({
                   />
                 </div>
 
+                {newAdapterProtocol === 'MODBUS_POWER_METER' && (
+                  <>
+                    <div className="form-group form-group-flush">
+                      <label className="form-label form-label-bold">Slave ID (Unit ID)</label>
+                      <input 
+                        type="number" 
+                        className="form-input" 
+                        min={1}
+                        max={255}
+                        value={newModbusUnitId}
+                        onChange={(e) => setNewModbusUnitId(Number(e.target.value))} 
+                        required 
+                      />
+                      <span className="text-secondary text-xs" style={{ display: 'block', marginTop: '0.4rem' }}>
+                        Modbus unit address (usually 1).
+                      </span>
+                    </div>
+
+                    <div className="form-group form-group-flush">
+                      <label className="form-label form-label-bold">Scan Interval (ms)</label>
+                      <input 
+                        type="number" 
+                        className="form-input" 
+                        min={100}
+                        value={newPowerMeterScanInterval}
+                        onChange={(e) => setNewPowerMeterScanInterval(Number(e.target.value))} 
+                        required 
+                      />
+                      <span className="text-secondary text-xs" style={{ display: 'block', marginTop: '0.4rem' }}>
+                        How frequently to query the registers (default: 5000ms).
+                      </span>
+                    </div>
+                  </>
+                )}
+
                 {newAdapterProtocol !== 'MODBUS_RTU' && (
                   <div className="conn-test-section" style={{ marginTop: '0.5rem', borderTop: 'none', paddingTop: 0 }}>
                     <button 
@@ -516,8 +663,96 @@ export default function CreateAdapterWizard({
           </div>
         )}
 
-        {/* STEP 3: Protocol details */}
+        {/* STEP 3: Protocol details OR Power Meter Summary */}
         {wizardStep === 3 && (
+          newAdapterProtocol === 'MODBUS_POWER_METER' ? (
+            <div className="form-stack" style={{ gap: '1rem', minHeight: '320px' }}>
+              <div 
+                style={{
+                  padding: '12px 16px',
+                  backgroundColor: 'rgba(16, 185, 129, 0.06)',
+                  border: '1px solid rgba(16, 185, 129, 0.2)',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  color: '#15803d',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}
+              >
+                <CheckCircle2 size={18} style={{ color: '#10b981', flexShrink: 0 }} />
+                <span>
+                  <strong>Success!</strong> The Modbus Power Meter components have been successfully created.
+                </span>
+              </div>
+
+              {createdSummary && (
+                <div className="form-stack-sm" style={{ fontSize: '13px', color: '#334155' }}>
+                  <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontWeight: '600', color: '#0f172a', marginBottom: '8px', fontSize: '14px' }}>Created Adapter</div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <tbody>
+                        <tr>
+                          <td style={{ color: '#64748b', padding: '3px 0', width: '110px' }}>Name:</td>
+                          <td style={{ color: '#0f172a', fontWeight: '500' }}>{createdSummary.adapter?.name}</td>
+                        </tr>
+                        <tr>
+                          <td style={{ color: '#64748b', padding: '3px 0' }}>Protocol:</td>
+                          <td style={{ color: '#0f172a', fontWeight: '500' }}>MODBUS_TCP</td>
+                        </tr>
+                        <tr>
+                          <td style={{ color: '#64748b', padding: '3px 0' }}>Endpoint:</td>
+                          <td style={{ color: '#0f172a', fontWeight: '500' }}>{createdSummary.adapter?.host}:{createdSummary.adapter?.port}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginTop: '0.5rem' }}>
+                    <div style={{ fontWeight: '600', color: '#0f172a', marginBottom: '8px', fontSize: '14px' }}>Created Stream (Data Source)</div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <tbody>
+                        <tr>
+                          <td style={{ color: '#64748b', padding: '3px 0', width: '110px' }}>Name:</td>
+                          <td style={{ color: '#0f172a', fontWeight: '500' }}>{createdSummary.dataSource?.name}</td>
+                        </tr>
+                        <tr>
+                          <td style={{ color: '#64748b', padding: '3px 0' }}>Type:</td>
+                          <td style={{ color: '#0f172a', fontWeight: '500' }}>Energy</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginTop: '0.5rem' }}>
+                    <div style={{ fontWeight: '600', color: '#0f172a', marginBottom: '8px', fontSize: '14px' }}>Generated Tags (DataPoints)</div>
+                    <div style={{ overflowX: 'auto', marginTop: '0.25rem', maxHeight: '200px', overflowY: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'left' }}>
+                            <th style={{ padding: '6px 0', fontWeight: '600' }}>Metric</th>
+                            <th style={{ fontWeight: '600' }}>Address</th>
+                            <th style={{ fontWeight: '600' }}>DataType</th>
+                            <th style={{ fontWeight: '600' }}>ByteOrder</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {createdSummary.dataPoints?.map((dp: any, idx: number) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '6px 0', fontWeight: '600', color: '#0f172a' }}>{dp.metric}</td>
+                              <td style={{ color: '#334155' }}>{dp.address}</td>
+                              <td style={{ color: '#334155' }}>{dp.dataType}</td>
+                              <td style={{ color: '#334155' }}>{dp.byteOrder}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
           <div className="form-stack">
             <h4 className="section-header-sm">
               {newAdapterProtocol === 'MODBUS_TCP' && 'Modbus TCP Settings'}
@@ -925,11 +1160,12 @@ export default function CreateAdapterWizard({
               </div>
             )}
           </div>
+          )
         )}
 
         {/* Wizard Footer */}
         <div className="wizard-footer" style={{ marginTop: '1.5rem', display: 'flex', gap: '0.5rem' }}>
-          {wizardStep > 1 && (
+          {wizardStep > 1 && (newAdapterProtocol !== 'MODBUS_POWER_METER' || wizardStep < 3) && (
             <button 
               type="button" 
               onClick={() => setWizardStep(prev => Math.max(1, prev - 1))}
@@ -947,24 +1183,54 @@ export default function CreateAdapterWizard({
               Cancel
             </button>
           )}
-          {wizardStep < 3 ? (
-            <button
-              type="button"
-              onClick={() => setWizardStep(prev => prev + 1)}
-              disabled={isNextDisabled}
-              className="btn-primary btn-flex-2"
-            >
-              Next Step
-            </button>
+          {newAdapterProtocol === 'MODBUS_POWER_METER' ? (
+            wizardStep === 2 ? (
+              <button
+                type="button"
+                onClick={handleCreatePowerMeter}
+                disabled={isNextDisabled}
+                className="btn-dark-primary btn-flex-2"
+              >
+                Create Power Meter
+              </button>
+            ) : wizardStep === 3 ? (
+              <button
+                type="button"
+                onClick={() => { onClose(); fetchData(); }}
+                className="btn-primary btn-flex-2"
+              >
+                Finish
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setWizardStep(2)}
+                disabled={isNextDisabled}
+                className="btn-primary btn-flex-2"
+              >
+                Next Step
+              </button>
+            )
           ) : (
-            <button 
-              type="button" 
-              onClick={handleCreateAdapter}
-              disabled={isNextDisabled}
-              className="btn-dark-primary btn-flex-2"
-            >
-              Create Adapter
-            </button>
+            wizardStep < 3 ? (
+              <button
+                type="button"
+                onClick={() => setWizardStep(prev => prev + 1)}
+                disabled={isNextDisabled}
+                className="btn-primary btn-flex-2"
+              >
+                Next Step
+              </button>
+            ) : (
+              <button 
+                type="button" 
+                onClick={handleCreateAdapter}
+                disabled={isNextDisabled}
+                className="btn-dark-primary btn-flex-2"
+              >
+                Create Adapter
+              </button>
+            )
           )}
         </div>
       </div>

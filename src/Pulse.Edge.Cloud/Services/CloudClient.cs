@@ -102,7 +102,9 @@ public class CloudClient
         {
             baseUrl = "http://" + baseUrl;
         }
-        return new Uri(new Uri(baseUrl), path);
+        baseUrl = baseUrl.TrimEnd('/');
+        path = path.TrimStart('/');
+        return new Uri($"{baseUrl}/{path}");
     }
 
     private static string ComputeSha256Hash(string input)

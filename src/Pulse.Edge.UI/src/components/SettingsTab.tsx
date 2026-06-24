@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import CustomSelect from './CustomSelect';
 import FactoryResetModal from './FactoryResetModal';
+import SoftResetModal from './SoftResetModal';
 import type { DashboardData } from '../types';
 
 interface SettingsTabProps {
@@ -24,6 +25,7 @@ interface SettingsTabProps {
   showDiagnosticsPanel: boolean;
   setShowDiagnosticsPanel: (val: boolean) => void;
   handleFactoryReset: () => Promise<void>;
+  handleSoftReset: () => Promise<void>;
 }
 
 export default function SettingsTab({
@@ -45,9 +47,11 @@ export default function SettingsTab({
   setShowLiveFeedPanel,
   showDiagnosticsPanel,
   setShowDiagnosticsPanel,
-  handleFactoryReset
+  handleFactoryReset,
+  handleSoftReset
 }: SettingsTabProps) {
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isSoftResetModalOpen, setIsSoftResetModalOpen] = useState(false);
   return (
     <>
       <div className="page-header">
@@ -175,6 +179,18 @@ export default function SettingsTab({
 
           <div className="panel">
             <div className="panel-header">
+              <h2 className="panel-title text-warning" style={{ color: 'var(--warning-color, #ffb300)' }}>Soft Reset</h2>
+            </div>
+            <p className="text-secondary" style={{ fontSize: '13px', margin: '8px 0 16px 0', lineHeight: '1.5' }}>
+              Reset cloud registration and pairing details (Organization, Site, and API Key) to allow pairing this Edge node under a different organization. <strong>All local configurations (driver adapters, streams, and data points) will be preserved.</strong>
+            </p>
+            <button type="button" className="btn-secondary" style={{ width: '100%', borderColor: 'var(--warning-color, #ffb300)', color: 'var(--warning-color, #ffb300)' }} onClick={() => setIsSoftResetModalOpen(true)}>
+              Soft Reset Node
+            </button>
+          </div>
+
+          <div className="panel">
+            <div className="panel-header">
               <h2 className="panel-title text-danger" style={{ color: 'var(--error-color, #ef4444)' }}>Factory Default</h2>
             </div>
             <p className="text-secondary" style={{ fontSize: '13px', margin: '8px 0 16px 0', lineHeight: '1.5' }}>
@@ -234,6 +250,16 @@ export default function SettingsTab({
             setIsResetModalOpen(false);
           }}
           onCancel={() => setIsResetModalOpen(false)}
+        />
+      )}
+
+      {isSoftResetModalOpen && (
+        <SoftResetModal
+          onConfirm={async () => {
+            await handleSoftReset();
+            setIsSoftResetModalOpen(false);
+          }}
+          onCancel={() => setIsSoftResetModalOpen(false)}
         />
       )}
     </>
