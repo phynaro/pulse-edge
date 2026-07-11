@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Pulse.Edge.Storage\Pulse.Edge.Storage.csproj" />
+    <ProjectReference Include="..\Pulse.Edge.Api\Pulse.Edge.Api.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Agent\Pulse.Edge.Agent.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Cloud\Pulse.Edge.Cloud.csproj" />
     <ProjectReference Include="..\Pulse.Edge.Protocols.MqttProtocol\Pulse.Edge.Protocols.MqttProtocol.csproj" />

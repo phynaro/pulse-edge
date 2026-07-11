@@ -46,11 +46,12 @@ export default function FactoryResetModal({
             <li>All enqueued telemetry data and events in the SQLite buffer</li>
             <li>All configured driver adapters (Modbus, OPC UA, MQTT, Ethernet/IP, Siemens S7)</li>
             <li>All data points, streams, and active tags</li>
+            <li>All local users, roles, and active login sessions</li>
           </ul>
         </div>
 
         <div className="confirm-warning-box" style={{ borderLeftColor: 'var(--error-color, #ef4444)' }}>
-          <strong>Warning:</strong> This operation is destructive and cannot be undone. The agent will immediately restart the onboarding wizard.
+          <strong>Warning:</strong> This operation is destructive and cannot be undone. The agent will restart onboarding and require creation of a new administrator after cloud pairing.
         </div>
 
         <div className="form-group" style={{ marginTop: '16px' }}>

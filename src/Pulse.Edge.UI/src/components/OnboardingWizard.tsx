@@ -10,10 +10,12 @@ import {
   Globe,
   CheckCircle2,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  ShieldCheck
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import './OnboardingWizard.css';
+import { useAuth } from '../context/AuthContext';
 
 interface OnboardingWizardProps {
   toast: {
@@ -22,9 +24,11 @@ interface OnboardingWizardProps {
     warning: (msg: string) => void;
   };
   onComplete: () => void;
+  requireFirstAdmin: boolean;
 }
 
-export default function OnboardingWizard({ toast, onComplete }: OnboardingWizardProps) {
+export default function OnboardingWizard({ toast, onComplete, requireFirstAdmin }: OnboardingWizardProps) {
+  const { createFirstAdmin } = useAuth();
   const [step, setStep] = useState<number>(0);
   const [serialNumber, setSerialNumber] = useState<string>('');
   const [cloudEndpoint, setCloudEndpoint] = useState<string>('http://localhost:3000');
@@ -34,6 +38,10 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
   const [validationSuccess, setValidationSuccess] = useState<boolean>(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(true);
   const [pairingData, setPairingData] = useState<any>(null);
+  const [adminUsername, setAdminUsername] = useState('admin');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [adminError, setAdminError] = useState('');
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -521,14 +529,30 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
                     <p style={{ opacity: 0.8, fontSize: '0.95rem', margin: '0 0 24px 0' }}>
                       Linked to: <strong>{pairingData.device?.organizationName || 'N/A'}</strong> / <strong>{pairingData.device?.siteName || 'N/A'}</strong>
                     </p>
-                    <button
-                      type="button"
-                      onClick={onComplete}
-                      className="onboarding-btn onboarding-btn-primary"
-                      style={{ width: '100%' }}
-                    >
-                      Enter Dashboard <ArrowRight size={18} />
-                    </button>
+                    {requireFirstAdmin ? (
+                      <form className="first-admin-form" onSubmit={async e => {
+                        e.preventDefault();
+                        if (adminPassword !== confirmPassword) { setAdminError('Passwords do not match.'); return; }
+                        setIsSubmitting(true); setAdminError('');
+                        const error = await createFirstAdmin(adminUsername, adminPassword);
+                        setIsSubmitting(false);
+                        if (error) setAdminError(error); else onComplete();
+                      }}>
+                        <div className="first-admin-heading"><ShieldCheck size={18} /><div><strong>Create the local administrator</strong><span>This account controls configuration and future users.</span></div></div>
+                        <input className="form-input" value={adminUsername} onChange={e => setAdminUsername(e.target.value)} placeholder="Administrator username" autoComplete="username" required />
+                        <div className="first-admin-passwords">
+                          <input className="form-input" type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} placeholder="Password" autoComplete="new-password" required />
+                          <input className="form-input" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Confirm password" autoComplete="new-password" required />
+                        </div>
+                        <small className="onboarding-input-tip">10+ characters with upper-case, lower-case, number, and special character.</small>
+                        {adminError && <div className="auth-error">{adminError}</div>}
+                        <button disabled={isSubmitting} className="onboarding-btn onboarding-btn-primary" style={{ width: '100%' }}>{isSubmitting ? 'Securing node…' : <>Create Admin & Enter Dashboard <ArrowRight size={18} /></>}</button>
+                      </form>
+                    ) : (
+                      <button type="button" onClick={onComplete} className="onboarding-btn onboarding-btn-primary" style={{ width: '100%' }}>
+                        Enter Dashboard <ArrowRight size={18} />
+                      </button>
+                    )}
                   </div>
                 ) : pairingData.cloudStatus === 'Revoked' ? (
                   <div style={{ textAlign: 'center', padding: '20px 0' }}>

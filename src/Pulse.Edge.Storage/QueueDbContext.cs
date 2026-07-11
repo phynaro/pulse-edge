@@ -13,6 +13,8 @@ public class QueueDbContext : DbContext
     public DbSet<DataPoint> DataPoints => Set<DataPoint>();
     public DbSet<MqttDevice> MqttDevices => Set<MqttDevice>();
     public DbSet<StreamTemplate> StreamTemplates => Set<StreamTemplate>();
+    public DbSet<LocalUser> LocalUsers => Set<LocalUser>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

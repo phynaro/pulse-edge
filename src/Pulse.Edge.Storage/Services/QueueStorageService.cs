@@ -24,6 +24,31 @@ public class QueueStorageService
         using var db = new QueueDbContext();
         await db.Database.EnsureCreatedAsync();
 
+        await db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS LocalUsers (
+                Id TEXT PRIMARY KEY,
+                Username TEXT NOT NULL,
+                NormalizedUsername TEXT NOT NULL UNIQUE,
+                PasswordHash TEXT NOT NULL,
+                Role TEXT NOT NULL,
+                IsEnabled INTEGER NOT NULL DEFAULT 1,
+                FailedLoginCount INTEGER NOT NULL DEFAULT 0,
+                LockoutEndUtc TEXT,
+                CreatedAtUtc TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL,
+                LastLoginAtUtc TEXT
+            );
+            CREATE TABLE IF NOT EXISTS AuditEvents (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                TimestampUtc TEXT NOT NULL,
+                EventType TEXT NOT NULL,
+                ActorUsername TEXT NOT NULL DEFAULT '',
+                Target TEXT NOT NULL DEFAULT '',
+                RemoteIp TEXT NOT NULL DEFAULT '',
+                Succeeded INTEGER NOT NULL DEFAULT 0
+            );
+        ");
+
         // Create DeviceConfigs table if missing
         try
         {

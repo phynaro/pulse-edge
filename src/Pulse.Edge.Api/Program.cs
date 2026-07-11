@@ -25,6 +25,8 @@ using Microsoft.Extensions.FileProviders;
 using Serilog;
 using Serilog.Events;
 using Pulse.Edge.Api.Endpoints;
+using Pulse.Edge.Api.Security;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 
 // Configure Serilog daily rolling file and console logging
@@ -114,11 +116,27 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins("http://localhost:8080", "http://127.0.0.1:8080")
+              .AllowCredentials()
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
 });
+
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "pulse.edge.session";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Strict;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.SlidingExpiration = true;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = 401; return Task.CompletedTask; };
+        options.Events.OnRedirectToAccessDenied = context => { context.Response.StatusCode = 403; return Task.CompletedTask; };
+    });
+builder.Services.AddAuthorization();
+builder.Services.AddSingleton<PasswordService>();
 
 // Register SQLite storage service and transient protocol drivers
 builder.Services.AddSingleton<QueueStorageService>();
@@ -167,6 +185,9 @@ if (isSinglePort)
 var app = builder.Build();
 
 app.UseCors();
+app.UseAuthentication();
+app.UseMiddleware<CurrentUserValidationMiddleware>();
+app.UseAuthorization();
 
 if (isSinglePort)
 {
@@ -188,6 +209,7 @@ if (isSinglePort)
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 // Map Modular Endpoints
+app.MapAuthEndpoints();
 app.MapDashboardEndpoints();
 app.MapAdapterEndpoints();
 app.MapDataSourceEndpoints();
@@ -223,5 +245,4 @@ finally
 {
     Log.CloseAndFlush();
 }
-
 

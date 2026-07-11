@@ -8,7 +8,8 @@ import {
   AlertTriangle,
   Tag,
   Settings as SettingsIcon,
-  PanelLeft
+  PanelLeft,
+  ShieldCheck
 } from 'lucide-react';
 import { useToast } from './hooks/useToast';
 import ToastContainer from './components/ToastContainer';
@@ -28,6 +29,8 @@ import OnboardingTourBanner from './components/OnboardingTourBanner';
 
 import { EdgeProvider, useEdge } from './context/EdgeContext';
 import { ConfirmProvider } from './context/ConfirmProvider';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import LoginScreen from './components/LoginScreen';
 import { useDashboardData } from './hooks/useDashboardData';
 import { useBufferStatus } from './hooks/useBufferStatus';
 import { useAdaptersList } from './hooks/useAdaptersList';
@@ -83,7 +86,8 @@ function usePathRouting(defaultRoute: Route): [Route, (route: Route) => void] {
   return [currentRoute, navigate];
 }
 
-function EdgeInner() {
+function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = usePathRouting('dashboard');
   
   const {
@@ -240,16 +244,8 @@ function EdgeInner() {
       });
 
       if (res.ok) {
-        toast.success('Agent has been successfully reset to factory defaults.');
-        
         localStorage.removeItem('pulse_onboarding_tour_dismissed');
-        setCloudEndpoint('http://localhost:3000');
-        setEdgeSerial('');
-        setIsOnboarded(false);
-        setHasInitializedSettings(false);
-        setActiveTab('dashboard');
-        
-        void fetchStaticData();
+        window.location.assign('/');
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || 'Failed to perform factory reset.');
@@ -314,11 +310,12 @@ function EdgeInner() {
   const [telemetryFilterQuery, setTelemetryFilterQuery] = useState('');
   const [telemetryFilterType, setTelemetryFilterType] = useState('All');
 
-  if (!isOnboarded) {
+  if (forceOnboarding || !isOnboarded) {
     return (
       <>
         <OnboardingWizard 
           toast={toast} 
+          requireFirstAdmin={!user}
           onComplete={() => { 
             setHasInitializedSettings(false);
             setIsOnboarded(true); 
@@ -331,7 +328,7 @@ function EdgeInner() {
   }
 
   return (
-    <div className="app-container">
+    <div className={`app-container${user?.role === 'ReadOnly' ? ' role-read-only' : ''}`}>
       <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-brand">
           {!isSidebarCollapsed && (
@@ -550,6 +547,7 @@ function EdgeInner() {
           </div>
           
           <div className="bottombar-status">
+            {user && <div className="status-indicator auth-user-chip"><ShieldCheck size={14} /><span>{user.username} · {user.role === 'ReadOnly' ? 'Read-only' : 'Admin'}</span><button onClick={() => void logout()}>Sign out</button></div>}
             <div className="status-indicator">
               <div className={`pulse-dot ${isConnected ? '' : 'warning'}`} />
               <span>{isConnected ? 'Local Agent: Online' : 'Local Agent: Offline'}</span>
@@ -585,10 +583,17 @@ function EdgeInner() {
 }
 
 export default function App() {
+  return <AuthProvider><AppGate /></AuthProvider>;
+}
+
+function AppGate() {
+  const { loading, setupState, user } = useAuth();
+  if (loading) return <div className="auth-loading"><Activity className="spin" size={28} /> Loading secure access…</div>;
+  if (setupState === 'Operational' && !user) return <LoginScreen />;
   return (
     <EdgeProvider>
       <ConfirmProvider>
-        <EdgeInner />
+        <EdgeInner forceOnboarding={setupState !== 'Operational'} />
       </ConfirmProvider>
     </EdgeProvider>
   );

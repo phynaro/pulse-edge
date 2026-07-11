@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
@@ -51,7 +52,8 @@ public static class SettingsEndpoints
             {
                 SerialNumber = config?.SerialNumber ?? "",
                 CloudEndpoint = config?.CloudEndpoint ?? "http://localhost:3000",
-                ApiKey = config?.ApiKey ?? ""
+                ApiKey = string.IsNullOrEmpty(config?.ApiKey) ? "None" : "••••••••",
+                HasApiKey = !string.IsNullOrEmpty(config?.ApiKey)
             });
         });
 
@@ -128,11 +130,11 @@ public static class SettingsEndpoints
             var worker = hostedServices.OfType<Worker>().FirstOrDefault();
             worker?.WakeUpProvisioning();
 
-            return Results.Ok(config);
+            return Results.Ok(new { config.SerialNumber, config.CloudEndpoint, config.CloudStatus });
         });
 
         // POST /api/settings/factory-reset - Deletes all configurations and resets the edge agent to factory settings
-        routes.MapPost("/api/settings/factory-reset", async (IEnumerable<IHostedService> hostedServices) =>
+        routes.MapPost("/api/settings/factory-reset", async (IEnumerable<IHostedService> hostedServices, HttpContext context) =>
         {
             using var db = new QueueDbContext();
             try
@@ -146,11 +148,15 @@ public static class SettingsEndpoints
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM MqttDevices;");
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM StreamTemplates;");
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM MqttSeenTopics;");
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM AuditEvents;");
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM LocalUsers;");
                 
                 await db.SaveChangesAsync();
 
                 var worker = hostedServices.OfType<Worker>().FirstOrDefault();
                 worker?.WakeUpProvisioning();
+
+                await context.SignOutAsync();
 
                 return Results.Ok(new { success = true, message = "System configuration has been reset to factory default." });
             }

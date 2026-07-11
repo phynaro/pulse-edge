@@ -4,6 +4,8 @@ import CustomSelect from './CustomSelect';
 import FactoryResetModal from './FactoryResetModal';
 import SoftResetModal from './SoftResetModal';
 import type { DashboardData } from '../types';
+import { useAuth } from '../context/AuthContext';
+import UserManagement from './UserManagement';
 
 interface SettingsTabProps {
   dashboard: DashboardData | null;
@@ -50,6 +52,8 @@ export default function SettingsTab({
   handleFactoryReset,
   handleSoftReset
 }: SettingsTabProps) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'Admin';
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isSoftResetModalOpen, setIsSoftResetModalOpen] = useState(false);
   return (
@@ -79,6 +83,7 @@ export default function SettingsTab({
                 className="form-input"
                 type="url"
                 value={cloudEndpoint}
+                readOnly={!isAdmin}
                 onChange={(e) => setCloudEndpoint(e.target.value)}
               />
             </div>
@@ -89,6 +94,7 @@ export default function SettingsTab({
                 className="form-input"
                 type="text"
                 value={edgeSerial}
+                readOnly={!isAdmin}
                 onChange={(e) => setEdgeSerial(e.target.value)}
               />
               <small className="form-hint">
@@ -96,12 +102,12 @@ export default function SettingsTab({
               </small>
             </div>
 
-            <button type="button" className="btn-primary" onClick={handleSaveSettings}>
+            {isAdmin && <button type="button" className="btn-primary" onClick={handleSaveSettings}>
               Save Changes
-            </button>
+            </button>}
           </div>
 
-          <div className="panel">
+          {isAdmin && <div className="panel">
             <div className="panel-header">
               <h2 className="panel-title">User Interface Config</h2>
             </div>
@@ -175,9 +181,9 @@ export default function SettingsTab({
                 <span>Show System Diagnostics Panel</span>
               </label>
             </div>
-          </div>
+          </div>}
 
-          <div className="panel">
+          {isAdmin && <div className="panel">
             <div className="panel-header">
               <h2 className="panel-title text-warning" style={{ color: 'var(--warning-color, #ffb300)' }}>Soft Reset</h2>
             </div>
@@ -187,19 +193,20 @@ export default function SettingsTab({
             <button type="button" className="btn-secondary" style={{ width: '100%', borderColor: 'var(--warning-color, #ffb300)', color: 'var(--warning-color, #ffb300)' }} onClick={() => setIsSoftResetModalOpen(true)}>
               Soft Reset Node
             </button>
-          </div>
+          </div>}
+          {isAdmin && user && <UserManagement currentUserId={user.id} />}
 
-          <div className="panel">
+          {isAdmin && <div className="panel">
             <div className="panel-header">
               <h2 className="panel-title text-danger" style={{ color: 'var(--error-color, #ef4444)' }}>Factory Default</h2>
             </div>
             <p className="text-secondary" style={{ fontSize: '13px', margin: '8px 0 16px 0', lineHeight: '1.5' }}>
-              Erase all database tables, resetting the Edge Agent to factory defaults. This action will delete all configurations, driver connections, streams, and buffered data, and restart the onboarding wizard.
+              Erase all configuration, buffered data, and local users. Onboarding will restart and a new administrator must be created after cloud pairing.
             </p>
             <button type="button" className="btn-danger-solid" style={{ width: '100%' }} onClick={() => setIsResetModalOpen(true)}>
               Reset to Factory Default
             </button>
-          </div>
+          </div>}
         </div>
 
         <div className="panel">
