@@ -47,6 +47,20 @@ public class QueueStorageService
                 RemoteIp TEXT NOT NULL DEFAULT '',
                 Succeeded INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS DiagnosticEvents (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                TimestampUtc TEXT NOT NULL,
+                Level TEXT NOT NULL,
+                Category TEXT NOT NULL DEFAULT '',
+                EventCode TEXT NOT NULL DEFAULT '',
+                Message TEXT NOT NULL,
+                Details TEXT NOT NULL DEFAULT '',
+                AdapterId TEXT NOT NULL DEFAULT '',
+                DataPointId TEXT NOT NULL DEFAULT '',
+                CorrelationId TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS IX_DiagnosticEvents_TimestampUtc ON DiagnosticEvents(TimestampUtc DESC);
+            CREATE INDEX IF NOT EXISTS IX_DiagnosticEvents_Level ON DiagnosticEvents(Level);
         ");
 
         // Create DeviceConfigs table if missing

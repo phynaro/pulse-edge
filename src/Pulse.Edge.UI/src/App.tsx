@@ -9,7 +9,8 @@ import {
   Tag,
   Settings as SettingsIcon,
   PanelLeft,
-  ShieldCheck
+  ShieldCheck,
+  ScrollText
 } from 'lucide-react';
 import { useToast } from './hooks/useToast';
 import ToastContainer from './components/ToastContainer';
@@ -24,6 +25,7 @@ import TagsTab from './components/TagsTab';
 import ProtocolsTab from './components/ProtocolsTab';
 import BufferTab from './components/BufferTab';
 import SettingsTab from './components/SettingsTab';
+import DiagnosticLogsTab from './components/DiagnosticLogsTab';
 import OnboardingWizard from './components/OnboardingWizard';
 import OnboardingTourBanner from './components/OnboardingTourBanner';
 
@@ -51,12 +53,12 @@ const getCloudStatusInfo = (status: string | undefined) => {
   }
 };
 
-type Route = 'dashboard' | 'datasources' | 'tags' | 'protocols' | 'buffer' | 'settings';
+type Route = 'dashboard' | 'datasources' | 'tags' | 'protocols' | 'buffer' | 'logs' | 'settings';
 
 function usePathRouting(defaultRoute: Route): [Route, (route: Route) => void] {
   const getRouteFromPath = (): Route => {
     const segment = window.location.pathname.split('/').filter(Boolean)[0] as Route;
-    const validRoutes: Route[] = ['dashboard', 'datasources', 'tags', 'protocols', 'buffer', 'settings'];
+    const validRoutes: Route[] = ['dashboard', 'datasources', 'tags', 'protocols', 'buffer', 'logs', 'settings'];
     return validRoutes.includes(segment) ? segment : defaultRoute;
   };
 
@@ -77,7 +79,7 @@ function usePathRouting(defaultRoute: Route): [Route, (route: Route) => void] {
 
   useEffect(() => {
     const path = window.location.pathname.split('/').filter(Boolean)[0] as Route;
-    const validRoutes: Route[] = ['dashboard', 'datasources', 'tags', 'protocols', 'buffer', 'settings'];
+    const validRoutes: Route[] = ['dashboard', 'datasources', 'tags', 'protocols', 'buffer', 'logs', 'settings'];
     if (!validRoutes.includes(path)) {
       window.history.replaceState(null, '', `/${currentRoute}`);
     }
@@ -336,7 +338,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
               PULSE <span>EDGE</span>
             </div>
           )}
-          <button 
+          <button
             onClick={toggleSidebar} 
             className="sidebar-toggle-btn"
             title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
@@ -392,6 +394,15 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
           </button>
           
           <button 
+            className={`menu-item ${activeTab === 'logs' ? 'active' : ''}`}
+            onClick={() => setActiveTab('logs')}
+            title={isSidebarCollapsed ? "Diagnostic Logs" : undefined}
+          >
+            <ScrollText size={18} />
+            {!isSidebarCollapsed && <span>Logs</span>}
+          </button>
+
+          <button
             className={`menu-item ${activeTab === 'settings' ? 'active' : ''}`}
             onClick={() => setActiveTab('settings')}
             title={isSidebarCollapsed ? "Settings" : undefined}
@@ -495,6 +506,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
                   bufferEvents={bufferEvents}
                 />
               )}
+              {activeTab === 'logs' && <DiagnosticLogsTab />}
  
               {activeTab === 'settings' && (
                 <SettingsTab

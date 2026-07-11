@@ -15,6 +15,7 @@ public class QueueDbContext : DbContext
     public DbSet<StreamTemplate> StreamTemplates => Set<StreamTemplate>();
     public DbSet<LocalUser> LocalUsers => Set<LocalUser>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<DiagnosticEvent> DiagnosticEvents => Set<DiagnosticEvent>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

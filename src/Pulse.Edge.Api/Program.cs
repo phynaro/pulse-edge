@@ -27,6 +27,7 @@ using Serilog.Events;
 using Pulse.Edge.Api.Endpoints;
 using Pulse.Edge.Api.Security;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Pulse.Edge.Api.Diagnostics;
 
 
 // Configure Serilog daily rolling file and console logging
@@ -37,6 +38,7 @@ var logFolder = OperatingSystem.IsWindows()
 
 Directory.CreateDirectory(logFolder);
 var logPath = Path.Combine(logFolder, "edge-.txt");
+var diagnosticLogs = new DiagnosticLogService();
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -44,6 +46,7 @@ Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .WriteTo.Console()
+    .WriteTo.Sink(diagnosticLogs)
     .WriteTo.File(
         logPath,
         rollingInterval: RollingInterval.Day,
@@ -137,6 +140,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     });
 builder.Services.AddAuthorization();
 builder.Services.AddSingleton<PasswordService>();
+builder.Services.AddSingleton(diagnosticLogs);
+builder.Services.AddHostedService(provider => provider.GetRequiredService<DiagnosticLogService>());
 
 // Register SQLite storage service and transient protocol drivers
 builder.Services.AddSingleton<QueueStorageService>();
@@ -210,6 +215,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 // Map Modular Endpoints
 app.MapAuthEndpoints();
+app.MapDiagnosticLogEndpoints();
 app.MapDashboardEndpoints();
 app.MapAdapterEndpoints();
 app.MapDataSourceEndpoints();
@@ -245,4 +251,3 @@ finally
 {
     Log.CloseAndFlush();
 }
-

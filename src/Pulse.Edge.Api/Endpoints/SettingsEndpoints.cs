@@ -150,6 +150,7 @@ public static class SettingsEndpoints
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM MqttSeenTopics;");
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM AuditEvents;");
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM LocalUsers;");
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM DiagnosticEvents;");
                 
                 await db.SaveChangesAsync();
 
