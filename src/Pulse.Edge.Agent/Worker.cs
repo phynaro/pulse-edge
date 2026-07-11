@@ -86,7 +86,7 @@ public class Worker : BackgroundService
 
         var connectTasks = allAdapters.Select(async adapter =>
         {
-            var poller = _pollerRegistry.GetPoller(adapter.Protocol);
+            var poller = _pollerRegistry.GetPoller(adapter.Id, adapter.Protocol);
             if (adapter.IsEnabled && poller != null)
             {
                 try
@@ -175,7 +175,7 @@ public class Worker : BackgroundService
                 {
                     if (adapter.IsEnabled)
                     {
-                        var poller = _pollerRegistry.GetPoller(adapter.Protocol);
+                        var poller = _pollerRegistry.GetPoller(adapter.Id, adapter.Protocol);
                         if (poller != null && !poller.IsConnected && adapter.Protocol != "MQTT") // MQTT connects asynchronously in ConnectAsync task
                         {
                             (DateTime LastAttempt, int FailureCount) state;
@@ -246,10 +246,23 @@ public class Worker : BackgroundService
                 var group = datapointsGroupedByAdapter.FirstOrDefault(g => g.Key == adapter.Id);
                 if (group == null) return;
 
-                var poller = _pollerRegistry.GetPoller(adapter.Protocol);
+                var poller = _pollerRegistry.GetPoller(adapter.Id, adapter.Protocol);
                 if (poller != null && poller.IsConnected)
                 {
-                    await poller.PollGroupAsync(group.ToList(), adapter, now, dirtyDps, stoppingToken);
+                    try
+                    {
+                        // Add a safety timeout of 5 seconds to prevent a hung driver from blocking the entire agent
+                        await poller.PollGroupAsync(group.ToList(), adapter, now, dirtyDps, stoppingToken)
+                                     .WaitAsync(TimeSpan.FromSeconds(5), stoppingToken);
+                    }
+                    catch (TimeoutException)
+                    {
+                        _logger.LogWarning("Polling timed out for adapter {AdapterName} ({Protocol})", adapter.Name, adapter.Protocol);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error polling adapter {AdapterName} ({Protocol})", adapter.Name, adapter.Protocol);
+                    }
                 }
             });
 
@@ -311,7 +324,7 @@ public class Worker : BackgroundService
     {
         _logger.LogInformation("[Config Monitor] Configuration change detected for adapter {AdapterName} ({Protocol})", adapter.Name, adapter.Protocol);
         
-        var poller = _pollerRegistry.GetPoller(adapter.Protocol);
+        var poller = _pollerRegistry.GetPoller(adapter.Id, adapter.Protocol);
         if (poller == null) return;
 
         try

@@ -85,7 +85,11 @@ public class ModbusDriver : IDisposable
             }
         }
 
-        var tcpClient = new ModbusTcpClient();
+        var tcpClient = new ModbusTcpClient
+        {
+            ReadTimeout = 2000,
+            WriteTimeout = 2000
+        };
         await Task.Run(() => tcpClient.Connect(new IPEndPoint(ipAddress, port)), cancellationToken);
         _client = tcpClient;
         _activeHost = host;

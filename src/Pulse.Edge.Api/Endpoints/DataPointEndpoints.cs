@@ -255,7 +255,7 @@ public static class DataPointEndpoints
             var adapter = configMonitor.CurrentAdapters.FirstOrDefault(a => a.Id == dp.AdapterId);
             if (adapter == null) return Results.BadRequest("Adapter not found or is disabled.");
 
-            var poller = pollerRegistry.GetPoller(adapter.Protocol);
+            var poller = pollerRegistry.GetPoller(adapter.Id, adapter.Protocol);
             if (poller == null) return Results.BadRequest("Poller driver not found.");
 
             if (!poller.IsConnected)

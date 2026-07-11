@@ -106,6 +106,11 @@ build_target() {
       -p:PublishTrimmed=false \
       -o "$out_dir/"
 
+    # Copy app.ico if it exists in UI public directory
+    if [ -f "src/Pulse.Edge.UI/public/app.ico" ]; then
+        cp "src/Pulse.Edge.UI/public/app.ico" "$out_dir/"
+    fi
+
     # Clean up unnecessary compiler artifacts from output directory
     echo "🧹 Cleaning up compiler artifacts in $out_dir..."
     rm -f "$out_dir"/*.pdb
@@ -142,9 +147,15 @@ if [ -d "dist/linux-arm64" ]; then
     echo "  ➡️  Linux 64-bit (ARM):   dist/linux-arm64/ (Pulse.Edge & Pulse.Edge.Agent)"
 fi
 echo ""
-echo "Windows Installer script created:"
-echo "  ➡️  PulseEdge.iss"
-echo "To compile it into a single-file executable wizard (PulseEdgeSetup-1.0.0.exe),"
-echo "open it inside Inno Setup compiler on a Windows host or run:"
+echo "Windows Installer scripts:"
+echo "  ➡️  Inno Setup: PulseEdge.iss"
+echo "  ➡️  WiX Toolset: PulseEdge.wxs"
+echo ""
+echo "To compile the Inno Setup executable wizard (PulseEdgeSetup-1.0.0.exe), run:"
 echo "  ISCC PulseEdge.iss"
+echo ""
+echo "To compile the WiX MSI package (PulseEdgeSetup-1.0.0.msi), run:"
+echo "  For WiX v3:   candle -ext WixUtilExtension -ext WixFirewallExtension -out dist/PulseEdge.wixobj PulseEdge.wxs"
+echo "                light -ext WixUIExtension -ext WixUtilExtension -ext WixFirewallExtension -out dist-setup/PulseEdgeSetup-1.0.0.msi dist/PulseEdge.wixobj"
+echo "  For WiX v4/5: wix build -ext WixToolset.Util.wixext -ext WixToolset.Firewall.wixext -ext WixToolset.UI.wixext -out dist-setup/PulseEdgeSetup-1.0.0.msi PulseEdge.wxs"
 echo "============================================="

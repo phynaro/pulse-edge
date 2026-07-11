@@ -1,6 +1,6 @@
 # PULSE Edge UI — Style Guide
 
-Design system reference for **Pulse.Edge.UI** (`edge/src/Pulse.Edge.UI`). Use this document when building or reviewing any screen, component, or modal in the Edge dashboard.
+Design system reference for **Pulse.Edge.UI** (`src/Pulse.Edge.UI`). Use this document when building or reviewing any screen, component, or modal in the Edge dashboard.
 
 This guide is derived from the shared **`@pulse/ui`** package (`packages/pulse-ui`) and Edge-local overrides (`OnboardingWizard.css`, `CustomSelect.css`). Cloud web (`apps/web`) imports the same package via `globals.css`.
 

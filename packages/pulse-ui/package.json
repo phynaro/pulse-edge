@@ -1,0 +1,14 @@
+{
+  "name": "@pulse/ui",
+  "version": "0.1.0-edge.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "style": "./src/index.css",
+      "import": "./src/index.css",
+      "default": "./src/index.css"
+    }
+  },
+  "files": ["src"]
+}

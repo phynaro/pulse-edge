@@ -42,7 +42,7 @@ public static class DashboardEndpoints
                     SerialNumber = config?.SerialNumber ?? "N/A",
                     PairingToken = config?.PairingToken ?? "",
                     PairingShortCode = config?.PairingShortCode ?? "",
-                    PairingExpiresAt = config?.PairingExpiresAt,
+                    PairingExpiresAt = config != null && config.PairingExpiresAt.HasValue ? DateTime.SpecifyKind(config.PairingExpiresAt.Value, DateTimeKind.Utc) : (DateTime?)null,
                     PairingBaseUrl = config?.PairingBaseUrl ?? "",
                     OrganizationId = config?.OrganizationId ?? "N/A",
                     OrganizationName = config?.OrganizationName ?? "N/A",

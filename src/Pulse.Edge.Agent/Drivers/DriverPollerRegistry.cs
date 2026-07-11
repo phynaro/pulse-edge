@@ -1,33 +1,51 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Pulse.Edge.Agent.Drivers;
 
 public class DriverPollerRegistry
 {
-    private readonly Dictionary<string, IProtocolDriver> _drivers;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ConcurrentDictionary<string, IProtocolDriver> _activePollers = new();
 
-    public DriverPollerRegistry(IEnumerable<IProtocolDriver> drivers)
+    private static readonly Dictionary<string, Type> _pollerTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        _drivers = drivers
-            .ToDictionary(
-                x => x.ProtocolName.ToUpperInvariant(),
-                x => x);
+        { "OPC_UA", typeof(OpcUaDriverPoller) },
+        { "MODBUS_TCP", typeof(ModbusDriverPoller) },
+        { "MODBUS_RTU", typeof(ModbusDriverPoller) },
+        { "MQTT", typeof(MqttDriverPoller) },
+        { "BACNET", typeof(BacnetDriverPoller) },
+        { "S7", typeof(S7DriverPoller) },
+        { "REST_API", typeof(RestApiDriverPoller) },
+        { "LIBPLCTAG", typeof(LibPlcTagDriverPoller) },
+        { "SIMULATOR", typeof(SimulatorDriverPoller) }
+    };
+
+    public DriverPollerRegistry(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
     }
 
-    public IProtocolDriver? GetPoller(string protocol)
+    public IProtocolDriver? GetPoller(string adapterId, string protocol)
     {
-        if (string.IsNullOrWhiteSpace(protocol)) return null;
+        if (string.IsNullOrWhiteSpace(protocol) || string.IsNullOrWhiteSpace(adapterId))
+            return null;
 
         var normalized = protocol.ToUpperInvariant();
-
-        // Map Modbus variations to MODBUS_TCP poller
         if (normalized == "MODBUS_TCP" || normalized == "MODBUS_RTU")
         {
             normalized = "MODBUS_TCP";
         }
 
-        return _drivers.TryGetValue(normalized, out var driver) ? driver : null;
+        return _activePollers.GetOrAdd(adapterId, id =>
+        {
+            if (!_pollerTypes.TryGetValue(normalized, out var type))
+            {
+                return null!;
+            }
+            return (IProtocolDriver)ActivatorUtilities.CreateInstance(_serviceProvider, type);
+        });
     }
 }

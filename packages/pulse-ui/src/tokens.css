@@ -1,0 +1,46 @@
+/* PULSE design tokens — canonical names used by cloud + edge */
+
+:root {
+  --primary: #3ce8bd;
+  --primary-dark: #2bc59e;
+  --primary-dim: rgba(60, 232, 189, 0.12);
+  --primary-mid: rgba(60, 232, 189, 0.35);
+  --primary-glow: rgba(60, 232, 189, 0.25);
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface2: #f0f1f3;
+  --sidebar-bg: #12131a;
+  --sidebar-text: #a0aec0;
+  --sidebar-border: #1a1c23;
+  --border: #e2e4e9;
+  --text: #1a1d23;
+  --text-muted: #7a7f8e;
+  --text-light: #b0b5c3;
+  --warn: #f59e0b;
+  --danger: #ef4444;
+  --good: #0fa87a;
+  --radius: 14px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --font-body: 'DM Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Space Mono', source-code-pro, Menlo, Monaco, Consolas, monospace;
+  --topbar-height: 30px;
+  --content-padding-x: 20px;
+  --content-padding-y: 16px;
+  --section-gap: 16px;
+  --page-stack-gap: 12px;
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --code-color: #4a5568;
+
+  /* Legacy edge aliases — prefer canonical names in new code */
+  --primary-color: var(--primary);
+  --bg-color: var(--bg);
+  --surface-color: var(--surface);
+  --text-primary: var(--text);
+  --text-secondary: var(--text-muted);
+  --border-color: var(--border);
+  --success-color: var(--good);
+  --warning-color: var(--warn);
+  --danger-color: var(--danger);
+}

@@ -37,26 +37,26 @@ if "%TARGET_INPUT%"=="" (
     set TARGET_ARG=all
 ) else (
     set TARGET_ARG=%TARGET_INPUT%
-    
+
     if /i "!TARGET_ARG!"=="win-x86" set TARGET_ARG=win-x86
     if /i "!TARGET_ARG!"=="winx86" set TARGET_ARG=win-x86
     if /i "!TARGET_ARG!"=="x86" set TARGET_ARG=win-x86
-    
+
     if /i "!TARGET_ARG!"=="win-x64" set TARGET_ARG=win-x64
     if /i "!TARGET_ARG!"=="winx64" set TARGET_ARG=win-x64
     if /i "!TARGET_ARG!"=="x64" set TARGET_ARG=win-x64
-    
+
     if /i "!TARGET_ARG!"=="linux-x64" set TARGET_ARG=linux-x64
     if /i "!TARGET_ARG!"=="linuxx64" set TARGET_ARG=linux-x64
     if /i "!TARGET_ARG!"=="linux" set TARGET_ARG=linux-x64
     if /i "!TARGET_ARG!"=="ubuntu" set TARGET_ARG=linux-x64
     if /i "!TARGET_ARG!"=="linux64" set TARGET_ARG=linux-x64
-    
+
     if /i "!TARGET_ARG!"=="linux-arm" set TARGET_ARG=linux-arm
     if /i "!TARGET_ARG!"=="linuxarm" set TARGET_ARG=linux-arm
     if /i "!TARGET_ARG!"=="arm" set TARGET_ARG=linux-arm
     if /i "!TARGET_ARG!"=="rpi32" set TARGET_ARG=linux-arm
-    
+
     if /i "!TARGET_ARG!"=="linux-arm64" set TARGET_ARG=linux-arm64
     if /i "!TARGET_ARG!"=="linuxarm64" set TARGET_ARG=linux-arm64
     if /i "!TARGET_ARG!"=="arm64" set TARGET_ARG=linux-arm64
@@ -136,6 +136,56 @@ if exist !ISCC_PATH! (
     echo   To compile the installer manually, open 'PulseEdge.iss' in Inno Setup and compile.
 )
 
+:: 6. Auto-compile WiX MSI installer if available and win-x64 was compiled
+echo 📦 Checking for WiX Toolset...
+set WIX_V3_PATH=""
+if exist "C:\Program Files (x86)\WiX Toolset v3.11\bin\candle.exe" (
+    set WIX_V3_PATH="C:\Program Files (x86)\WiX Toolset v3.11\bin"
+) else if exist "C:\Program Files (x86)\WiX Toolset v3.14\bin\candle.exe" (
+    set WIX_V3_PATH="C:\Program Files (x86)\WiX Toolset v3.14\bin"
+)
+
+where wix >nul 2>nul
+set WIX_V4_FOUND=%errorlevel%
+
+if exist dist\win-x64 (
+    if not exist dist-setup (
+        mkdir dist-setup
+    )
+
+    if %WIX_V4_FOUND% eq 0 (
+        echo   Found WiX v4/v5 CLI. Building MSI package...
+        wix build -ext WixToolset.Util.wixext -ext WixToolset.Firewall.wixext -ext WixToolset.UI.wixext -out dist-setup\PulseEdgeSetup-1.0.0.msi PulseEdge.wxs
+        if !errorlevel! eq 0 (
+            echo   ✅ WiX MSI Installer compiled successfully: dist-setup\PulseEdgeSetup-1.0.0.msi
+        ) else (
+            echo   ❌ Error: WiX compilation failed.
+        )
+    ) else if not !WIX_V3_PATH!=="" (
+        echo   Found WiX v3 Toolset at !WIX_V3_PATH!. Building MSI package...
+        !WIX_V3_PATH!\candle.exe -ext WixUtilExtension -ext WixFirewallExtension -out dist\PulseEdge.wixobj PulseEdge.wxs
+        if !errorlevel! eq 0 (
+            !WIX_V3_PATH!\light.exe -ext WixUIExtension -ext WixUtilExtension -ext WixFirewallExtension -out dist-setup\PulseEdgeSetup-1.0.0.msi dist\PulseEdge.wixobj
+            if !errorlevel! eq 0 (
+                echo   ✅ WiX MSI Installer compiled successfully: dist-setup\PulseEdgeSetup-1.0.0.msi
+                del /f /q dist\PulseEdge.wixobj >nul 2>nul
+            ) else (
+                echo   ❌ Error: WiX linking failed.
+            )
+        ) else (
+            echo   ❌ Error: WiX compilation failed.
+        )
+    ) else (
+        echo   WiX Toolset not found in PATH or standard paths. Skipping MSI build.
+        echo   To build the MSI installer manually:
+        echo     For WiX v3: candle -ext WixUtilExtension -ext WixFirewallExtension PulseEdge.wxs
+        echo                 light -ext WixUIExtension -ext WixUtilExtension -ext WixFirewallExtension -out dist-setup\PulseEdgeSetup-1.0.0.msi PulseEdge.wixobj
+        echo     For WiX v4/v5: wix build -ext WixToolset.Util.wixext -ext WixToolset.Firewall.wixext -ext WixToolset.UI.wixext -out dist-setup\PulseEdgeSetup-1.0.0.msi PulseEdge.wxs
+    )
+) else (
+    echo   Skipping MSI build because dist\win-x64 was not compiled.
+)
+
 echo =============================================
 echo   ✅ Multi-Platform Build Completed Successfully!
 echo =============================================
@@ -179,6 +229,11 @@ dotnet publish src\Pulse.Edge.Agent\Pulse.Edge.Agent.csproj -c Release -r %RID% 
 if %errorlevel% neq 0 (
     echo ❌ Error: Compilation failed for %RID%
     exit /b 1
+)
+
+:: Copy app.ico if it exists in UI public folder
+if exist src\Pulse.Edge.UI\public\app.ico (
+    copy /y src\Pulse.Edge.UI\public\app.ico %OUT_DIR%\ >nul 2>nul
 )
 
 :: Clean up unnecessary compiler artifacts

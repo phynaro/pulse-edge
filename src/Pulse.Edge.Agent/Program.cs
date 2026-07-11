@@ -20,26 +20,25 @@ builder.Services.AddSingleton<QueueStorageService>();
 builder.Services.AddSingleton<CloudClient>();
 builder.Services.AddSingleton<SyncService>();
 
-// Register Protocol Drivers
-builder.Services.AddSingleton<OpcUaDriver>();
-builder.Services.AddSingleton<MqttDriver>();
-builder.Services.AddSingleton<ModbusDriver>();
-builder.Services.AddSingleton<LibPlcTagDriver>();
-builder.Services.AddSingleton<S7NetDriver>();
-builder.Services.AddSingleton<RestApiDriver>();
-builder.Services.AddSingleton<BacnetDriver>();
-builder.Services.AddSingleton<SimulatorDriver>();
+// Register Protocol Drivers (Transient to isolate connections per adapter instance)
+builder.Services.AddTransient<OpcUaDriver>();
+builder.Services.AddTransient<MqttDriver>();
+builder.Services.AddTransient<ModbusDriver>();
+builder.Services.AddTransient<LibPlcTagDriver>();
+builder.Services.AddTransient<S7NetDriver>();
+builder.Services.AddTransient<RestApiDriver>();
+builder.Services.AddTransient<BacnetDriver>();
+builder.Services.AddTransient<SimulatorDriver>();
 
-// Register Poller Drivers
-builder.Services.AddSingleton<IProtocolDriver, OpcUaDriverPoller>();
-builder.Services.AddSingleton<IProtocolDriver, MqttDriverPoller>();
-builder.Services.AddSingleton<IProtocolDriver, ModbusDriverPoller>();
-builder.Services.AddSingleton<IProtocolDriver, LibPlcTagDriverPoller>();
-builder.Services.AddSingleton<IProtocolDriver, S7DriverPoller>();
-builder.Services.AddSingleton<IProtocolDriver, RestApiDriverPoller>();
-builder.Services.AddSingleton<IProtocolDriver, BacnetDriverPoller>();
-builder.Services.AddSingleton<IProtocolDriver, SimulatorDriverPoller>();
-
+// Register Poller Drivers (Transient)
+builder.Services.AddTransient<OpcUaDriverPoller>();
+builder.Services.AddTransient<MqttDriverPoller>();
+builder.Services.AddTransient<ModbusDriverPoller>();
+builder.Services.AddTransient<LibPlcTagDriverPoller>();
+builder.Services.AddTransient<S7DriverPoller>();
+builder.Services.AddTransient<RestApiDriverPoller>();
+builder.Services.AddTransient<BacnetDriverPoller>();
+builder.Services.AddTransient<SimulatorDriverPoller>();
 
 // Register Registry
 builder.Services.AddSingleton<DriverPollerRegistry>();

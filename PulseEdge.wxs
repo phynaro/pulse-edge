@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension"
+     xmlns:fire="http://schemas.microsoft.com/wix/FirewallExtension">
+
+  <!-- ===================================================================== -->
+  <!-- 📦 PULSE Edge WiX Installation Script                                  -->
+  <!-- ===================================================================== -->
+  <Product Id="*"
+           Name="PULSE Edge"
+           Language="1033"
+           Version="1.0.0"
+           Manufacturer="Integra Innovation"
+           UpgradeCode="D377B3F4-20C9-472E-95A6-9277D50BC38D">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Platform="x64"
+             Description="PULSE Edge Unified IoT Server Installation"
+             Comments="Builds and registers PULSE Edge Service and Agent" />
+
+    <!-- Downgrade protection -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <!-- Cabinet settings -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Application Icon (Visible in Add/Remove Programs) -->
+    <Icon Id="AppIcon" SourceFile="dist\win-x64\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <!-- Configurable Properties -->
+    <Property Id="PORT" Value="5288" />
+    <Property Id="ALLOWREMOTEACCESS" Value="1" />
+    <Property Id="CREATE_DESKTOP_SHORTCUT" Value="1" />
+    <Property Id="REMOVEALLDATA" Value="0" />
+
+    <!-- Search for existing config.json to see if we should preserve it -->
+    <Property Id="CONFIG_EXISTS">
+      <DirectorySearch Id="SearchCommonAppData" Path="[CommonAppDataFolder]PULSE Edge">
+        <FileSearch Id="SearchConfigFile" Name="config.json" />
+      </DirectorySearch>
+    </Property>
+
+    <!-- Standard Windows Directory Tree -->
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <!-- C:\Program Files\PULSE Edge -->
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="PULSE Edge" />
+      </Directory>
+
+      <!-- C:\ProgramData\PULSE Edge -->
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="CommonAppDataPulseEdgeDir" Name="PULSE Edge">
+          <Directory Id="LOGSFOLDER" Name="logs" />
+          <Directory Id="BACKUPSFOLDER" Name="backups" />
+        </Directory>
+      </Directory>
+
+      <!-- Start Menu Programs Folder -->
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="PULSE Edge" />
+      </Directory>
+
+      <!-- Desktop Folder -->
+      <Directory Id="DesktopFolder" Name="Desktop" />
+    </Directory>
+
+    <!-- Components -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <!-- 1. Main Windows Service Component -->
+      <Component Id="PulseEdgeServiceComponent" Guid="D2D68C0C-B7C4-4340-9E15-9430B2AE5D70" Win64="yes">
+        <!-- We copy Pulse.Edge.exe and rename it to PulseEdge.Service.exe -->
+        <File Id="PulseEdgeServiceExe"
+              Source="dist\win-x64\Pulse.Edge.exe"
+              Name="PulseEdge.Service.exe"
+              KeyPath="yes" />
+
+        <!-- Register Windows Service -->
+        <ServiceInstall Id="ServiceInstall"
+                        Name="PulseEdgeService"
+                        DisplayName="PULSE Edge Service"
+                        Description="PULSE Edge IoT synchronization and protocol service."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="NT AUTHORITY\NetworkService"
+                        Vital="yes">
+          <!-- Setup service recovery/failure actions using util extension -->
+          <util:ServiceConfig ResetPeriodInDays="1"
+                              RestartServiceDelayInSeconds="5"
+                              FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart" />
+        </ServiceInstall>
+
+        <!-- Service Control -->
+        <ServiceControl Id="ServiceControl"
+                        Name="PulseEdgeService"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+
+      <!-- 2. Agent Daemon executable -->
+      <Component Id="PulseEdgeAgentComponent" Guid="F1D77C0D-927A-4541-A8EA-73D26FA5B4A1" Win64="yes">
+        <File Id="PulseEdgeAgentExe"
+              Source="dist\win-x64\Pulse.Edge.Agent.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- 3. Configuration appsettings.json -->
+      <Component Id="AppSettingsComponent" Guid="E2C88D0E-C27B-4742-BD8A-5D12D9392D66" Win64="yes">
+        <File Id="AppSettingsJson"
+              Source="dist\win-x64\appsettings.json"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- 4. App Icon file -->
+      <Component Id="AppIconComponent" Guid="A3D99E0F-D38C-4943-CE8B-6E35F0493E77" Win64="yes">
+        <File Id="AppIconFile"
+              Source="dist\win-x64\app.ico"
+              KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- 5. Firewall Exception component (conditional based on ALLOWREMOTEACCESS) -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="FirewallExceptionComponent" Guid="B4D99E0F-E38C-4943-CE8B-6E35F0493E78" Win64="yes">
+        <Condition>ALLOWREMOTEACCESS = "1"</Condition>
+        <fire:FirewallException Id="FirewallException"
+                                Name="PULSE Edge Service"
+                                Program="[#PulseEdgeServiceExe]"
+                                Scope="any"
+                                Profile="all"
+                                Protocol="tcp"
+                                Port="[PORT]"
+                                IgnoreFailure="yes" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\IntegraInnovation\PulseEdge"
+                       Name="firewallException"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Create and grant permissions to ProgramData directories -->
+    <DirectoryRef Id="CommonAppDataPulseEdgeDir">
+      <Component Id="CommonAppDataDirPermissionsComponent" Guid="C4FA1F0E-921F-433A-8F51-8407B12C281F" Win64="yes">
+        <CreateFolder>
+          <util:PermissionEx User="NetworkService" GenericAll="yes" />
+          <util:PermissionEx User="Users" GenericRead="yes" GenericWrite="yes" Modify="yes" />
+        </CreateFolder>
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="LOGSFOLDER">
+      <Component Id="LogsFolderPermissionsComponent" Guid="D5FA2F0F-042F-433B-9A52-8508C23D3920" Win64="yes">
+        <CreateFolder>
+          <util:PermissionEx User="NetworkService" GenericAll="yes" />
+          <util:PermissionEx User="Users" GenericRead="yes" GenericWrite="yes" Modify="yes" />
+        </CreateFolder>
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="BACKUPSFOLDER">
+      <Component Id="BackupsFolderPermissionsComponent" Guid="E6FA3F10-153F-443C-AB53-8609D34E4A21" Win64="yes">
+        <CreateFolder>
+          <util:PermissionEx User="NetworkService" GenericAll="yes" />
+          <util:PermissionEx User="Users" GenericRead="yes" GenericWrite="yes" Modify="yes" />
+        </CreateFolder>
+      </Component>
+    </DirectoryRef>
+
+    <!-- Shortcuts -->
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="ApplicationShortcut" Guid="750DBC8B-27B4-4B78-831C-646A94F81710">
+        <util:InternetShortcut Id="StartMenuShortcut"
+                               Name="PULSE Edge Dashboard"
+                               Target="http://localhost:[PORT]"
+                               IconFile="[#AppIconFile]" />
+
+        <RemoveFolder Id="CleanUpShortcuts" On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\IntegraInnovation\PulseEdge"
+                       Name="installed"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcutComponent" Guid="860DBC9C-38C5-4C89-942D-757BA5F92821">
+        <Condition>CREATE_DESKTOP_SHORTCUT = "1"</Condition>
+        <util:InternetShortcut Id="DesktopShortcut"
+                               Name="PULSE Edge Dashboard"
+                               Target="http://localhost:[PORT]"
+                               IconFile="[#AppIconFile]" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\IntegraInnovation\PulseEdge"
+                       Name="desktopShortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Custom Actions for creating config.json and calculating its SHA-256 -->
+    <!-- Runs under System context to ensure permissions to write to CommonAppData -->
+    <CustomAction Id="WriteConfigJson"
+                  Directory="CommonAppDataPulseEdgeDir"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -Command &quot;&amp; { [System.IO.File]::WriteAllText('config.json', '{\`r\`n  \&quot;serverUrl\&quot;: \&quot;http://*:[PORT]\&quot;,\`r\`n  \&quot;hostingMode\&quot;: \&quot;SinglePort\&quot;\`r\`n}') }&quot;"
+                  Execute="deferred"
+                  Return="check"
+                  Impersonate="no" />
+
+    <CustomAction Id="GenerateHash"
+                  Directory="CommonAppDataPulseEdgeDir"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -Command &quot;&amp; { Get-FileHash -Algorithm SHA256 'config.json' | Select-Object -ExpandProperty Hash | Out-File -FilePath 'config.json.sha256' -NoNewline }&quot;"
+                  Execute="deferred"
+                  Return="check"
+                  Impersonate="no" />
+
+    <!-- Optional removal of all database & log data on uninstall -->
+    <CustomAction Id="RemoveConfigDataOnUninstall"
+                  Directory="CommonAppDataPulseEdgeDir"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -Command &quot;&amp; { if (Test-Path 'edge.db') { Remove-Item 'edge.db' -Force }; if (Test-Path 'config.json') { Remove-Item 'config.json' -Force }; if (Test-Path 'config.json.sha256') { Remove-Item 'config.json.sha256' -Force }; Remove-Item -Recurse -Force * }&quot;"
+                  Execute="deferred"
+                  Return="ignore"
+                  Impersonate="no" />
+
+    <!-- Install/Uninstall Sequence -->
+    <InstallExecuteSequence>
+      <!-- We write config after files are deployed, but only if config doesn't already exist -->
+      <Custom Action="WriteConfigJson" After="InstallFiles">NOT Installed AND NOT CONFIG_EXISTS</Custom>
+      <Custom Action="GenerateHash" After="WriteConfigJson">NOT Installed AND NOT CONFIG_EXISTS</Custom>
+
+      <!-- Remove configuration on uninstall if the user chooses REMOVEALLDATA=1 -->
+      <Custom Action="RemoveConfigDataOnUninstall" Before="RemoveFiles">REMOVE="ALL" AND REMOVEALLDATA="1"</Custom>
+    </InstallExecuteSequence>
+
+    <!-- Features -->
+    <Feature Id="MainApplication" Title="PULSE Edge Gateway" Level="1">
+      <ComponentRef Id="PulseEdgeServiceComponent" />
+      <ComponentRef Id="PulseEdgeAgentComponent" />
+      <ComponentRef Id="AppSettingsComponent" />
+      <ComponentRef Id="AppIconComponent" />
+      <ComponentRef Id="FirewallExceptionComponent" />
+      <ComponentRef Id="CommonAppDataDirPermissionsComponent" />
+      <ComponentRef Id="LogsFolderPermissionsComponent" />
+      <ComponentRef Id="BackupsFolderPermissionsComponent" />
+      <ComponentRef Id="ApplicationShortcut" />
+      <ComponentRef Id="DesktopShortcutComponent" />
+    </Feature>
+
+    <!-- WiX UI configuration -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+
+    <!-- Use WixUI_InstallDir dialog sequence (Allows selecting destination folder) -->
+    <UIRef Id="WixUI_InstallDir" />
+
+    <!-- Define custom EULA/License -->
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+
+  </Product>
+</Wix>

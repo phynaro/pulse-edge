@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
-import { 
-  Cpu, 
-  Cloud, 
-  Check, 
-  ArrowRight, 
-  ArrowLeft, 
-  Activity, 
-  Sparkles, 
-  Globe, 
+import {
+  Cpu,
+  Cloud,
+  Check,
+  ArrowRight,
+  ArrowLeft,
+  Activity,
+  Sparkles,
+  Globe,
   CheckCircle2,
   AlertTriangle,
   RefreshCw
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import './OnboardingWizard.css';
 
 interface OnboardingWizardProps {
@@ -43,7 +44,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
           if (settings.serialNumber) {
             setSerialNumber(settings.serialNumber);
             setCloudEndpoint(settings.cloudEndpoint);
-            
+
             const hasApiKey = settings.apiKey && settings.apiKey !== 'None';
             if (!hasApiKey) {
               setStep(4); // Skip directly to pairing phase
@@ -61,7 +62,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
 
   useEffect(() => {
     if (step !== 4) return;
-    
+
     let isMounted = true;
     const poll = async () => {
       try {
@@ -74,7 +75,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
         console.error('Error polling dashboard status:', err);
       }
     };
-    
+
     poll();
     const interval = setInterval(poll, 2000);
     return () => {
@@ -118,7 +119,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
       const res = await fetch('/api/settings/validate-cloud', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           cloudEndpoint: cloudEndpoint.trim(),
           serialNumber: serialNumber.trim()
         })
@@ -210,8 +211,8 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
       <div className="onboarding-glow-2" />
 
       {/* Main Aero Card */}
-      <div className="onboarding-card">
-        
+      <div className={`onboarding-card${step === 4 ? ' wide' : ''}`}>
+
         {/* Onboarding Wizard Header */}
         <div className="onboarding-header">
           <div className="onboarding-brand">
@@ -238,8 +239,8 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
               const isActive = step === s.num;
               const isCompleted = step > s.num;
               return (
-                <div 
-                  key={s.num} 
+                <div
+                  key={s.num}
                   className={`onboarding-step${isActive ? ' active' : ''}${isCompleted ? ' completed' : ''}`}
                 >
                   <div className="onboarding-step-circle">
@@ -268,7 +269,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
               <Sparkles className="onboarding-info-icon" size={18} />
               <span>Feel the PULSE! Experience the magic of a supercharged setup that connects your local metrics to the cloud in record time, keeping your device health at 100%.</span>
             </div>
-            <button 
+            <button
               type="button"
               onClick={() => setStep(1)}
               className="onboarding-btn onboarding-btn-primary"
@@ -280,7 +281,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
 
         {/* Step 1: Device Identification */}
         {step === 1 && (
-          <form 
+          <form
             onSubmit={(e) => {
               e.preventDefault();
               handleNext();
@@ -293,21 +294,21 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
                 Every edge device must have a unique hardware identifier or serial number. This distinguishes its metric streams in the cloud.
               </p>
             </div>
-            
+
             <div className="form-group">
               <label htmlFor="serialNumber" className="form-label">Device Serial Number / Name</label>
               <div className="onboarding-form-input-group">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   id="serialNumber"
                   name="serialNumber"
-                  className="form-input" 
-                  placeholder="e.g. PULSE-EDGE-001" 
-                  value={serialNumber} 
+                  className="form-input"
+                  placeholder="e.g. PULSE-EDGE-001"
+                  value={serialNumber}
                   onChange={e => setSerialNumber(e.target.value)}
                   required
                 />
-                <button 
+                <button
                   type="button"
                   onClick={handleGenerateSerial}
                   className="onboarding-btn-inline-secondary"
@@ -321,14 +322,14 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
             </div>
 
             <div className="onboarding-button-row">
-              <button 
+              <button
                 type="button"
                 onClick={handleBack}
                 className="onboarding-btn onboarding-btn-action-back"
               >
                 <ArrowLeft size={16} /> Back
               </button>
-              <button 
+              <button
                 type="submit"
                 className="onboarding-btn onboarding-btn-action-next"
               >
@@ -340,7 +341,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
 
         {/* Step 2: Cloud Sync Configuration */}
         {step === 2 && (
-          <form 
+          <form
             onSubmit={(e) => {
               e.preventDefault();
               handleNext();
@@ -353,17 +354,17 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
                 Specify the target PULSE Cloud or internal datacenter orchestrator URL where metric packages will be synced.
               </p>
             </div>
-            
+
             <div className="form-group">
               <label htmlFor="cloudEndpoint" className="form-label">Target URL Endpoint</label>
               <div className="onboarding-url-input-wrapper">
-                <input 
-                  type="url" 
+                <input
+                  type="url"
                   id="cloudEndpoint"
                   name="cloudEndpoint"
-                  className="form-input" 
-                  placeholder="e.g. https://cloud.pulse-iot.net" 
-                  value={cloudEndpoint} 
+                  className="form-input"
+                  placeholder="e.g. https://cloud.pulse-iot.net"
+                  value={cloudEndpoint}
                   onChange={e => {
                     setCloudEndpoint(e.target.value);
                     setValidationError(null);
@@ -402,7 +403,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
             )}
 
             <div className="onboarding-button-row">
-              <button 
+              <button
                 type="button"
                 onClick={handleBack}
                 disabled={isValidatingCloud}
@@ -410,7 +411,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
               >
                 <ArrowLeft size={16} /> Back
               </button>
-              <button 
+              <button
                 type="submit"
                 disabled={isValidatingCloud || validationSuccess}
                 className={`onboarding-btn onboarding-btn-action-next${validationSuccess ? ' success' : ''}`}
@@ -435,7 +436,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
 
         {/* Step 3: Summary & Activation */}
         {step === 3 && (
-          <form 
+          <form
             onSubmit={(e) => {
               e.preventDefault();
               handleInitialize();
@@ -448,7 +449,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
                 Confirm the details below before activating this Edge node.
               </p>
             </div>
-            
+
             <div className="onboarding-summary-box">
               <div className="onboarding-summary-row">
                 <span className="onboarding-summary-label">Serial Identifier:</span>
@@ -461,7 +462,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
             </div>
 
             <div className="onboarding-button-row">
-              <button 
+              <button
                 type="button"
                 onClick={handleBack}
                 disabled={isSubmitting}
@@ -469,7 +470,7 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
               >
                 <ArrowLeft size={16} /> Back
               </button>
-              <button 
+              <button
                 type="submit"
                 disabled={isSubmitting}
                 className="onboarding-btn onboarding-btn-launch"
@@ -558,82 +559,135 @@ export default function OnboardingWizard({ toast, onComplete }: OnboardingWizard
                     </button>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                    {!pairingData.device?.pairingShortCode ? (
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        background: 'rgba(255,179,0,0.05)',
-                        padding: '16px',
-                        borderRadius: '8px',
-                        border: '1px solid rgba(255,179,0,0.2)'
-                      }}>
-                        <RefreshCw size={20} className="spin" style={{ color: '#ffb300', flexShrink: 0 }} />
-                        <span style={{ fontSize: '0.9rem', opacity: 0.85 }}>
-                          Connecting to Cloud and registering device... If this message persists, please check that the <strong>PULSE Edge Agent</strong> service is running and can reach the Cloud target (<code>{pairingData.device?.cloudEndpoint}</code>).
-                        </span>
-                      </div>
-                    ) : (
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        background: 'rgba(0,168,120,0.05)',
-                        padding: '12px 16px',
-                        borderRadius: '8px',
-                        border: '1px solid rgba(0,168,120,0.1)'
-                      }}>
-                        <RefreshCw size={20} className="spin" style={{ color: '#00a878', flexShrink: 0 }} />
-                        <span style={{ fontSize: '0.9rem', opacity: 0.8 }}>Waiting for approval from PULSE Cloud operator...</span>
-                      </div>
-                    )}
-
-                    {pairingData.device?.pairingBaseUrl && (
-                      <div style={{ textAlign: 'center' }}>
-                        <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '10px' }}>
-                          If your setup laptop has Cloud internet access, click below to link:
-                        </p>
-                        <a
-                          href={`${pairingData.device.pairingBaseUrl}?deviceId=${pairingData.device.deviceId}&token=${pairingData.device.pairingToken}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="onboarding-btn onboarding-btn-primary"
-                          style={{ textDecoration: 'none', display: 'inline-flex', width: '100%', justifyContent: 'center' }}
-                        >
-                          Link Device in Central Cloud <ArrowRight size={16} />
-                        </a>
-                      </div>
-                    )}
-
-                    {pairingData.device?.pairingShortCode && (
-                      <div style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '8px',
-                        background: 'rgba(0,82,204,0.03)',
-                        padding: '16px',
-                        borderRadius: '8px',
-                        border: '1px solid rgba(0,82,204,0.1)'
-                      }}>
-                        <span style={{ fontSize: '0.85rem', opacity: 0.6 }}>Or enter this code on the Cloud pairing page:</span>
+                  <div className="onboarding-split-layout">
+                    {/* Left Column: Status, Direct Link, and Shortcode */}
+                    <div className="onboarding-split-left">
+                      {!pairingData.device?.pairingShortCode ? (
                         <div style={{
-                          fontSize: '2rem',
-                          fontWeight: 'bold',
-                          letterSpacing: '3px',
-                          color: '#0052cc',
-                          textShadow: '0 0 10px rgba(0,82,204,0.2)'
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          background: 'rgba(255,179,0,0.05)',
+                          padding: '16px',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(255,179,0,0.2)',
+                          marginBottom: '16px'
                         }}>
-                          {pairingData.device.pairingShortCode}
-                        </div>
-                        {pairingData.device.pairingExpiresAt && (
-                          <span style={{ fontSize: '0.75rem', opacity: 0.5 }}>
-                            Expires at {new Date(pairingData.device.pairingExpiresAt).toLocaleTimeString()}
+                          <RefreshCw size={20} className="spin" style={{ color: '#ffb300', flexShrink: 0 }} />
+                          <span style={{ fontSize: '0.9rem', opacity: 0.85 }}>
+                            Connecting to Cloud and registering device... If this message persists, please check that the <strong>PULSE Edge Agent</strong> service is running and can reach the Cloud target (<code>{pairingData.device?.cloudEndpoint}</code>).
                           </span>
-                        )}
-                      </div>
-                    )}
+                        </div>
+                      ) : (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          background: 'rgba(0,168,120,0.05)',
+                          padding: '12px 16px',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(0,168,120,0.1)',
+                          marginBottom: '16px'
+                        }}>
+                          <RefreshCw size={20} className="spin" style={{ color: '#00a878', flexShrink: 0 }} />
+                          <span style={{ fontSize: '0.9rem', opacity: 0.8 }}>Waiting for approval from PULSE Cloud operator...</span>
+                        </div>
+                      )}
+
+                      {pairingData.device?.pairingBaseUrl && (
+                        <div style={{ marginBottom: '16px' }}>
+                          <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '10px' }}>
+                            If your setup laptop has Cloud internet access, click below to link:
+                          </p>
+                          <a
+                            href={`${pairingData.device.pairingBaseUrl}?deviceId=${pairingData.device.deviceId}&token=${pairingData.device.pairingToken}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="onboarding-btn onboarding-btn-primary"
+                            style={{ textDecoration: 'none', display: 'inline-flex', width: '100%', justifyContent: 'center', margin: '0' }}
+                          >
+                            Link Device in Central Cloud <ArrowRight size={16} />
+                          </a>
+                        </div>
+                      )}
+
+                      {pairingData.device?.pairingShortCode && (
+                        <div style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '8px',
+                          background: 'rgba(0,82,204,0.03)',
+                          padding: '16px',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(0,82,204,0.1)'
+                        }}>
+                          <span style={{ fontSize: '0.85rem', opacity: 0.6 }}>Or enter this code on the Cloud pairing page:</span>
+                          <div style={{
+                            fontSize: '2rem',
+                            fontWeight: 'bold',
+                            letterSpacing: '3px',
+                            color: '#0052cc',
+                            textShadow: '0 0 10px rgba(0,82,204,0.2)'
+                          }}>
+                            {pairingData.device.pairingShortCode}
+                          </div>
+                          {pairingData.device.pairingExpiresAt && (() => {
+                            const expiryStr = pairingData.device.pairingExpiresAt;
+                            const dateSpec = expiryStr.endsWith('Z') || expiryStr.includes('+') ? expiryStr : `${expiryStr}Z`;
+                            return (
+                              <span style={{ fontSize: '0.75rem', opacity: 0.5 }}>
+                                Expires at {new Date(dateSpec).toLocaleTimeString()}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right Column: QR Code scanning */}
+                    <div className="onboarding-split-right">
+                      {pairingData.device?.pairingBaseUrl && (() => {
+                        const pairingUrl = `${pairingData.device.pairingBaseUrl}?deviceId=${pairingData.device.deviceId}&token=${pairingData.device.pairingToken}`;
+                        return (
+                          <div className="onboarding-qr-container" style={{ marginTop: '0' }}>
+                            <span style={{ fontSize: '0.85rem', opacity: 0.6, marginBottom: '12px', display: 'block', textAlign: 'center' }}>
+                              Or scan this QR Code with your mobile to link instantly:
+                            </span>
+                            <div className="onboarding-qr-wrapper">
+                              <QRCodeSVG
+                                value={pairingUrl}
+                                size={160}
+                                level="H"
+                                includeMargin={false}
+                                bgColor="#ffffff"
+                                fgColor="#1a202c"
+                                imageSettings={{
+                                  src: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDQwIDQwIj48cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjMWEyMDJjIi8+PHBhdGggZD0iTTMyIDIwaC02LjRsLTQuOCAxNC40TDE5LjIgNS42bC00LjggMTQuNEg4IiBmaWxsPSJub25lIiBzdHJva2U9IiMzY2U4YmQiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+",
+                                  height: 32,
+                                  width: 32,
+                                  excavate: true,
+                                }}
+                              />
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px',
+                                marginTop: '10px',
+                                color: '#1a202c',
+                                fontWeight: 800,
+                                fontSize: '0.8rem',
+                                letterSpacing: '0.5px'
+                              }}>
+                                <span style={{ opacity: 0.6 }}>PULSE</span>
+                                <span style={{ color: '#00a878' }}>EDGE</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                 )}
               </div>

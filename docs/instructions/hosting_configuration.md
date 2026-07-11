@@ -36,7 +36,7 @@ The application behaves differently depending on the `"hostingMode"` value speci
 
 ## 3. Configuration Management
 
-Hosting configuration settings are managed via JSON files inside the [Pulse.Edge.Api](file:///Users/jirawuth/Projects/pulse-project/edge/src/Pulse.Edge.Api) folder:
+Hosting configuration settings are managed via JSON files inside the [Pulse.Edge.Api](file:///Users/jirawuth/Projects/pulse-edge/src/Pulse.Edge.Api) folder:
 
 ### 3.1 Production Settings: `appsettings.json`
 Acts as the global baseline config. It defaults to the unified single-port architecture:
@@ -73,7 +73,7 @@ Overrides production settings locally on developer machines:
 
 Our local launch utilities automatically read these settings and spin up the processes accordingly:
 
-* **[start-edge.sh](file:///Users/jirawuth/Projects/pulse-project/edge/start-edge.sh) (macOS/Linux)** & **[start-edge.bat](file:///Users/jirawuth/Projects/pulse-project/edge/start-edge.bat) (Windows)**:
+* **[start-edge.sh](file:///Users/jirawuth/Projects/pulse-edge/start-edge.sh) (macOS/Linux)** & **[start-edge.bat](file:///Users/jirawuth/Projects/pulse-edge/start-edge.bat) (Windows)**:
   1. Inspect the `hostingMode` key in `appsettings.Development.json` (falling back to `appsettings.json`).
   2. If `MultiPort` (default in dev), the script launches the API, the separate Agent daemon, and the Vite UI dev server.
   3. If `SinglePort`, the script launches only the API (which automatically runs the embedded background worker) and the Vite UI dev server.

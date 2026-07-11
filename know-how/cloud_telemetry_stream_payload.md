@@ -88,7 +88,7 @@ The telemetry endpoint accepts a JSON array of telemetry frames. Each frame repr
 ## Store-and-Forward Sync Flow
 
 1. **Local Buffering:** Raw metrics polled from device drivers are merged by data source ID and written to the local SQLite database (`QueueTelemetry` table).
-2. **Batch Syncing:** The [SyncService](file:///Users/jirawuth/Projects/pulse-project/edge/src/Pulse.Edge.Cloud/Services/SyncService.cs) reads up to 100 pending rows, flags them as in-flight (`IsSending = true`), and transmits them in a single batch to `/edge/telemetry`.
+2. **Batch Syncing:** The [SyncService](file:///Users/jirawuth/Projects/pulse-edge/src/Pulse.Edge.Cloud/Services/SyncService.cs) reads up to 100 pending rows, flags them as in-flight (`IsSending = true`), and transmits them in a single batch to `/edge/telemetry`.
 3. **Completion & Clean-up:**
    - On `202 Accepted` with `rejected = 0`: The edge deletes the corresponding rows from the SQLite queue.
    - On Partial Rejection: The service logs the rejected frame indices and reasons, deleting the successfully accepted ones.
