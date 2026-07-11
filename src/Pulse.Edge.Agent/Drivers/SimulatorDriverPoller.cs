@@ -95,7 +95,7 @@ public class SimulatorDriverPoller : IProtocolDriver
                 double rawVal = _simulatorDriver.ReadValue(adapterId, dp.Address);
                 double val = (rawVal * dp.ScaleFactor) + dp.Offset;
 
-                _logger.LogInformation("[Simulator Read] Adapter: {AdapterName} | Address: {Address} | Raw: {Raw} | Processed: {Value}", adapter.Name, dp.Address, rawVal, val);
+                _logger.LogDebug("[Simulator Read] Adapter: {AdapterName} | Address: {Address} | Raw: {Raw} | Processed: {Value}", adapter.Name, dp.Address, rawVal, val);
 
                 if (dp.DataType.Equals("Boolean", StringComparison.OrdinalIgnoreCase))
                 {

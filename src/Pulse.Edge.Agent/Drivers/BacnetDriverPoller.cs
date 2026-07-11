@@ -95,7 +95,7 @@ public class BacnetDriverPoller : IProtocolDriver
             {
                 double rawVal = await _bacnetDriver.ReadTagAsync(dp.Address, dp.DataType, ct);
                 double val = (rawVal * dp.ScaleFactor) + dp.Offset;
-                _logger.LogInformation("[BACnet Read] Address: {Address} | Raw: {Raw} | Processed: {Value}", dp.Address, rawVal, val);
+                _logger.LogDebug("[BACnet Read] Address: {Address} | Raw: {Raw} | Processed: {Value}", dp.Address, rawVal, val);
                 
                 dp.LastValue = val.ToString("F2");
                 dp.LastError = null;

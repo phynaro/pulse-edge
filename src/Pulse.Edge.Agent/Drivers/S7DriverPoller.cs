@@ -80,7 +80,7 @@ public class S7DriverPoller : IProtocolDriver
             {
                 double rawVal = await _s7NetDriver.ReadTagAsync(dp.Address, dp.DataType, ct);
                 double val = (rawVal * dp.ScaleFactor) + dp.Offset;
-                _logger.LogInformation("[Siemens S7 Read] Address: {Address} | Raw: {Raw} | Processed: {Value}", dp.Address, rawVal, val);
+                _logger.LogDebug("[Siemens S7 Read] Address: {Address} | Raw: {Raw} | Processed: {Value}", dp.Address, rawVal, val);
                 
                 dp.LastValue = val.ToString("F2");
                 dp.LastError = null;

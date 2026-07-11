@@ -81,7 +81,7 @@ public class LibPlcTagDriverPoller : IProtocolDriver
                 double rawVal = await _libPlcTagDriver.ReadTagAsync(dp.Address, dp.DataType, ct);
 
                 double val = (rawVal * dp.ScaleFactor) + dp.Offset;
-                _logger.LogInformation("[Ethernet/IP Read] Address: {Address} | Raw: {Raw} | Processed: {Value}", dp.Address, rawVal, val);
+                _logger.LogDebug("[Ethernet/IP Read] Address: {Address} | Raw: {Raw} | Processed: {Value}", dp.Address, rawVal, val);
                 
                 dp.LastValue = val.ToString("F2");
                 dp.LastError = null;

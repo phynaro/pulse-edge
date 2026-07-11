@@ -174,7 +174,7 @@ public class OpcUaDriverPoller : IProtocolDriver
                 {
                     double currentVal = readRes.Value;
                     double val = (currentVal * dp.ScaleFactor) + dp.Offset;
-                    _logger.LogInformation("[Telemetry Read] Node: {Node} | Raw: {Raw} | Processed: {Value}", dp.Address, currentVal, val);
+                    _logger.LogDebug("[Telemetry Read] Node: {Node} | Raw: {Raw} | Processed: {Value}", dp.Address, currentVal, val);
                     dp.LastValue = val.ToString("F2");
                     dp.LastError = null;
                     dp.ConsecutiveFailures = 0;
