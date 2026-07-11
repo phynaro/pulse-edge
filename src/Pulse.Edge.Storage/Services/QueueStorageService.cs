@@ -17,6 +17,7 @@ public class QueueStorageService
     // ─────────────────────────────────────────────────────────────────────────
     private const int MaxBufferRows = 10_000;
     private static readonly TimeSpan MaxBufferAge = TimeSpan.FromDays(7);
+    private static long _lastBufferLossCriticalTicks;
 
     // Initializes the SQLite database, creating it and its tables if they do not exist
     public async Task InitializeAsync()
@@ -713,6 +714,21 @@ public class QueueStorageService
             if (toDelete.Any())
             {
                 db.QueueTelemetry.RemoveRange(toDelete);
+                var now = DateTime.UtcNow;
+                var lastTicks = Interlocked.Read(ref _lastBufferLossCriticalTicks);
+                if (now.Ticks - lastTicks >= TimeSpan.FromMinutes(15).Ticks)
+                {
+                    Interlocked.Exchange(ref _lastBufferLossCriticalTicks, now.Ticks);
+                    db.DiagnosticEvents.Add(new DiagnosticEvent
+                    {
+                        TimestampUtc = now,
+                        Level = "Critical",
+                        Category = typeof(QueueStorageService).FullName ?? nameof(QueueStorageService),
+                        EventCode = "BUFFER_DATA_LOSS",
+                        Message = $"Telemetry buffer exceeded {MaxBufferRows:N0} rows. {toDelete.Count:N0} oldest record(s) were discarded to preserve recent data.",
+                        Details = "The edge is producing telemetry faster than it can synchronize. Data loss has occurred."
+                    });
+                }
                 await db.SaveChangesAsync();
             }
         }

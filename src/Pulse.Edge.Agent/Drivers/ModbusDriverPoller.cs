@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -134,6 +135,7 @@ public class ModbusDriverPoller : IProtocolDriver
 
         foreach (var dp in allTags)
         {
+            var parseTimer = Stopwatch.StartNew();
             int baseInterval = Math.Max(dp.ScanIntervalMs > 0 ? dp.ScanIntervalMs : 1000, 100);
             int effectiveInterval = baseInterval;
             if (dp.ConsecutiveFailures > 0)
@@ -161,6 +163,8 @@ public class ModbusDriverPoller : IProtocolDriver
             }
             catch (Exception ex)
             {
+                parseTimer.Stop();
+                dp.LastLatencyMs = Math.Round(parseTimer.Elapsed.TotalMilliseconds, 1);
                 _logger.LogWarning("[Modbus Block] Could not parse address '{Addr}': {Msg}", dp.Address, ex.Message);
                 dp.LastError = $"Address parse error: {ex.Message}";
                 dp.ConsecutiveFailures++;
@@ -213,14 +217,17 @@ public class ModbusDriverPoller : IProtocolDriver
                         regLabel, blockStart, blockStart + blockWords - 1, blockWords, block.Count);
 
                     ushort[] buffer;
+                    var blockReadTimer = Stopwatch.StartNew();
                     try
                     {
                         buffer = regType == ModbusDriver.RegisterType.HoldingRegister
                             ? await _modbusDriver.ReadBlockHoldingAsync(blockStart, blockWords, unitId, ct)
                             : await _modbusDriver.ReadBlockInputAsync(blockStart, blockWords, unitId, ct);
+                        blockReadTimer.Stop();
                     }
                     catch (Exception ex)
                     {
+                        blockReadTimer.Stop();
                         // Block read failed — degrade to individual reads with retries!
                         _logger.LogWarning(ex,
                             "[Modbus Block] {Reg} block read failed @{Start} ({Words} words). Degrading to individual tag reads...",
@@ -229,6 +236,7 @@ public class ModbusDriverPoller : IProtocolDriver
                         foreach (var meta in block)
                         {
                             var dp = meta.Dp;
+                            var degradedReadTimer = Stopwatch.StartNew();
                             int maxRetries = 3;
                             double rawVal = 0;
                             bool readSuccess = false;
@@ -252,6 +260,8 @@ public class ModbusDriverPoller : IProtocolDriver
 
                             double? processedVal = null;
                             string quality = "Good";
+                            degradedReadTimer.Stop();
+                            dp.LastLatencyMs = Math.Round(degradedReadTimer.Elapsed.TotalMilliseconds, 1);
 
                             if (readSuccess)
                             {
@@ -292,8 +302,10 @@ public class ModbusDriverPoller : IProtocolDriver
                     }
 
                     // Step 5 — slice buffer and convert each tag
+                    var blockReadLatencyMs = Math.Round(blockReadTimer.Elapsed.TotalMilliseconds, 1);
                     foreach (var meta in block)
                     {
+                        meta.Dp.LastLatencyMs = blockReadLatencyMs;
                         double? processedVal = null;
                         string quality = "Good";
 
@@ -355,6 +367,7 @@ public class ModbusDriverPoller : IProtocolDriver
         List<DataPoint> dirtyDps,
         CancellationToken ct)
     {
+        var readTimer = Stopwatch.StartNew();
         int maxRetries = 3;
         double rawVal = 0;
         bool readSuccess = false;
@@ -378,6 +391,8 @@ public class ModbusDriverPoller : IProtocolDriver
 
         double? processedVal = null;
         string quality = "Good";
+        readTimer.Stop();
+        dp.LastLatencyMs = Math.Round(readTimer.Elapsed.TotalMilliseconds, 1);
 
         if (readSuccess)
         {

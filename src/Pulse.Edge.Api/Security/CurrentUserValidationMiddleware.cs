@@ -10,7 +10,8 @@ public sealed class CurrentUserValidationMiddleware(RequestDelegate next)
     private static readonly string[] AnonymousApiPaths =
     [
         "/api/auth/login", "/api/auth/setup-status", "/api/auth/first-admin",
-        "/api/settings", "/api/settings/validate-cloud", "/api/dashboard", "/api/webhooks/receive/"
+        "/api/settings", "/api/settings/validate-cloud", "/api/dashboard", "/api/webhooks/receive/",
+        "/api/diagnostic-logs/ingest"
     ];
 
     public async Task InvokeAsync(HttpContext context)
@@ -23,6 +24,7 @@ public sealed class CurrentUserValidationMiddleware(RequestDelegate next)
 
         var path = context.Request.Path.Value ?? "";
         var isAnonymousCandidate = AnonymousApiPaths.Any(p => p.EndsWith('/') ? path.StartsWith(p, StringComparison.OrdinalIgnoreCase) : path.Equals(p, StringComparison.OrdinalIgnoreCase));
+        var isInternalIngest = path.Equals("/api/diagnostic-logs/ingest", StringComparison.OrdinalIgnoreCase);
 
         using var db = new QueueDbContext();
         var hasUsers = await db.LocalUsers.AnyAsync();
@@ -49,6 +51,7 @@ public sealed class CurrentUserValidationMiddleware(RequestDelegate next)
         if (isAnonymousCandidate && hasUsers && context.User.Identity?.IsAuthenticated != true &&
             !path.Equals("/api/auth/login", StringComparison.OrdinalIgnoreCase) &&
             !path.Equals("/api/auth/setup-status", StringComparison.OrdinalIgnoreCase) &&
+            !isInternalIngest &&
             !path.StartsWith("/api/webhooks/receive/", StringComparison.OrdinalIgnoreCase))
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -59,7 +62,7 @@ public sealed class CurrentUserValidationMiddleware(RequestDelegate next)
         var isAuthAction = path.StartsWith("/api/auth/", StringComparison.OrdinalIgnoreCase);
         var isWebhook = path.StartsWith("/api/webhooks/receive/", StringComparison.OrdinalIgnoreCase);
         var isInitialSetup = !hasUsers && isAnonymousCandidate;
-        if (isMutation && !isAuthAction && !isWebhook && !isInitialSetup && !context.User.IsInRole("Admin"))
+        if (isMutation && !isAuthAction && !isWebhook && !isInternalIngest && !isInitialSetup && !context.User.IsInRole("Admin"))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;

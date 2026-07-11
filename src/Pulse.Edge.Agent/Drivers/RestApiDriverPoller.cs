@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -85,10 +86,13 @@ public class RestApiDriverPoller : IProtocolDriver
         // Group readings by DataSourceId to batch enqueue them at the end
         var readingsByDataSource = new Dictionary<string, Dictionary<string, (double? Value, string Quality)>>();
 
+        var fetchTimer = Stopwatch.StartNew();
         try
         {
             // Fetch the payload once for the group (since they all query the same REST endpoint)
             string payload = await _restApiDriver.FetchPayloadAsync(ct);
+            fetchTimer.Stop();
+            var fetchLatencyMs = Math.Round(fetchTimer.Elapsed.TotalMilliseconds, 1);
             _lastFetchTimes[adapter.Id] = now;
             
             // Parse payload as JSON
@@ -97,6 +101,7 @@ public class RestApiDriverPoller : IProtocolDriver
 
             foreach (var dp in group)
             {
+                dp.LastLatencyMs = fetchLatencyMs;
                 double? processedVal = null;
                 string quality = "Good";
 
@@ -204,9 +209,12 @@ public class RestApiDriverPoller : IProtocolDriver
         }
         catch (Exception ex)
         {
+            fetchTimer.Stop();
+            var failedFetchLatencyMs = Math.Round(fetchTimer.Elapsed.TotalMilliseconds, 1);
             _logger.LogError(ex, "REST API fetch failed for adapter {AdapterId}", adapter.Id);
             foreach (var dp in group)
             {
+                dp.LastLatencyMs = failedFetchLatencyMs;
                 dp.LastError = $"Fetch failed: {ex.Message}";
                 dp.ConsecutiveFailures++;
                 dp.LastUpdated = now;

@@ -2,6 +2,9 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Pulse.Edge.Api.Diagnostics;
 using Pulse.Edge.Storage;
+using Pulse.Edge.Storage.Helpers;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Pulse.Edge.Api.Endpoints;
 
@@ -10,6 +13,16 @@ public static class DiagnosticLogEndpoints
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     public static void MapDiagnosticLogEndpoints(this IEndpointRouteBuilder routes)
     {
+        routes.MapPost("/api/diagnostic-logs/ingest", (HttpContext context, DiagnosticLogService logs, List<ForwardedDiagnostic> entries) =>
+        {
+            if (context.Connection.RemoteIpAddress == null || !System.Net.IPAddress.IsLoopback(context.Connection.RemoteIpAddress)) return Results.NotFound();
+            var supplied = context.Request.Headers["X-Pulse-Diagnostic-Key"].ToString();
+            var expected = DiagnosticBridgeKey.LoadOrCreate();
+            if (supplied.Length != expected.Length || !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(supplied), Encoding.UTF8.GetBytes(expected))) return Results.NotFound();
+            foreach (var entry in entries.Take(200)) logs.Ingest(entry);
+            return Results.Accepted();
+        });
+
         routes.MapGet("/api/diagnostic-logs/recent", (DiagnosticLogService logs, int? limit, string? level, string? category, string? search) =>
             Results.Ok(logs.Recent(limit ?? 300, level, category, search)));
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -71,6 +72,7 @@ public class S7DriverPoller : IProtocolDriver
 
         foreach (var dp in dueDps)
         {
+            var readTimer = Stopwatch.StartNew();
             double? processedVal = null;
             string quality = "Good";
 
@@ -94,6 +96,9 @@ public class S7DriverPoller : IProtocolDriver
                 dp.LastUpdated = now;
                 quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
             }
+
+            readTimer.Stop();
+            dp.LastLatencyMs = Math.Round(readTimer.Elapsed.TotalMilliseconds, 1);
 
             AddDirtyIfNeeded(dp, now, dirtyDps);
 

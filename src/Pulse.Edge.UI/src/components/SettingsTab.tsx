@@ -6,6 +6,7 @@ import SoftResetModal from './SoftResetModal';
 import type { DashboardData } from '../types';
 import { useAuth } from '../context/AuthContext';
 import UserManagement from './UserManagement';
+import ConfigurationBackupPanel from './ConfigurationBackupPanel';
 
 interface SettingsTabProps {
   dashboard: DashboardData | null;
@@ -28,247 +29,71 @@ interface SettingsTabProps {
   setShowDiagnosticsPanel: (val: boolean) => void;
   handleFactoryReset: () => Promise<void>;
   handleSoftReset: () => Promise<void>;
+  onRestoreComplete: () => Promise<void>;
 }
 
-export default function SettingsTab({
-  dashboard,
-  cloudEndpoint,
-  setCloudEndpoint,
-  edgeSerial,
-  setEdgeSerial,
-  handleSaveSettings,
-  pollingInterval,
-  setPollingInterval,
-  maxLiveLogs,
-  setMaxLiveLogs,
-  telemetryWarningThreshold,
-  setTelemetryWarningThreshold,
-  eventWarningThreshold,
-  setEventWarningThreshold,
-  showLiveFeedPanel,
-  setShowLiveFeedPanel,
-  showDiagnosticsPanel,
-  setShowDiagnosticsPanel,
-  handleFactoryReset,
-  handleSoftReset
-}: SettingsTabProps) {
+export default function SettingsTab(props: SettingsTabProps) {
+  const {
+    dashboard, cloudEndpoint, setCloudEndpoint, edgeSerial, setEdgeSerial,
+    handleSaveSettings, pollingInterval, setPollingInterval, maxLiveLogs,
+    setMaxLiveLogs, telemetryWarningThreshold, setTelemetryWarningThreshold,
+    eventWarningThreshold, setEventWarningThreshold, showLiveFeedPanel,
+    setShowLiveFeedPanel, showDiagnosticsPanel, setShowDiagnosticsPanel,
+    handleFactoryReset, handleSoftReset, onRestoreComplete
+  } = props;
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isSoftResetModalOpen, setIsSoftResetModalOpen] = useState(false);
+
   return (
     <>
       <div className="page-header">
         <div className="page-header-info">
-          <h2 className="page-header-title">
-            <Settings size={24} className="page-header-icon" />
-            Edge Agent Settings
-          </h2>
-          <p className="page-header-desc">
-            Configure cloud endpoints, device credentials, polling intervals, and user interface preferences.
-          </p>
+          <h2 className="page-header-title"><Settings size={24} className="page-header-icon" />Edge Agent Settings</h2>
+          <p className="page-header-desc">Configure cloud endpoints, device credentials, polling intervals, and user interface preferences.</p>
         </div>
       </div>
 
       <div className="settings-grid">
         <div className="tab-stack">
           <div className="panel panel-flush">
-            <div className="panel-header">
-              <h2 className="panel-title">Configure Connection Endpoints</h2>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">PULSE Cloud Synchronizer Target</label>
-              <input
-                className="form-input"
-                type="url"
-                value={cloudEndpoint}
-                readOnly={!isAdmin}
-                onChange={(e) => setCloudEndpoint(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Hardware Serial Number</label>
-              <input
-                className="form-input"
-                type="text"
-                value={edgeSerial}
-                readOnly={!isAdmin}
-                onChange={(e) => setEdgeSerial(e.target.value)}
-              />
-              <small className="form-hint">
-                Warning: Changing the Serial Number forces device re-registration on next runtime start.
-              </small>
-            </div>
-
-            {isAdmin && <button type="button" className="btn-primary" onClick={handleSaveSettings}>
-              Save Changes
-            </button>}
+            <div className="panel-header"><h2 className="panel-title">Configure Connection Endpoints</h2></div>
+            <div className="form-group"><label className="form-label">PULSE Cloud Synchronizer Target</label><input className="form-input" type="url" value={cloudEndpoint} readOnly={!isAdmin} onChange={(e) => setCloudEndpoint(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Hardware Serial Number</label><input className="form-input" type="text" value={edgeSerial} readOnly={!isAdmin} onChange={(e) => setEdgeSerial(e.target.value)} /><small className="form-hint">Warning: Changing the Serial Number forces device re-registration on next runtime start.</small></div>
+            {isAdmin && <button type="button" className="btn-primary" onClick={handleSaveSettings}>Save Changes</button>}
           </div>
 
           {isAdmin && <div className="panel">
-            <div className="panel-header">
-              <h2 className="panel-title">User Interface Config</h2>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Background Polling Interval</label>
-              <CustomSelect
-                value={pollingInterval.toString()}
-                onChange={(val) => setPollingInterval(parseInt(val, 10))}
-                options={[
-                  { value: '1000', label: '1 Second (Realtime)' },
-                  { value: '3000', label: '3 Seconds (Standard)' },
-                  { value: '5000', label: '5 Seconds (Efficient)' },
-                  { value: '10000', label: '10 Seconds (Low Power)' }
-                ]}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Live Telemetry Max Rows ({maxLiveLogs})</label>
-              <input
-                className="form-input form-input-range"
-                type="range"
-                min="5"
-                max="50"
-                step="5"
-                value={maxLiveLogs}
-                onChange={(e) => setMaxLiveLogs(parseInt(e.target.value, 10))}
-              />
-            </div>
-
+            <div className="panel-header"><h2 className="panel-title">User Interface Config</h2></div>
+            <div className="form-group"><label className="form-label">Background Polling Interval</label><CustomSelect value={pollingInterval.toString()} onChange={(val) => setPollingInterval(parseInt(val, 10))} options={[{ value: '1000', label: '1 Second (Realtime)' }, { value: '3000', label: '3 Seconds (Standard)' }, { value: '5000', label: '5 Seconds (Efficient)' }, { value: '10000', label: '10 Seconds (Low Power)' }]} /></div>
+            <div className="form-group"><label className="form-label">Live Telemetry Max Rows ({maxLiveLogs})</label><input className="form-input form-input-range" type="range" min="5" max="50" step="5" value={maxLiveLogs} onChange={(e) => setMaxLiveLogs(parseInt(e.target.value, 10))} /></div>
             <div className="form-grid-2col-settings">
-              <div className="form-group">
-                <label className="form-label">Telemetry Alert Limit</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  min="1"
-                  value={telemetryWarningThreshold}
-                  onChange={(e) => setTelemetryWarningThreshold(parseInt(e.target.value, 10) || 10)}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Event Alert Limit</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  min="1"
-                  value={eventWarningThreshold}
-                  onChange={(e) => setEventWarningThreshold(parseInt(e.target.value, 10) || 5)}
-                />
-              </div>
+              <div className="form-group"><label className="form-label">Telemetry Alert Limit</label><input className="form-input" type="number" min="1" value={telemetryWarningThreshold} onChange={(e) => setTelemetryWarningThreshold(parseInt(e.target.value, 10) || 10)} /></div>
+              <div className="form-group"><label className="form-label">Event Alert Limit</label><input className="form-input" type="number" min="1" value={eventWarningThreshold} onChange={(e) => setEventWarningThreshold(parseInt(e.target.value, 10) || 5)} /></div>
             </div>
-
-            <div className="form-group form-group-flush">
-              <label className="form-label form-label-bold">Visible Dashboard Modules</label>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={showLiveFeedPanel}
-                  onChange={(e) => setShowLiveFeedPanel(e.target.checked)}
-                />
-                <span>Show Real-time Telemetry Feed Panel</span>
-              </label>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={showDiagnosticsPanel}
-                  onChange={(e) => setShowDiagnosticsPanel(e.target.checked)}
-                />
-                <span>Show System Diagnostics Panel</span>
-              </label>
-            </div>
+            <div className="form-group form-group-flush"><label className="form-label form-label-bold">Visible Dashboard Modules</label><label className="checkbox-label"><input type="checkbox" checked={showLiveFeedPanel} onChange={(e) => setShowLiveFeedPanel(e.target.checked)} /><span>Show Real-time Telemetry Feed Panel</span></label><label className="checkbox-label"><input type="checkbox" checked={showDiagnosticsPanel} onChange={(e) => setShowDiagnosticsPanel(e.target.checked)} /><span>Show System Diagnostics Panel</span></label></div>
           </div>}
 
-          {isAdmin && <div className="panel">
-            <div className="panel-header">
-              <h2 className="panel-title text-warning" style={{ color: 'var(--warning-color, #ffb300)' }}>Soft Reset</h2>
-            </div>
-            <p className="text-secondary" style={{ fontSize: '13px', margin: '8px 0 16px 0', lineHeight: '1.5' }}>
-              Reset cloud registration and pairing details (Organization, Site, and API Key) to allow pairing this Edge node under a different organization. <strong>All local configurations (driver adapters, streams, and data points) will be preserved.</strong>
-            </p>
-            <button type="button" className="btn-secondary" style={{ width: '100%', borderColor: 'var(--warning-color, #ffb300)', color: 'var(--warning-color, #ffb300)' }} onClick={() => setIsSoftResetModalOpen(true)}>
-              Soft Reset Node
-            </button>
-          </div>}
+          {isAdmin && <ConfigurationBackupPanel onRestoreComplete={onRestoreComplete} />}
           {isAdmin && user && <UserManagement currentUserId={user.id} />}
-
-          {isAdmin && <div className="panel">
-            <div className="panel-header">
-              <h2 className="panel-title text-danger" style={{ color: 'var(--error-color, #ef4444)' }}>Factory Default</h2>
-            </div>
-            <p className="text-secondary" style={{ fontSize: '13px', margin: '8px 0 16px 0', lineHeight: '1.5' }}>
-              Erase all configuration, buffered data, and local users. Onboarding will restart and a new administrator must be created after cloud pairing.
-            </p>
-            <button type="button" className="btn-danger-solid" style={{ width: '100%' }} onClick={() => setIsResetModalOpen(true)}>
-              Reset to Factory Default
-            </button>
-          </div>}
+          {isAdmin && <div className="panel"><div className="panel-header"><h2 className="panel-title text-warning" style={{ color: 'var(--warning-color, #ffb300)' }}>Soft Reset</h2></div><p className="text-secondary" style={{ fontSize: '13px', margin: '8px 0 16px 0', lineHeight: '1.5' }}>Reset cloud registration and pairing details (Organization, Site, and API Key) to allow pairing this Edge node under a different organization. <strong>All local configurations (driver adapters, streams, and data points) will be preserved.</strong></p><button type="button" className="btn-secondary" style={{ width: '100%', borderColor: 'var(--warning-color, #ffb300)', color: 'var(--warning-color, #ffb300)' }} onClick={() => setIsSoftResetModalOpen(true)}>Soft Reset Node</button></div>}
+          {isAdmin && <div className="panel"><div className="panel-header"><h2 className="panel-title text-danger" style={{ color: 'var(--error-color, #ef4444)' }}>Factory Default</h2></div><p className="text-secondary" style={{ fontSize: '13px', margin: '8px 0 16px 0', lineHeight: '1.5' }}>Erase all configuration, buffered data, and local users. Onboarding will restart and a new administrator must be created after cloud pairing.</p><button type="button" className="btn-danger-solid" style={{ width: '100%' }} onClick={() => setIsResetModalOpen(true)}>Reset to Factory Default</button></div>}
         </div>
 
         <div className="panel">
-          <div className="panel-header">
-            <h2 className="panel-title">Active Node Details</h2>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">DeviceId (UUID)</label>
-            <input className="form-input form-input-mono" type="text" readOnly value={dashboard?.device.deviceId || 'Fetching...'} />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Associated Organization ID</label>
-            <input className="form-input form-input-mono" type="text" readOnly value={dashboard?.device.organizationId || 'Fetching...'} />
-          </div>
-
-          {dashboard?.device.organizationName && dashboard.device.organizationName !== 'N/A' && (
-            <div className="form-group">
-              <label className="form-label">Associated Organization Name</label>
-              <input className="form-input" type="text" readOnly value={dashboard.device.organizationName} />
-            </div>
-          )}
-
-          <div className="form-group">
-            <label className="form-label">Associated Factory Site ID</label>
-            <input className="form-input form-input-mono" type="text" readOnly value={dashboard?.device.siteId || 'Fetching...'} />
-          </div>
-
-          {dashboard?.device.siteName && dashboard.device.siteName !== 'N/A' && (
-            <div className="form-group">
-              <label className="form-label">Associated Factory Site Name</label>
-              <input className="form-input" type="text" readOnly value={dashboard.device.siteName} />
-            </div>
-          )}
-
-          <div className="form-group">
-            <label className="form-label">API Key Token</label>
-            <input className="form-input form-input-mono" type="text" readOnly value={dashboard?.device.apiKey || 'N/A'} />
-          </div>
+          <div className="panel-header"><h2 className="panel-title">Active Node Details</h2></div>
+          <div className="form-group"><label className="form-label">DeviceId (UUID)</label><input className="form-input form-input-mono" type="text" readOnly value={dashboard?.device.deviceId || 'Fetching...'} /></div>
+          <div className="form-group"><label className="form-label">Associated Organization ID</label><input className="form-input form-input-mono" type="text" readOnly value={dashboard?.device.organizationId || 'Fetching...'} /></div>
+          {dashboard?.device.organizationName && dashboard.device.organizationName !== 'N/A' && <div className="form-group"><label className="form-label">Associated Organization Name</label><input className="form-input" type="text" readOnly value={dashboard.device.organizationName} /></div>}
+          <div className="form-group"><label className="form-label">Associated Factory Site ID</label><input className="form-input form-input-mono" type="text" readOnly value={dashboard?.device.siteId || 'Fetching...'} /></div>
+          {dashboard?.device.siteName && dashboard.device.siteName !== 'N/A' && <div className="form-group"><label className="form-label">Associated Factory Site Name</label><input className="form-input" type="text" readOnly value={dashboard.device.siteName} /></div>}
+          <div className="form-group"><label className="form-label">API Key Token</label><input className="form-input form-input-mono" type="text" readOnly value={dashboard?.device.apiKey || 'N/A'} /></div>
         </div>
       </div>
 
-      {isResetModalOpen && (
-        <FactoryResetModal
-          onConfirm={async () => {
-            await handleFactoryReset();
-            setIsResetModalOpen(false);
-          }}
-          onCancel={() => setIsResetModalOpen(false)}
-        />
-      )}
-
-      {isSoftResetModalOpen && (
-        <SoftResetModal
-          onConfirm={async () => {
-            await handleSoftReset();
-            setIsSoftResetModalOpen(false);
-          }}
-          onCancel={() => setIsSoftResetModalOpen(false)}
-        />
-      )}
+      {isResetModalOpen && <FactoryResetModal onConfirm={async () => { await handleFactoryReset(); setIsResetModalOpen(false); }} onCancel={() => setIsResetModalOpen(false)} />}
+      {isSoftResetModalOpen && <SoftResetModal onConfirm={async () => { await handleSoftReset(); setIsSoftResetModalOpen(false); }} onCancel={() => setIsSoftResetModalOpen(false)} />}
     </>
   );
 }

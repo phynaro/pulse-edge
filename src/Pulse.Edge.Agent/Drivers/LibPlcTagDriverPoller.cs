@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -71,14 +72,13 @@ public class LibPlcTagDriverPoller : IProtocolDriver
 
         foreach (var dp in dueDps)
         {
+            var readTimer = Stopwatch.StartNew();
             double? processedVal = null;
             string quality = "Good";
 
             try
             {
-                var readStart = DateTime.UtcNow;
                 double rawVal = await _libPlcTagDriver.ReadTagAsync(dp.Address, dp.DataType, ct);
-                var elapsedMs = (DateTime.UtcNow - readStart).TotalMilliseconds;
 
                 double val = (rawVal * dp.ScaleFactor) + dp.Offset;
                 _logger.LogInformation("[Ethernet/IP Read] Address: {Address} | Raw: {Raw} | Processed: {Value}", dp.Address, rawVal, val);
@@ -87,7 +87,6 @@ public class LibPlcTagDriverPoller : IProtocolDriver
                 dp.LastError = null;
                 dp.ConsecutiveFailures = 0;
                 dp.LastUpdated = now;
-                dp.LastLatencyMs = Math.Round(elapsedMs, 1);
                 processedVal = val;
             }
             catch (Exception ex)
@@ -98,6 +97,9 @@ public class LibPlcTagDriverPoller : IProtocolDriver
                 dp.LastUpdated = now;
                 quality = dp.ConsecutiveFailures >= 3 ? "CommunicationLost" : "DeviceTimeout";
             }
+
+            readTimer.Stop();
+            dp.LastLatencyMs = Math.Round(readTimer.Elapsed.TotalMilliseconds, 1);
 
             AddDirtyIfNeeded(dp, now, dirtyDps);
 

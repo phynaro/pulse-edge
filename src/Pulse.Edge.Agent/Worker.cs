@@ -59,7 +59,15 @@ public class Worker : BackgroundService
 
         // 1. Initialize SQLite Database
         _logger.LogInformation("Initializing local SQLite storage...");
-        await _storageService.InitializeAsync();
+        try
+        {
+            await _storageService.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogCritical(ex, "Critical storage initialization failure. The Agent cannot safely continue.");
+            throw;
+        }
         _logger.LogInformation("SQLite database initialized successfully.");
 
         // Wait until configuration is available
@@ -219,7 +227,10 @@ public class Worker : BackgroundService
                                 }
                                 catch (Exception ex)
                                 {
-                                    _logger.LogError(ex, "Reconnection attempt failed for adapter {AdapterId}", adapter.Id);
+                                    using (_logger.BeginScope(new Dictionary<string, object> { ["AdapterId"] = adapter.Id }))
+                                    {
+                                        _logger.LogError(ex, "Reconnection attempt failed for adapter {AdapterName}", adapter.Name);
+                                    }
 
                                     // Increment failure count on exception
                                     lock (_adapterConnectionStates)

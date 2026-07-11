@@ -41,6 +41,28 @@
 .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-grid-2col-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
+/* Configuration backup / restore */
+.configuration-vault { position: relative; overflow: hidden; }
+.configuration-vault::after { content: ''; position: absolute; width: 150px; height: 150px; right: -70px; top: -85px; border: 1px solid color-mix(in srgb, var(--primary-color) 22%, transparent); border-radius: 50%; pointer-events: none; }
+.backup-panel-header { align-items: flex-start; }
+.backup-panel-kicker { margin: 4px 0 0; color: var(--text-secondary); font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.backup-shield { color: var(--primary-color); filter: drop-shadow(0 0 8px var(--primary-glow)); }
+.backup-description { font-size: 13px; line-height: 1.55; margin: 8px 0 16px; }
+.backup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.backup-action { padding-inline: 12px; text-decoration: none; font-size: 12px; }
+.backup-file-input { display: none; }
+.backup-preview { margin-top: 14px; padding: 14px; border: 1px solid color-mix(in srgb, var(--primary-color) 35%, var(--border-color)); border-radius: 10px; background: color-mix(in srgb, var(--primary-color) 5%, var(--surface-color)); }
+.backup-preview-title { display: flex; align-items: center; gap: 7px; color: var(--primary-color); font-size: 12px; font-weight: 700; }
+.backup-preview-title span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-family: var(--font-mono); font-size: 10px; }
+.backup-count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 13px 0 9px; }
+.backup-count-grid span { padding: 8px; border-radius: 6px; background: var(--bg-color); color: var(--text-secondary); font-size: 11px; }
+.backup-count-grid strong { color: var(--text-primary); font-family: var(--font-mono); font-size: 14px; margin-right: 3px; }
+.backup-meta { margin-bottom: 12px; color: var(--text-secondary); font-family: var(--font-mono); font-size: 10px; }
+.backup-status { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 12px; border-left: 2px solid var(--primary-color); background: var(--bg-color); color: var(--text-secondary); font-size: 11px; line-height: 1.45; }
+.backup-status.is-error { border-left-color: var(--error-color); color: var(--error-color); }
+.backup-secret-note { margin-top: 12px; }
+@media (max-width: 520px) { .backup-actions { grid-template-columns: 1fr; } }
+
 /* ── Buttons ────────────────────────────────────────────────── */
 
 .btn-primary, .btn-secondary, .btn-ghost, .btn-icon, .btn-danger-solid {

@@ -132,7 +132,10 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
       else if (tagProtocolFilter === 'Protocol Simulator') matchesProto = adp?.protocol === 'SIMULATOR';
     }
     return matchesSearch && matchesProto;
-  });
+  }).sort((a, b) => a.address.localeCompare(b.address, undefined, {
+    numeric: true,
+    sensitivity: 'base'
+  }));
 
   const [lastClickedTagId, setLastClickedTagId] = useState<string | null>(null);
 

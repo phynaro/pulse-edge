@@ -7,6 +7,75 @@ echo "============================================="
 echo "  🚀 Starting PULSE Edge IoT Stack..."
 echo "============================================="
 
+ROOT_DIR="$PWD"
+PID_FILE="$ROOT_DIR/.pulse-edge-dev.pids"
+
+is_pulse_pid() {
+  local pid="$1"
+  local command_line cwd
+  command_line=$(ps -p "$pid" -o command= 2>/dev/null || true)
+  case "$command_line" in
+    *Pulse.Edge*) return 0 ;;
+  esac
+  if command -v lsof >/dev/null 2>&1; then
+    cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)
+    case "$cwd" in
+      "$ROOT_DIR"|"$ROOT_DIR"/*) return 0 ;;
+    esac
+  fi
+  return 1
+}
+
+stop_pid_tree() {
+  local pid="$1"
+  kill -0 "$pid" 2>/dev/null || return 0
+  is_pulse_pid "$pid" || return 0
+  # dotnet run and pnpm may each have a child process that owns the port.
+  local children
+  children=$(pgrep -P "$pid" 2>/dev/null || true)
+  [ -n "$children" ] && kill $children 2>/dev/null || true
+  kill "$pid" 2>/dev/null || true
+}
+
+stop_existing_stack() {
+  local pids=""
+  if [ -f "$PID_FILE" ]; then
+    pids=$(awk '/^[0-9]+$/ { print $1 }' "$PID_FILE" | sort -u)
+  fi
+
+  # Compatibility fallback for a stack launched before PID tracking existed.
+  # Only accept listeners whose command line identifies them as PULSE Edge.
+  if command -v lsof >/dev/null 2>&1; then
+    local listener command_line
+    for listener in $(lsof -tiTCP:5288 -sTCP:LISTEN 2>/dev/null; lsof -tiTCP:8080 -sTCP:LISTEN 2>/dev/null); do
+      command_line=$(ps -p "$listener" -o command= 2>/dev/null || true)
+      case "$command_line" in
+        *Pulse.Edge*|*pulse-edge*|*vite*) pids="$pids $listener" ;;
+      esac
+    done
+  fi
+
+  pids=$(echo "$pids" | tr ' ' '\n' | awk '/^[0-9]+$/ && !seen[$1]++')
+  if [ -n "$pids" ]; then
+    echo "♻️  Stopping the running PULSE Edge stack..."
+    for pid in $pids; do stop_pid_tree "$pid"; done
+
+    local attempts=0
+    while [ "$attempts" -lt 20 ]; do
+      local alive=""
+      for pid in $pids; do is_pulse_pid "$pid" && kill -0 "$pid" 2>/dev/null && alive="$alive $pid"; done
+      [ -z "$alive" ] && break
+      sleep 0.25
+      attempts=$((attempts + 1))
+    done
+    for pid in $pids; do is_pulse_pid "$pid" && kill -9 "$pid" 2>/dev/null || true; done
+    echo "✅ Previous PULSE Edge stack stopped."
+  fi
+  rm -f "$PID_FILE"
+}
+
+stop_existing_stack
+
 # Check for 'initial' argument to reset database for onboarding tests
 RESET_DB=false
 for arg in "$@"; do
@@ -27,11 +96,14 @@ fi
 cleanup() {
   trap - EXIT SIGINT SIGTERM
   echo -e "\n🛑 Stopping all services..."
-  local pids=$(jobs -p)
+  local pids=""
+  [ -f "$PID_FILE" ] && pids=$(awk '/^[0-9]+$/ { print $1 }' "$PID_FILE" | sort -u)
+  [ -z "$pids" ] && pids=$(jobs -p)
   if [ -n "$pids" ]; then
-    kill $pids 2>/dev/null
+    for pid in $pids; do stop_pid_tree "$pid"; done
     wait $pids 2>/dev/null
   fi
+  rm -f "$PID_FILE"
   exit 0
 }
 trap cleanup EXIT SIGINT SIGTERM
@@ -73,28 +145,40 @@ fi
 
 echo "📢 Detected Hosting Mode: $HOSTING_MODE"
 
+# Build the shared dependency graph once before the readiness timer starts.
+# In MultiPort mode both executables reference the same projects, and allowing
+# two concurrent `dotnet run` builds can duplicate work and exceed the timeout.
+echo "🔨 Building PULSE Edge services..."
+if ! dotnet build src/Pulse.Edge.Api/Pulse.Edge.Api.csproj; then
+  echo "❌ PULSE Edge build failed. Aborting."
+  exit 1
+fi
+
 if [ "$HOSTING_MODE" == "SinglePort" ]; then
   # 1. Start local Unified Edge Server (Hosts API & background Agent)
   echo "🔌 Starting Unified Edge Server (on http://localhost:5288)..."
-  dotnet run --project src/Pulse.Edge.Api/Pulse.Edge.Api.csproj &
+  dotnet run --no-build --project src/Pulse.Edge.Api/Pulse.Edge.Api.csproj &
+  echo $! >> "$PID_FILE"
 else
   # 1. Start separate Edge Agent Daemon
   echo "🤖 Starting Standalone Edge Agent Daemon..."
-  dotnet run --project src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj &
+  dotnet run --no-build --project src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj &
+  echo $! >> "$PID_FILE"
 
   # 2. Start separate local REST API
   echo "🔌 Starting Edge API Server (on http://localhost:5288)..."
-  dotnet run --project src/Pulse.Edge.Api/Pulse.Edge.Api.csproj &
+  dotnet run --no-build --project src/Pulse.Edge.Api/Pulse.Edge.Api.csproj &
+  echo $! >> "$PID_FILE"
 fi
 
 # Wait for the API to be healthy before starting the UI
-wait_for_http "http://localhost:5288/api/dashboard" "Edge API" 90
+wait_for_http "http://localhost:5288/health" "Edge API" 90
 
 # Start local React Web UI (only after API is up)
 echo "💻 Starting Vite Web UI Server (on http://localhost:8080)..."
 cd src/Pulse.Edge.UI
 pnpm dev &
+echo $! >> "$PID_FILE"
 
 # Keep script alive and wait for all background tasks
 wait
-

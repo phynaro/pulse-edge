@@ -13,6 +13,8 @@ All ASP.NET Core `ILogger` records continue through Serilog to the console and d
 - queues `Warning`, `Error`, and `Fatal` incidents for asynchronous SQLite persistence;
 - never blocks an application or driver thread on database I/O.
 
+In development `MultiPort` mode, the standalone Agent uses a bounded asynchronous provider to batch records to a loopback-only API ingestion endpoint. This makes Agent and driver logs behave like in-process records without exposing ingestion to remote clients or blocking polling threads. Production `SinglePort` mode captures those records directly through Serilog.
+
 SQLite retains at most 10,000 incidents and 30 days of history. Cleanup runs after persistence batches. The rolling text files remain the complete operational record.
 
 ## Diagnostic record
@@ -38,3 +40,12 @@ The `Logs` workspace presents a compact operations console with live/pause contr
 
 Diagnostic persistence is best-effort. A locked or unavailable SQLite database must not interrupt the edge agent, protocol polling, cloud synchronization, or file logging. SSE clients reconnect automatically and history remains available after process restarts for persisted incidents.
 
+## Severity criteria
+
+- `Warning`: operation is degraded or retrying, with no confirmed data loss.
+- `Error`: an operation failed, but the Edge remains able to perform its core responsibilities.
+- `Critical`: the Edge cannot safely perform its core responsibility, data loss is occurring or imminent, integrity is compromised, or the process is terminating unexpectedly.
+
+Critical events are required for database initialization/schema failure, unrecoverable telemetry-buffer writes, hard buffer-cap pruning that discards telemetry, configuration integrity/tamper detection, partial factory-reset failure, unexpected main Worker termination, required credential-store failure, and unhandled host termination. A single adapter failure, tag read failure, retryable cloud outage, heartbeat `502`, and ordinary authentication failure must not be Critical.
+
+The UI displays a persistent global banner whenever retained Critical incidents exist. The banner shows the latest incident and links to the filtered Logs workspace. It remains present until the critical history is cleared by an administrator.

@@ -26,6 +26,7 @@ import ProtocolsTab from './components/ProtocolsTab';
 import BufferTab from './components/BufferTab';
 import SettingsTab from './components/SettingsTab';
 import DiagnosticLogsTab from './components/DiagnosticLogsTab';
+import CriticalAlertBanner from './components/CriticalAlertBanner';
 import OnboardingWizard from './components/OnboardingWizard';
 import OnboardingTourBanner from './components/OnboardingTourBanner';
 
@@ -422,6 +423,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
  
       <main className="main-content">
         <div className="content-area">
+          <CriticalAlertBanner onOpenLogs={() => setActiveTab('logs')} />
           {!isSyncEnabled && (
             <div className="banner-warning">
               <AlertTriangle size={20} />
@@ -529,7 +531,8 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
                   showDiagnosticsPanel={showDiagnosticsPanel}
                   setShowDiagnosticsPanel={setShowDiagnosticsPanel}
                   handleFactoryReset={handleFactoryReset}
-                  handleSoftReset={handleSoftReset}
+                handleSoftReset={handleSoftReset}
+                onRestoreComplete={fetchStaticData}
                 />
               )}
             </>

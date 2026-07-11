@@ -28,6 +28,7 @@ using Pulse.Edge.Api.Endpoints;
 using Pulse.Edge.Api.Security;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Pulse.Edge.Api.Diagnostics;
+using Pulse.Edge.Api.Services;
 
 
 // Configure Serilog daily rolling file and console logging
@@ -82,6 +83,7 @@ if (OperatingSystem.IsWindows())
 
                 if (calculatedHash != expectedHash)
                 {
+                    Log.Fatal("Configuration integrity validation failed. config.json may have been modified without authorization. Expected hash {ExpectedHash}; calculated {CalculatedHash}", expectedHash, calculatedHash);
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine("[CRITICAL SECURITY ALERT] Configuration file 'config.json' has been tampered with or modified unauthorized! Hash verification failed.");
                     Console.WriteLine($"Expected: {expectedHash}");
@@ -141,6 +143,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 builder.Services.AddSingleton<PasswordService>();
 builder.Services.AddSingleton(diagnosticLogs);
+builder.Services.AddSingleton<ConfigurationBackupService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<DiagnosticLogService>());
 
 // Register SQLite storage service and transient protocol drivers
@@ -222,12 +225,21 @@ app.MapDataSourceEndpoints();
 app.MapDataPointEndpoints();
 app.MapSettingsEndpoints();
 app.MapBufferEndpoints();
+app.MapBackupEndpoints();
 
 // Run database initialization and setup before starting the web server
 using (var scope = app.Services.CreateScope())
 {
     var storage = scope.ServiceProvider.GetRequiredService<QueueStorageService>();
-    await storage.InitializeAsync();
+    try
+    {
+        await storage.InitializeAsync();
+    }
+    catch (Exception ex)
+    {
+        Log.Fatal(ex, "Critical storage initialization failure. The API cannot safely start.");
+        throw;
+    }
 }
 
 if (isSinglePort)

@@ -98,7 +98,9 @@ public static class AdapterEndpoints
 
                 // 3. Create DataPoints for each metric
                 var dataPoints = new List<DataPoint>();
-                foreach (var metric in template.Metrics)
+                foreach (var metric in template.Metrics.OrderBy(m =>
+                             int.TryParse(m.Address, out var address) ? address : int.MaxValue)
+                         .ThenBy(m => m.Address, StringComparer.OrdinalIgnoreCase))
                 {
                     var dataPoint = new DataPoint
                     {
@@ -113,6 +115,7 @@ public static class AdapterEndpoints
                         Offset = 0.0,
                         IsEnabled = true,
                         ByteOrder = metric.ByteOrder,
+                        Description = metric.Name,
                         MqttParseMode = "Plaintext"
                     };
 
@@ -1283,4 +1286,3 @@ public record CreatePowerMeterAdapterRequest(
     string TemplateId,
     string DataSourceName
 );
-

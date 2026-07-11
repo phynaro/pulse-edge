@@ -26,6 +26,10 @@ public class PowerMeterOnboardingTests
         Assert.Equal("50030", voltage.Address);
         Assert.Equal("Float", voltage.DataType);
         Assert.Equal("ABCD", voltage.ByteOrder);
+        Assert.Equal("Voltage L-N Avg", voltage.Name);
+        Assert.True(pm5350.Metrics
+            .Select(metric => int.Parse(metric.Address))
+            .SequenceEqual(pm5350.Metrics.Select(metric => int.Parse(metric.Address)).OrderBy(address => address)));
     }
 
     [Fact]
@@ -81,7 +85,7 @@ public class PowerMeterOnboardingTests
 
             // 3. Create DataPoints
             var template = PowerMeterTemplatesCatalog.Templates.First(t => t.Id == templateId);
-            foreach (var metric in template.Metrics)
+            foreach (var metric in template.Metrics.OrderBy(m => int.Parse(m.Address)))
             {
                 var dataPoint = new Pulse.Edge.Storage.Models.DataPoint
                 {
@@ -96,6 +100,7 @@ public class PowerMeterOnboardingTests
                     Offset = 0.0,
                     IsEnabled = true,
                     ByteOrder = metric.ByteOrder,
+                    Description = metric.Name,
                     MqttParseMode = "Plaintext"
                 };
                 db.DataPoints.Add(dataPoint);
@@ -116,6 +121,7 @@ public class PowerMeterOnboardingTests
             Assert.Equal(43, savedPoints.Count);
             Assert.Contains(savedPoints, dp => dp.Metric == "voltage_v" && dp.Address == "50030");
             Assert.Contains(savedPoints, dp => dp.Metric == "energy_kwh" && dp.Address == "50068" && dp.ScaleFactor == 0.001);
+            Assert.Contains(savedPoints, dp => dp.Metric == "voltage_v" && dp.Description == "Voltage L-N Avg");
         }
         finally
         {

@@ -13,6 +13,12 @@ using Pulse.Edge.Agent.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
 
+// MultiPort development bridge: forward structured Agent logs to the API's
+// bounded diagnostics pipeline without blocking protocol or worker threads.
+var diagnosticForwarder = new DiagnosticForwardingProvider();
+builder.Logging.AddProvider(diagnosticForwarder);
+builder.Services.AddSingleton<IHostedService>(diagnosticForwarder);
+
 // Register Storage Service (Database)
 builder.Services.AddSingleton<QueueStorageService>();
 
@@ -63,6 +69,5 @@ using (var scope = host.Services.CreateScope())
 }
 
 await host.RunAsync();
-
 
 

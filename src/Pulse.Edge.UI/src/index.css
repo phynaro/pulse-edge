@@ -100,6 +100,15 @@ body {
 .logs-footer { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-top: 1px solid var(--border-color); color: var(--text-secondary); background: #f8fafc; font: 9px var(--font-mono); }
 @media (max-width: 900px) { .logs-severity-grid { grid-template-columns: repeat(2, 1fr); }.logs-toolbar { grid-template-columns: 1fr 1fr; }.logs-search { grid-column: 1 / -1; }.logs-table-header, .log-entry-main { grid-template-columns: 72px 80px 120px minmax(0,1fr); }.log-details { padding-left: 14px; } }
 
+/* Persistent critical incident rail */
+.critical-alert-banner { position: relative; display: grid; grid-template-columns: 38px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; margin-bottom: 13px; padding: 10px 12px; overflow: hidden; border: 1px solid rgba(153,27,27,.28); border-left: 4px solid #b91c1c; border-radius: 7px; background: linear-gradient(90deg, rgba(254,226,226,.92), rgba(255,247,247,.95)); box-shadow: 0 5px 18px rgba(127,29,29,.09); color: #450a0a; }
+.critical-alert-banner::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(135deg, transparent 0 16px, rgba(185,28,28,.025) 16px 17px); }
+.critical-alert-sigil { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 7px; background: #b91c1c; color: #fff; box-shadow: 0 0 0 4px rgba(185,28,28,.08); }
+.critical-alert-copy { min-width: 0; position: relative; z-index: 1; }.critical-alert-copy > div { display: flex; align-items: center; gap: 9px; }.critical-alert-copy strong { font: 800 10px var(--font-mono); letter-spacing: .09em; color: #991b1b; }.critical-alert-copy span { padding-left: 9px; border-left: 1px solid rgba(153,27,27,.2); color: #9f1239; font-size: 9px; font-weight: 700; text-transform: uppercase; }.critical-alert-copy p { margin: 3px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; }
+.critical-alert-banner time { color: #7f1d1d; font: 9px var(--font-mono); white-space: nowrap; position: relative; z-index: 1; }
+.critical-alert-banner button { position: relative; z-index: 1; height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid rgba(153,27,27,.3); border-radius: 5px; background: #fff; color: #991b1b; cursor: pointer; font: 700 10px var(--font-body); white-space: nowrap; }.critical-alert-banner button:hover { background: #fff1f2; border-color: #b91c1c; }
+@media (max-width: 850px) { .critical-alert-banner { grid-template-columns: 38px 1fr auto; }.critical-alert-banner time { display: none; } }
+
 /* Sidebar Collapse Overrides */
 .sidebar {
   transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);

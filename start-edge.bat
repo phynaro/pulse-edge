@@ -5,6 +5,15 @@ echo =============================================
 echo   🚀 Starting PULSE Edge IoT Stack (Dev)...
 echo =============================================
 
+:: Stop process trees created by a previous launcher run. Window titles are
+:: unique to PULSE Edge, so unrelated dotnet and Node processes are preserved.
+echo [0/3] Stopping any running PULSE Edge stack...
+taskkill /FI "WINDOWTITLE eq Pulse Edge Server*" /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq Pulse Edge Agent*" /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq Pulse Edge API*" /T /F >nul 2>&1
+taskkill /FI "WINDOWTITLE eq Pulse Edge UI*" /T /F >nul 2>&1
+timeout /t 1 /nobreak >nul
+
 :: Detect hosting mode from appsettings.Development.json (fallback to appsettings.json)
 set HOSTING_MODE=SinglePort
 if exist src\Pulse.Edge.Api\appsettings.Development.json (

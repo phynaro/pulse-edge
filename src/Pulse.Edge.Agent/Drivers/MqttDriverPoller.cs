@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -61,6 +62,7 @@ public class MqttDriverPoller : IProtocolDriver
 
     private async Task OnMessageReceivedAsync(string topic, string payload)
     {
+        var messageTimer = Stopwatch.StartNew();
         var safePayload = payload ?? string.Empty;
         _logger.LogInformation("[MQTT Link] Telemetry packet intercepted on topic '{Topic}'. Resolving mapping...", topic);
 
@@ -367,6 +369,14 @@ public class MqttDriverPoller : IProtocolDriver
             {
                 jsonDoc?.Dispose();
             }
+        }
+
+        messageTimer.Stop();
+        var processingLatencyMs = Math.Round(messageTimer.Elapsed.TotalMilliseconds, 1);
+        foreach (var entry in dbLookup.ChangeTracker.Entries<DataPoint>()
+                     .Where(entry => entry.State == EntityState.Modified))
+        {
+            entry.Entity.LastLatencyMs = processingLatencyMs;
         }
 
         await dbLookup.SaveChangesAsync();

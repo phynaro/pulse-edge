@@ -43,6 +43,19 @@ public sealed class DiagnosticLogService : BackgroundService, ILogEventSink
             _persistence.Writer.TryWrite(new DiagnosticEvent { TimestampUtc = entry.TimestampUtc, Level = entry.Level, Category = entry.Category, EventCode = entry.EventCode, Message = entry.Message, Details = entry.Details, AdapterId = entry.AdapterId, DataPointId = entry.DataPointId, CorrelationId = entry.CorrelationId });
     }
 
+    public void Ingest(ForwardedDiagnostic item)
+    {
+        var level = item.Level is "Critical" or "Error" or "Warning" ? item.Level : "Information";
+        var entry = new DiagnosticLogEntry(Interlocked.Increment(ref _sequence), item.TimestampUtc, level,
+            Sanitize(item.Category, 300), item.EventCode, Sanitize(item.Message, 2_000), Sanitize(item.Details, 8_000),
+            Sanitize(item.AdapterId, 200), Sanitize(item.DataPointId, 200), Sanitize(item.CorrelationId, 200));
+        _ring.Enqueue(entry);
+        while (_ring.Count > RingLimit) _ring.TryDequeue(out _);
+        foreach (var subscriber in _subscribers.Values) subscriber.Writer.TryWrite(entry);
+        if (level is "Warning" or "Error" or "Critical")
+            _persistence.Writer.TryWrite(new DiagnosticEvent { TimestampUtc = entry.TimestampUtc, Level = entry.Level, Category = entry.Category, EventCode = entry.EventCode, Message = entry.Message, Details = entry.Details, AdapterId = entry.AdapterId, DataPointId = entry.DataPointId, CorrelationId = entry.CorrelationId });
+    }
+
     public IReadOnlyList<DiagnosticLogEntry> Recent(int limit, string? level, string? category, string? search) => _ring
         .Reverse()
         .Where(x => string.IsNullOrWhiteSpace(level) || x.Level.Equals(level, StringComparison.OrdinalIgnoreCase))
@@ -90,3 +103,4 @@ public sealed class DiagnosticLogService : BackgroundService, ILogEventSink
 }
 
 public record DiagnosticLogEntry(long Sequence, DateTime TimestampUtc, string Level, string Category, string EventCode, string Message, string Details, string AdapterId, string DataPointId, string CorrelationId);
+public record ForwardedDiagnostic(DateTime TimestampUtc, string Level, string Category, string EventCode, string Message, string Details, string AdapterId = "", string DataPointId = "", string CorrelationId = "");

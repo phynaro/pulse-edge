@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -88,15 +89,20 @@ public class OpcUaDriverPoller : IProtocolDriver
         var readingsByDataSource = new Dictionary<string, Dictionary<string, (double? Value, string Quality)>>();
 
         Dictionary<string, OpcUaReadResult> batchResult;
+        var readTimer = Stopwatch.StartNew();
         try
         {
             batchResult = await _opcUaDriver.ReadMetricsBatchAsync(nodeIds, ct);
+            readTimer.Stop();
         }
         catch (Exception ex)
         {
+            readTimer.Stop();
+            var failedReadLatencyMs = Math.Round(readTimer.Elapsed.TotalMilliseconds, 1);
             _logger.LogError(ex, "OPC UA batch read failed for adapter {AdapterId}", adapter.Id);
             foreach (var dp in dueDps)
             {
+                dp.LastLatencyMs = failedReadLatencyMs;
                 dp.LastError = ex.Message;
                 dp.ConsecutiveFailures++;
                 dp.LastUpdated = now;
@@ -139,8 +145,12 @@ public class OpcUaDriverPoller : IProtocolDriver
             return;
         }
 
+        var readLatencyMs = Math.Round(readTimer.Elapsed.TotalMilliseconds, 1);
+
         foreach (var dp in dueDps)
         {
+            // OPC UA reads are issued as one batch, so each tag shares the batch round-trip latency.
+            dp.LastLatencyMs = readLatencyMs;
             double? processedVal = null;
             string quality = "Good";
 
