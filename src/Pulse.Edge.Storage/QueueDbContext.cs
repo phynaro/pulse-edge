@@ -16,6 +16,7 @@ public class QueueDbContext : DbContext
     public DbSet<LocalUser> LocalUsers => Set<LocalUser>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<DiagnosticEvent> DiagnosticEvents => Set<DiagnosticEvent>();
+    public DbSet<DiagnosticCaptureConfig> DiagnosticCaptureConfigs => Set<DiagnosticCaptureConfig>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

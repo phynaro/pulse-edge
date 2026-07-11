@@ -34,4 +34,30 @@ public class DiagnosticLogServiceTests
         Assert.Single(results);
         Assert.Equal("Upload timeout", results[0].Message);
     }
+
+    [Fact]
+    public void Ingest_DebugRequiresActiveCaptureApproval()
+    {
+        var service = new DiagnosticLogService();
+        var item = new ForwardedDiagnostic(DateTime.UtcNow, "Debug", "Pulse.Edge.Agent.Drivers.OpcUaDriverPoller", "", "Telemetry Read", "", "adapter-1");
+
+        service.Ingest(item, allowDebug: false);
+        Assert.Empty(service.Recent(10, null, null, null));
+
+        service.Ingest(item, allowDebug: true);
+        var entry = Assert.Single(service.Recent(10, null, null, null));
+        Assert.Equal("Debug", entry.Level);
+        Assert.Equal("adapter-1", entry.AdapterId);
+    }
+
+    [Fact]
+    public void LifecycleEntry_IsPublishedAsInformation()
+    {
+        var service = new DiagnosticLogService();
+        service.AddLifecycle("Debug capture started.");
+
+        var entry = Assert.Single(service.Recent(10, null, null, null));
+        Assert.Equal("Information", entry.Level);
+        Assert.Equal("Pulse.Edge.Diagnostics.DebugCapture", entry.Category);
+    }
 }

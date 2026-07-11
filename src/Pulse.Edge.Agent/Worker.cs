@@ -260,6 +260,10 @@ public class Worker : BackgroundService
                 var poller = _pollerRegistry.GetPoller(adapter.Id, adapter.Protocol);
                 if (poller != null && poller.IsConnected)
                 {
+                    using var diagnosticScope = _logger.BeginScope(new Dictionary<string, object>
+                    {
+                        ["AdapterId"] = adapter.Id
+                    });
                     try
                     {
                         // Add a safety timeout of 5 seconds to prevent a hung driver from blocking the entire agent

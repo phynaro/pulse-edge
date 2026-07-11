@@ -15,8 +15,12 @@ var builder = Host.CreateApplicationBuilder(args);
 
 // MultiPort development bridge: forward structured Agent logs to the API's
 // bounded diagnostics pipeline without blocking protocol or worker threads.
-var diagnosticForwarder = new DiagnosticForwardingProvider();
+var diagnosticCaptureMonitor = new DiagnosticCaptureMonitor();
+builder.Services.AddSingleton(diagnosticCaptureMonitor);
+builder.Services.AddSingleton<IHostedService>(diagnosticCaptureMonitor);
+var diagnosticForwarder = new DiagnosticForwardingProvider(diagnosticCaptureMonitor);
 builder.Logging.AddProvider(diagnosticForwarder);
+builder.Logging.AddFilter<DiagnosticForwardingProvider>(null, LogLevel.Debug);
 builder.Services.AddSingleton<IHostedService>(diagnosticForwarder);
 
 // Register Storage Service (Database)
@@ -69,5 +73,4 @@ using (var scope = host.Services.CreateScope())
 }
 
 await host.RunAsync();
-
 

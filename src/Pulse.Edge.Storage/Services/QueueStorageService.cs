@@ -62,6 +62,15 @@ public class QueueStorageService
             );
             CREATE INDEX IF NOT EXISTS IX_DiagnosticEvents_TimestampUtc ON DiagnosticEvents(TimestampUtc DESC);
             CREATE INDEX IF NOT EXISTS IX_DiagnosticEvents_Level ON DiagnosticEvents(Level);
+            CREATE TABLE IF NOT EXISTS DiagnosticCaptureConfigs (
+                Id INTEGER PRIMARY KEY CHECK (Id = 1),
+                IsEnabled INTEGER NOT NULL DEFAULT 0,
+                AdapterId TEXT NOT NULL DEFAULT '',
+                StartedAtUtc TEXT,
+                ExpiresAtUtc TEXT,
+                HasRotated INTEGER NOT NULL DEFAULT 0
+            );
+            INSERT OR IGNORE INTO DiagnosticCaptureConfigs (Id) VALUES (1);
         ");
 
         // Create DeviceConfigs table if missing
