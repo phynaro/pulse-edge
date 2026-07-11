@@ -442,7 +442,7 @@ public class OpcUaDriver : IDisposable
             await config.ValidateAsync(ApplicationType.Client);
 
             // Select matching endpoint or fallback
-            EndpointDescription selectedEndpoint = null;
+            EndpointDescription? selectedEndpoint = null;
             try
             {
                 using (var discoveryClient = await DiscoveryClient.CreateAsync(config, new Uri(endpointUrl)))
@@ -461,6 +461,11 @@ public class OpcUaDriver : IDisposable
             if (selectedEndpoint == null)
             {
                 selectedEndpoint = CoreClientUtils.SelectEndpoint(config, endpointUrl, useSecurity: securityMode != "None");
+            }
+
+            if (selectedEndpoint == null)
+            {
+                throw new InvalidOperationException($"No OPC UA endpoint could be selected for '{endpointUrl}'.");
             }
 
             IUserIdentity userIdentity;
