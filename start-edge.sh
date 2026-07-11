@@ -43,6 +43,20 @@ stop_existing_stack() {
     pids=$(awk '/^[0-9]+$/ { print $1 }' "$PID_FILE" | sort -u)
   fi
 
+  # A standalone Agent in MultiPort mode does not own an HTTP port. If PID
+  # tracking was interrupted or the PID file was removed, discover only Agent
+  # executables launched from this workspace so an old polling process cannot
+  # survive the restart.
+  local workspace_agent_path="$ROOT_DIR/src/Pulse.Edge.Agent/bin/"
+  local process_pid
+  while IFS= read -r process_pid; do
+    [ -n "$process_pid" ] && pids="$pids $process_pid"
+  done < <(
+    ps -axo pid=,command= 2>/dev/null | awk -v agent_path="$workspace_agent_path" '
+      index($0, agent_path) && $0 ~ /\/Pulse\.Edge\.Agent([[:space:]]|$)/ { print $1 }
+    '
+  )
+
   # Compatibility fallback for a stack launched before PID tracking existed.
   # Only accept listeners whose command line identifies them as PULSE Edge.
   if command -v lsof >/dev/null 2>&1; then
