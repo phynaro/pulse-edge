@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Activity, 
-  Database, 
+  Shuffle,
   Network, 
   RefreshCw, 
   Layers,
@@ -378,7 +378,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
             onClick={() => setActiveTab('datasources')}
             title={isSidebarCollapsed ? "Streams" : undefined}
           >
-            <Database size={18} />
+            <Shuffle size={18} />
             {!isSidebarCollapsed && <span>Streams</span>}
           </button>
  

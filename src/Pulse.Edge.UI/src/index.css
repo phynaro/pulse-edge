@@ -7,6 +7,13 @@ body {
   overflow: hidden;
 }
 
+/* Fit more operational context on screen without changing component proportions. */
+.app-container {
+  zoom: 0.8;
+  width: 125vw;
+  height: 125vh;
+}
+
 /* Local access surfaces: industrial, calm, and consistent with the edge console. */
 .auth-shell { min-height: 100vh; display: grid; place-items: center; position: relative; overflow: hidden; background: radial-gradient(circle at 20% 15%, rgba(0,82,204,.2), transparent 34%), radial-gradient(circle at 85% 80%, rgba(0,168,120,.12), transparent 32%), #07111f; color: #eef6ff; font-family: var(--font-body); }
 .auth-grid { position: absolute; inset: 0; opacity: .22; background-image: linear-gradient(rgba(103,163,216,.12) 1px, transparent 1px), linear-gradient(90deg, rgba(103,163,216,.12) 1px, transparent 1px); background-size: 44px 44px; mask-image: linear-gradient(to bottom, black, transparent 90%); }
