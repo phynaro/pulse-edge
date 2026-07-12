@@ -26,7 +26,7 @@ Update this table first. Keep exactly one phase marked `In progress` unless an u
 
 | Phase | Outcome | Status | Owner | Target | Gate | Next action |
 |---|---|---|---|---|---|---|
-| 0 | Pilot baseline | Blocked | Engineering + stakeholders | TBD | G0 | Resume Windows and load validation after the Phase 1 sequencing exception |
+| 0 | Pilot baseline | Blocked | Engineering + stakeholders | TBD | G0 | Windows validation deferred (R-006); close the Linux-target G0 items — support matrix, capacity thresholds, accepted limitations — and the load/outage fixture |
 | 1 | Engineering candidate | In progress | Engineering | TBD | G1 | Add auth/backup/browser coverage and a gated tag-based release workflow |
 | 2 | Security candidate | Not started | TBD | TBD | G2 | Create threat model and security hardening backlog |
 | 3 | Commissioning candidate | Not started | TBD | TBD | G3 | Design validate/apply/rollback configuration flow |
@@ -44,7 +44,7 @@ These observations were recorded during the initial product review and should be
 - Supported implementations include OPC UA, Modbus, MQTT, EtherNet/IP via LibPlcTag, Siemens S7, REST, and BACnet projects.
 - The 2026-07-12 clean backend build passes with zero warnings, and the automated test run passes 47 of 47 tests.
 - A current NuGet audit reports no vulnerable direct or transitive package. Earlier advisories for `Microsoft.OpenApi 2.0.0` and `SQLitePCLRaw.lib.e_sqlite3 2.1.11` are no longer reproducible with the current dependency graph.
-- The frontend production build and lint pass. Four initial Vitest tests cover dashboard health classification and data-source formatting; auth, backup, and browser coverage remain open.
+- The frontend production build and lint pass. Vitest now covers dashboard health classification, data-source formatting, and — via Testing Library + jsdom component tests — the local authentication and configuration backup/restore flows (20 tests total). Browser/device-modal coverage is deferred (testing-scope decision) alongside G8's separate browser commissioning end-to-end tests.
 - Host storage improved from an earlier 99%/approximately 3.6 GiB available reading to 94%/approximately 12.6 GiB available in the repeatable baseline snapshot. PULSE database files total less than 10 MiB; host storage remains a monitored operational risk and product-level disk protection remains required.
 
 ## Phase 0 — Baseline and release policy
@@ -54,6 +54,8 @@ These observations were recorded during the initial product review and should be
 **Current status:** Windows x64 validation has started. The validator supports PowerShell 7 and built-in Windows PowerShell 5.1. After its evidence is attached, remaining gate work requires a disposable representative pilot/load fixture and named Product, Engineering, Operations, and Security reviewers. Phase 1 implementation must not begin under the phase-by-phase policy until G0 passes or the project owner records an explicit sequencing exception.
 
 **Sequencing exception:** On 2026-07-12, the project owner explicitly chose to postpone Windows validation and authorized implementation of the recommended Phase 1 engineering slice. G0 remains open and blocked; this exception changes execution order, not gate acceptance.
+
+**Windows deferral (R-006):** On 2026-07-12, the project owner chose to defer Windows deployment and certification for now and target Linux for the near-term gate work. This narrows the *current* supported-platform scope to Linux; it does not waive any G0 check. The Windows deployment matrix, `PULSE_Edge_Windows_Deployment_Specification.md` validation, and G8's Windows installer/repair/uninstall tests remain required before a Windows-supporting production release and must be reinstated when Windows returns to scope.
 
 ### Work
 
@@ -434,6 +436,8 @@ Add one row for every gate review, including unsuccessful reviews.
 | 2026-07-12 | G1 | In progress | Toolchains and dependency locks are pinned, the quality workflow is implemented, frontend lint is clean, local builds and all 47 backend tests pass, and read-only browser smoke is clean. | Run the hosted workflow; then add frontend tests, secret/license scanning, artifacts, SBOMs, and branch enforcement. |
 | 2026-07-12 | G1 | In progress | The first hosted workflow passed. Initial frontend unit tests plus dependency/license/secret scanning and checksummed SBOM-bearing artifacts are implemented for follow-up validation. GitHub reports branch protection unavailable for this private repository on its current plan. | Run the follow-up workflow, then upgrade the GitHub plan or make the repository public to enable and prove required-check enforcement. |
 | 2026-07-12 | G1 | In progress | The repository is public; `main` protection requires all four Quality jobs and one approval. Temporary PR #2 deliberately failed frontend lint and GitHub blocked it. The proof PR and branch were removed after evidence capture. | Complete remaining frontend/auth/backup/browser coverage, release-tag metadata and release enforcement, then obtain the authorized G1 review. |
+| 2026-07-12 | G0 | Blocked | The project owner chose to defer Windows deployment/certification (R-006) and target Linux for near-term gate work. No G0 check was waived; Windows validation remains required if Windows returns to the supported-platform scope. | Close the Linux-target G0 items (support matrix, capacity thresholds, accepted-limitations sign-off) and run the load/outage/recovery fixture; keep progressing G1 in parallel under the existing sequencing exception. |
+| 2026-07-12 | G1 | In progress | Added Testing Library + jsdom frontend infrastructure and component tests for the local authentication (LoginScreen, AuthProvider) and configuration backup/restore (ConfigurationBackupPanel) flows; the UI suite is 20 tests and lint/build/test pass locally. Browser/device-modal coverage deferred to the G8 end-to-end scope. | Push and attach the hosted CI run as evidence, then complete release-tag metadata and the release-creation enforcement item before requesting the authorized G1 review. |
 
 ## Decision and risk log
 
@@ -446,6 +450,7 @@ Use this section for decisions or risks that materially change scope, sequence, 
 | R-003 | 2026-07-12 | Risk | The frontend lint baseline of 48 errors and 2 warnings was remediated without disabling the rules; production build and interaction smoke checks pass. | Engineering | 2026-07-12 | Closed |
 | R-004 | 2026-07-12 | Risk | Repository CI and runtime pins are now implemented, but the first hosted run and frontend automated tests remain open. This is not Windows certification evidence. | Engineering | TBD | Mitigated / open |
 | R-005 | 2026-07-12 | Risk | A default macOS source archive emitted AppleDouble `._*` files that fail C# compilation on Linux. Clean-room packaging passes with `COPYFILE_DISABLE=1`; release packaging must exclude host metadata deterministically. | Engineering | TBD | Open |
+| R-006 | 2026-07-12 | Decision | Defer Windows deployment and certification for now; target Linux for near-term gate work. Narrows current supported-platform scope to Linux without waiving any gate check. Windows validation (G0 matrix + `PULSE_Edge_Windows_Deployment_Specification.md`) and G8 Windows installer/repair/uninstall tests must be reinstated before any Windows-supporting production release. | Engineering + stakeholders | TBD | Open |
 
 ## Review cadence
 
@@ -454,4 +459,4 @@ Use this section for decisions or risks that materially change scope, sequence, 
 - **Before a gate review:** replace all applicable `TBD` evidence entries with durable links or repository paths.
 - **At each release:** update the milestone, archive the evidence package, and record the gate decision.
 
-To resume Phase 0, assign the four gate reviewers and a target date, accept or revise the baseline drafts, create an immutable candidate commit, run the Windows validation packet, and schedule the representative load/outage/recovery exercise. R-001 remains mitigated but monitored. Phase 1 implementation remains queued behind G0 unless an explicit sequencing exception is recorded.
+To resume Phase 0 with Windows deferred (R-006), assign the four gate reviewers and a target date, accept or revise the baseline drafts, create an immutable candidate commit, and schedule the representative load/outage/recovery exercise on the Linux target. The Windows validation packet is paused and reinstated when Windows returns to scope. R-001 remains mitigated but monitored. Phase 1 implementation proceeds under the recorded sequencing exception.
