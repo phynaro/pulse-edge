@@ -26,7 +26,7 @@ Update this table first. Keep exactly one phase marked `In progress` unless an u
 
 | Phase | Outcome | Status | Owner | Target | Gate | Next action |
 |---|---|---|---|---|---|---|
-| 0 | Pilot baseline | Blocked | Engineering + stakeholders | TBD | G0 | Resume when a candidate commit, Windows x64 runner, load fixture, and reviewers are available |
+| 0 | Pilot baseline | In progress | Engineering + stakeholders | TBD | G0 | Run the Windows x64 validation with Windows PowerShell and attach its evidence |
 | 1 | Engineering candidate | Not started | Engineering | TBD | G1 | Execute the lint-remediation batches in the Phase 1 plan |
 | 2 | Security candidate | Not started | TBD | TBD | G2 | Create threat model and security hardening backlog |
 | 3 | Commissioning candidate | Not started | TBD | TBD | G3 | Design validate/apply/rollback configuration flow |
@@ -51,7 +51,7 @@ These observations were recorded during the initial product review and should be
 
 **Goal:** Freeze the current working product as a measurable baseline.
 
-**Current blocker:** Engineering preparation is complete to the level available on the local Mac and Linux ARM64 container. Further gate progress requires external state and authority: an accepted immutable candidate commit, a native supported Windows x64 environment, a disposable representative pilot/load fixture, and named Product, Engineering, Operations, and Security reviewers. Phase 1 implementation must not begin under the phase-by-phase policy until G0 passes or the project owner records an explicit sequencing exception.
+**Current status:** Windows x64 validation has started. The validator supports PowerShell 7 and built-in Windows PowerShell 5.1. After its evidence is attached, remaining gate work requires a disposable representative pilot/load fixture and named Product, Engineering, Operations, and Security reviewers. Phase 1 implementation must not begin under the phase-by-phase policy until G0 passes or the project owner records an explicit sequencing exception.
 
 ### Work
 
@@ -423,6 +423,8 @@ Add one row for every gate review, including unsuccessful reviews.
 |---|---|---|---|---|---|
 | 2026-07-12 | G0 | In progress | Local and Linux ARM64 clean-room builds pass; 47 tests pass, including isolated backup/restore. Draft support/capacity and limitations documents exist. A committed clean Windows x64 checkout, full fixture measurements, stakeholder approval, and baseline tag remain open. | Review the drafts, commit an accepted candidate, then validate it on Windows x64. |
 | 2026-07-12 | G0 | Blocked | Autonomous/local evidence work is exhausted without overstating the gate. The Windows validation script and gate-review packet are ready, but execution needs a native Windows x64 runner, disposable load fixture, candidate commit, and authorized reviewers. | Resume from [the G0 gate review packet](PULSE_Edge_G0_Gate_Review_Packet.md) when those inputs are available. |
+| 2026-07-12 | G0 | In progress | Windows x64 validation resumed. The first invocation found that PowerShell 7 (`pwsh`) was unavailable; the validator now supports built-in Windows PowerShell 5.1 through `powershell.exe`. | Run the revised validator and attach the generated report and logs. |
+| 2026-07-12 | G0 | In progress | The first Windows PowerShell 5.1 parse found a missing closing parenthesis in the frontend package-path preflight. The syntax defect was corrected before any validation command ran. | Synchronize the corrected script and rerun the validator. |
 
 ## Decision and risk log
 

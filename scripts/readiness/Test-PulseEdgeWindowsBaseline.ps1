@@ -6,6 +6,12 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
+$isWindowsPlatform = if (Get-Variable -Name IsWindows -ErrorAction SilentlyContinue) {
+    $IsWindows
+} else {
+    $env:OS -eq "Windows_NT"
+}
+
 function Invoke-EvidenceCommand {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -30,7 +36,7 @@ $repoRoot = (Resolve-Path (Join-Path (Split-Path -Parent $scriptPath) "../..")).
 $solutionPath = Join-Path $repoRoot "Pulse.Edge.slnx"
 $uiPath = Join-Path $repoRoot "src/Pulse.Edge.UI"
 
-if (-not $IsWindows) {
+if (-not $isWindowsPlatform) {
     throw "This validation must run on Windows. Current platform: $([System.Environment]::OSVersion.Platform)"
 }
 
@@ -45,7 +51,7 @@ foreach ($tool in @("git", "dotnet", "node", "pnpm")) {
 }
 
 if (-not (Test-Path $solutionPath)) { throw "Solution not found at $solutionPath" }
-if (-not (Test-Path (Join-Path $uiPath "package.json")) { throw "Frontend package not found at $uiPath" }
+if (-not (Test-Path (Join-Path $uiPath "package.json"))) { throw "Frontend package not found at $uiPath" }
 
 Push-Location $repoRoot
 try {

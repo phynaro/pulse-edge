@@ -37,8 +37,16 @@ Complete after the roadmap changes are reviewed and committed.
 
 Run from a fresh clone of the candidate commit on an approved Windows x64 machine:
 
+PowerShell 7:
+
 ```powershell
 pwsh -File .\scripts\readiness\Test-PulseEdgeWindowsBaseline.ps1
+```
+
+Built-in Windows PowerShell 5.1:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\readiness\Test-PulseEdgeWindowsBaseline.ps1
 ```
 
 - [ ] Checkout was clean before validation.
@@ -109,4 +117,3 @@ Allowed decisions:
 **Final G0 decision:** `In progress`
 
 Do not create the baseline tag until the final decision is `Passed`. If rejected, record the reasons in the roadmap gate log and return Phase 0 to `In progress`.
-
