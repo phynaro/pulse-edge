@@ -760,6 +760,7 @@
 .tag-table-head-row.is-orphan { background-color: #fff5f5; }
 .tag-table-head-row.is-normal { background-color: #fcfdff; }
 .tag-table-row { cursor: pointer; transition: background-color 0.15s ease; }
+.tag-table-row > td { padding-block: 9px; }
 .tag-status-dot-sm { width: 10px; height: 10px; border-radius: 50%; display: inline-block; vertical-align: middle; }
 .tag-status-dot-sm.is-orphan-dot { background-color: var(--danger-color); }
 .tag-status-dot-sm.is-warn { background-color: #d97706; animation: pulse-warn 2s infinite; }

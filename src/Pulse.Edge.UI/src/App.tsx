@@ -97,9 +97,9 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
     isConnected,
     isLoading, setIsLoading,
     dashboard,
-    datasources,
-    adapters,
-    datapoints,
+    datasources, setDatasources,
+    adapters, setAdapters,
+    datapoints, setDatapoints,
     mqttDevices,
     diagnostics,
     isSyncEnabled, setIsSyncEnabled,
@@ -125,6 +125,37 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
   useBufferStatus(2000);             // Polls buffer status and updates live logs
   useAdaptersList(activeTab === 'protocols', 3000); // Polls adapters only when tab is active
   useDatapointsList(activeTab === 'tags' || activeTab === 'datasources', pollingInterval); // Polls tags when active
+
+  const [operationalRefreshedAt, setOperationalRefreshedAt] = useState<Date | null>(null);
+  const [operationalDataStale, setOperationalDataStale] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'dashboard') return;
+    let active = true;
+    const refreshOperationalData = async () => {
+      try {
+        const [adapterRes, datapointRes, datasourceRes] = await Promise.all([
+          fetch('/api/adapters'), fetch('/api/datapoints'), fetch('/api/datasources')
+        ]);
+        if (!adapterRes.ok || !datapointRes.ok || !datasourceRes.ok) throw new Error('Operational refresh failed');
+        const [adapterData, datapointData, datasourceData] = await Promise.all([
+          adapterRes.json(), datapointRes.json(), datasourceRes.json()
+        ]);
+        if (!active) return;
+        setAdapters(adapterData);
+        setDatapoints(datapointData);
+        setDatasources(datasourceData);
+        setOperationalRefreshedAt(new Date());
+        setOperationalDataStale(false);
+      } catch (error) {
+        if (active) setOperationalDataStale(true);
+        console.error('Failed to refresh dashboard operational data:', error);
+      }
+    };
+    void refreshOperationalData();
+    const interval = window.setInterval(refreshOperationalData, pollingInterval);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [activeTab, pollingInterval, setAdapters, setDatapoints, setDatasources]);
 
   const toggleSidebar = () => {
     setIsSidebarCollapsed(!isSidebarCollapsed);
@@ -455,6 +486,10 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
                   diagnostics={diagnostics}
                   adapters={adapters}
                   datapoints={datapoints}
+                  datasources={datasources}
+                  isConnected={isConnected}
+                  operationalRefreshedAt={operationalRefreshedAt}
+                  operationalDataStale={operationalDataStale}
                   showDiagnosticsPanel={showDiagnosticsPanel}
                   showLiveFeedPanel={showLiveFeedPanel}
                   liveFeed={liveFeed}

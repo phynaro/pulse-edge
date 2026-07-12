@@ -1,12 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Cpu, Play, Pause, Activity, HardDrive, Clock } from 'lucide-react';
 import CustomSelect from './CustomSelect';
+import OperationalOverview from './Dashboard/OperationalOverview';
+import DashboardDetailModal, { type DashboardDrilldown } from './Dashboard/DashboardDetailModal';
 import type {
   DiagnosticData,
   BufferTelemetryItem,
   BufferEventItem,
   DriverAdapter,
-  DataPoint
+  DataPoint,
+  DataSource
 } from '../types';
 
 interface DashboardTabProps {
@@ -19,6 +22,10 @@ interface DashboardTabProps {
   diagnostics: DiagnosticData | null;
   adapters: DriverAdapter[];
   datapoints: DataPoint[];
+  datasources: DataSource[];
+  isConnected: boolean;
+  operationalRefreshedAt: Date | null;
+  operationalDataStale: boolean;
   showDiagnosticsPanel: boolean;
   showLiveFeedPanel: boolean;
   liveFeed: { time: string; source: string; payload: string }[];
@@ -40,6 +47,10 @@ export default function DashboardTab({
   diagnostics,
   adapters,
   datapoints,
+  datasources,
+  isConnected,
+  operationalRefreshedAt,
+  operationalDataStale,
   showDiagnosticsPanel,
   showLiveFeedPanel,
   liveFeed,
@@ -50,6 +61,7 @@ export default function DashboardTab({
   maxLiveLogs,
   setMaxLiveLogs
 }: DashboardTabProps) {
+  const [drilldown, setDrilldown] = useState<DashboardDrilldown | null>(null);
 
   const filteredLiveFeed = liveFeed
     .filter(item => {
@@ -155,7 +167,6 @@ export default function DashboardTab({
   const telemetryDanger = bufferTelemetry.length >= telemetryWarningThreshold;
   const eventsDanger = bufferEvents.length >= eventWarningThreshold;
   const totalBuffered = bufferTelemetry.length + bufferEvents.length;
-
   const bufferStateClass = telemetryDanger || eventsDanger
     ? 'is-danger'
     : totalBuffered > 0
@@ -186,54 +197,18 @@ export default function DashboardTab({
         </div>
       </div>
 
-      <div className="stats-grid">
-        <div className="card">
-          <div className="card-title">Cloud Sync Status</div>
-          <div className={`card-value ${isSyncEnabled ? 'is-online' : 'is-paused'}`}>
-            {isSyncEnabled ? 'ONLINE' : 'PAUSED'}
-          </div>
-          <button
-            type="button"
-            onClick={handleToggleSync}
-            className={`sync-toggle-btn ${isSyncEnabled ? 'is-online' : 'is-paused'}`}
-          >
-            {isSyncEnabled ? <Pause size={14} /> : <Play size={14} />}
-            {isSyncEnabled ? 'Pause Sync' : 'Resume Sync'}
-          </button>
-        </div>
-
-        <div className="card">
-          <div className="card-title">Telemetry Queue</div>
-          <div className={`card-value ${telemetryDanger ? 'is-danger' : ''}`}>
-            {bufferTelemetry.length}
-          </div>
-          <div className="card-desc">
-            {telemetryDanger
-              ? `Alert: Limit exceeded (>= ${telemetryWarningThreshold})`
-              : 'Pending SQLite records'}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-title">Events Queue</div>
-          <div className={`card-value ${eventsDanger ? 'is-danger' : ''}`}>
-            {bufferEvents.length}
-          </div>
-          <div className="card-desc">
-            {eventsDanger
-              ? `Alert: Limit exceeded (>= ${eventWarningThreshold})`
-              : 'Buffered state changes'}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-title">Buffer State</div>
-          <div className={`card-value card-value-sm ${bufferStateClass}`}>
-            {bufferStateText}
-          </div>
-          <div className="card-desc">SQLite Store-and-Forward</div>
-        </div>
+      <div className="ops-status-strip">
+        <span className={`ops-status-item ${isConnected ? 'is-good' : 'is-bad'}`}><i />Node <b>{isConnected ? 'Connected' : 'Disconnected'}</b></span>
+        <button className={`ops-status-item ${isSyncEnabled ? 'is-good' : 'is-warn'}`} onClick={handleToggleSync} title="Toggle cloud synchronization">{isSyncEnabled ? <Pause size={12}/> : <Play size={12}/>}Cloud sync <b>{isSyncEnabled ? 'Online' : 'Paused'}</b></button>
+        <span className={`ops-status-item ${bufferStateClass}`}><i />Buffer <b>{bufferStateText}</b></span>
+        <span className="ops-status-item">Telemetry queue <b>{bufferTelemetry.length}</b></span>
+        <span className="ops-status-item">Events queue <b>{bufferEvents.length}</b></span>
+        <span className={`ops-refresh-state ${operationalDataStale ? 'is-stale' : ''}`}>{operationalDataStale ? 'Stale data · last success ' : 'Updated '}{operationalRefreshedAt ? operationalRefreshedAt.toLocaleTimeString() : '—'}</span>
       </div>
+
+      <OperationalOverview adapters={adapters} datapoints={datapoints} datasources={datasources} onSelect={setDrilldown}/>
+
+      {(telemetryDanger || eventsDanger) && <div className="ops-queue-alert"><strong>Queue threshold exceeded.</strong> Telemetry: {bufferTelemetry.length}/{telemetryWarningThreshold} · Events: {bufferEvents.length}/{eventWarningThreshold}</div>}
 
       {!showLiveFeedPanel && !showDiagnosticsPanel ? (
         <div className="panel panel-empty-centered">
@@ -418,6 +393,9 @@ export default function DashboardTab({
             </div>
           )}
         </div>
+      )}
+      {drilldown && (
+        <DashboardDetailModal selection={drilldown} adapters={adapters} datapoints={datapoints} datasources={datasources} onClose={() => setDrilldown(null)}/>
       )}
     </>
   );
