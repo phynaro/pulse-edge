@@ -27,7 +27,7 @@ Update this table first. Keep exactly one phase marked `In progress` unless an u
 | Phase | Outcome | Status | Owner | Target | Gate | Next action |
 |---|---|---|---|---|---|---|
 | 0 | Pilot baseline | Blocked | Engineering + stakeholders | TBD | G0 | Resume Windows and load validation after the Phase 1 sequencing exception |
-| 1 | Engineering candidate | In progress | Engineering | TBD | G1 | Pin toolchains, establish blocking CI, and clear the lint baseline |
+| 1 | Engineering candidate | In progress | Engineering | TBD | G1 | Add auth/backup/browser coverage and a gated tag-based release workflow |
 | 2 | Security candidate | Not started | TBD | TBD | G2 | Create threat model and security hardening backlog |
 | 3 | Commissioning candidate | Not started | TBD | TBD | G3 | Design validate/apply/rollback configuration flow |
 | 4 | Reliability candidate | Not started | TBD | TBD | G4 | Define retention, queue limits, and disk thresholds |
@@ -44,7 +44,7 @@ These observations were recorded during the initial product review and should be
 - Supported implementations include OPC UA, Modbus, MQTT, EtherNet/IP via LibPlcTag, Siemens S7, REST, and BACnet projects.
 - The 2026-07-12 clean backend build passes with zero warnings, and the automated test run passes 47 of 47 tests.
 - A current NuGet audit reports no vulnerable direct or transitive package. Earlier advisories for `Microsoft.OpenApi 2.0.0` and `SQLitePCLRaw.lib.e_sqlite3 2.1.11` are no longer reproducible with the current dependency graph.
-- The frontend production build passes, but lint currently fails with 48 errors and 2 warnings.
+- The frontend production build and lint pass. Four initial Vitest tests cover dashboard health classification and data-source formatting; auth, backup, and browser coverage remain open.
 - Host storage improved from an earlier 99%/approximately 3.6 GiB available reading to 94%/approximately 12.6 GiB available in the repeatable baseline snapshot. PULSE database files total less than 10 MiB; host storage remains a monitored operational risk and product-level disk protection remains required.
 
 ## Phase 0 — Baseline and release policy
@@ -105,21 +105,21 @@ These observations were recorded during the initial product review and should be
 
 ### Gate G1 — Build integrity
 
-- [ ] A clean checkout builds without manual intervention.
-- [ ] Backend and frontend pipelines pass.
-- [ ] No unaccepted critical or high-severity runtime vulnerability remains.
-- [ ] No unintended compiler warning remains.
-- [ ] Artifacts contain version, commit, and build metadata.
-- [ ] An SBOM is generated and retained.
+- [x] A clean checkout builds without manual intervention.
+- [x] Backend and frontend pipelines pass.
+- [x] No unaccepted critical or high-severity runtime vulnerability remains.
+- [x] No unintended compiler warning remains.
+- [x] Artifacts contain version, commit, and build metadata.
+- [x] An SBOM is generated and retained.
 - [ ] A failed required check prevents release creation.
 
 **Evidence:**
 
-- CI runs: [Initial hosted run passed](https://github.com/phynaro/pulse-edge/actions/runs/29193876254); [expanded security, test, and artifact run passed](https://github.com/phynaro/pulse-edge/actions/runs/29194077549). See [Phase 1 engineering slice evidence](readiness-evidence/2026-07-12-phase-1-engineering-slice.md).
+- CI runs: [Initial hosted run passed](https://github.com/phynaro/pulse-edge/actions/runs/29193876254); [expanded PR run passed](https://github.com/phynaro/pulse-edge/actions/runs/29194592460); [post-merge `main` run passed](https://github.com/phynaro/pulse-edge/actions/runs/29195409651). See [Phase 1 engineering slice evidence](readiness-evidence/2026-07-12-phase-1-engineering-slice.md).
 - Implementation plan: [Phase 1 engineering plan](PULSE_Edge_Phase_1_Engineering_Plan.md)
 - Vulnerability report: [Initial production-readiness baseline](readiness-evidence/2026-07-12-initial-baseline.md#nuget-vulnerability-audit)
-- Artifact and checksum: TBD
-- SBOM: TBD
+- Artifact and checksum: [`pulse-edge-82dd70e...` retained by the post-merge run](https://github.com/phynaro/pulse-edge/actions/runs/29195409651)
+- SBOM: [`pulse-edge-sbom.spdx.json` retained by the post-merge run](https://github.com/phynaro/pulse-edge/actions/runs/29195409651)
 - Branch enforcement: [deliberately failing PR was blocked](https://github.com/phynaro/pulse-edge/pull/2); [failure run](https://github.com/phynaro/pulse-edge/actions/runs/29194525820)
 - Warning baseline or exception record: [Phase 1 engineering slice evidence](readiness-evidence/2026-07-12-phase-1-engineering-slice.md)
 

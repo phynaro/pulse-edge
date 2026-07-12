@@ -39,7 +39,7 @@ These observations are not new compiler or lint failures, but should be handled 
 
 ## Gate interpretation
 
-This evidence completes the authorized initial slice; it does not pass Gate G1. A hosted CI run, frontend automated tests, secret/license scanning, versioned artifacts, SBOMs, and branch enforcement remain open.
+This evidence completes the authorized initial slice; it does not yet pass Gate G1. Hosted CI, initial frontend tests, secret/license scanning, checksummed artifacts, SBOMs, and branch enforcement are complete. Auth/backup/browser coverage, tag-based release creation, and proof that a failed check prevents release creation remain open.
 
 ## Gate follow-up
 
@@ -47,4 +47,6 @@ The first hosted Quality run passed for commit `854955e37070b913ae672e4592e67b4b
 
 The follow-up change adds four frontend unit tests, production dependency and license-policy enforcement, full-history secret scanning, checksummed version/commit-stamped build artifacts, and an SPDX JSON SBOM. Local frontend checks pass, and all four expanded hosted jobs passed in [Quality run 29194077549](https://github.com/phynaro/pulse-edge/actions/runs/29194077549).
 
-After the repository became public, `main` protection was enabled with all four Quality jobs required, strict/current-branch checks, one approval, stale-review dismissal, conversation resolution, linear history, admin enforcement, and force-push/deletion prevention. Temporary PR #2 intentionally failed frontend lint; GitHub reported it as blocked. The run was cancelled after proof, and the PR and temporary branch were closed/deleted. Evidence: https://github.com/phynaro/pulse-edge/pull/2 and https://github.com/phynaro/pulse-edge/actions/runs/29194525820.
+PR #1 merged as commit `82dd70e44429369023960dc0a362e86fc931749d`. Its [post-merge `main` Quality run](https://github.com/phynaro/pulse-edge/actions/runs/29195409651) passed all four jobs and retained backend test/audit evidence, frontend license evidence, secret-scan evidence, a checksummed approximately 47 MB artifact bundle, and an SPDX JSON SBOM.
+
+After the repository became public, `main` protection was enabled with all four Quality jobs required, strict/current-branch checks, conversation resolution, linear history, admin enforcement, and force-push/deletion prevention. The external approval count was later set to zero for the solo-developer workflow. Temporary PR #2 intentionally failed frontend lint; GitHub reported it as blocked. The run was cancelled after proof, and the PR and temporary branch were closed/deleted. Evidence: https://github.com/phynaro/pulse-edge/pull/2 and https://github.com/phynaro/pulse-edge/actions/runs/29194525820.
