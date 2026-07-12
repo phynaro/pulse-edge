@@ -9,6 +9,7 @@ import CreateSourceModal from './DataSourcesTab/CreateSourceModal';
 import BindMetricModal from './DataSourcesTab/BindMetricModal';
 import UnbindConfirmModal from './DataSourcesTab/UnbindConfirmModal';
 import ManageTemplatesModal from './DataSourcesTab/ManageTemplatesModal';
+import { usePersistentOrder } from '../hooks/usePersistentOrder';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 
@@ -45,7 +46,6 @@ export default function DataSourcesTab({
   const [newDpDataSourceId, setNewDpDataSourceId] = useState('');
   const [newDpMetric, setNewDpMetric] = useState('');
 
-  const [orderedSources, setOrderedSources] = useState<DataSource[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   // Sync state with incoming filteredSources prop & sort by localStorage order
@@ -59,27 +59,7 @@ export default function DataSourcesTab({
     });
   }, [datasources, streamSearchQuery, streamTypeFilter]);
 
-  useEffect(() => {
-    const savedOrder = localStorage.getItem('pulse-datasources-order');
-    if (savedOrder) {
-      try {
-        const orderIds = JSON.parse(savedOrder) as string[];
-        const sorted = [...filteredSources].sort((a, b) => {
-          const idxA = orderIds.indexOf(a.id);
-          const idxB = orderIds.indexOf(b.id);
-          if (idxA === -1 && idxB === -1) return 0;
-          if (idxA === -1) return 1;
-          if (idxB === -1) return -1;
-          return idxA - idxB;
-        });
-        setOrderedSources(sorted);
-        return;
-      } catch (e) {
-        console.error('Failed to parse saved datasources order:', e);
-      }
-    }
-    setOrderedSources(filteredSources);
-  }, [filteredSources]);
+  const { orderedItems: orderedSources, saveOrder: saveSourceOrder } = usePersistentOrder(filteredSources, 'pulse-datasources-order');
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
@@ -100,32 +80,31 @@ export default function DataSourcesTab({
     updated.splice(targetIndex, 0, draggedItem);
 
     setDraggedIndex(targetIndex);
-    setOrderedSources(updated);
+    const visibleIds = new Set(updated.map(source => source.id));
+    saveSourceOrder(updated, datasources.filter(source => !visibleIds.has(source.id)).map(source => source.id));
   };
 
   const handleDragEnd = () => {
     setDraggedIndex(null);
-    const visibleIds = orderedSources.map(ds => ds.id);
-    const otherIds = datasources.filter(ds => !visibleIds.includes(ds.id)).map(ds => ds.id);
-    const finalOrder = [...visibleIds, ...otherIds];
-    localStorage.setItem('pulse-datasources-order', JSON.stringify(finalOrder));
-  };
-
-  const fetchTemplates = async () => {
-    try {
-      const res = await fetch('/api/stream-templates');
-      if (res.ok) {
-        const data = await res.json();
-        setTemplates(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch stream templates:', err);
-    }
   };
 
   useEffect(() => {
-    fetchTemplates();
+    let active = true;
+    fetch('/api/stream-templates')
+      .then(response => response.ok ? response.json() as Promise<StreamTemplate[]> : [])
+      .then(data => { if (active) setTemplates(data); })
+      .catch(error => console.error('Failed to fetch stream templates:', error));
+    return () => { active = false; };
   }, []);
+
+  const fetchTemplates = async () => {
+    try {
+      const response = await fetch('/api/stream-templates');
+      if (response.ok) setTemplates(await response.json() as StreamTemplate[]);
+    } catch (error) {
+      console.error('Failed to fetch stream templates:', error);
+    }
+  };
 
   const onUnbindMetric = async (id: string) => {
     await handleDeleteDataPoint(id);

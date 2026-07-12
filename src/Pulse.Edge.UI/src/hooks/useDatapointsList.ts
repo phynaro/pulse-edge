@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useEdge } from '../context/EdgeContext';
+import { useEdge } from '../context/edge';
 
 export function useDatapointsList(isVisible: boolean, intervalMs: number = 3000) {
   const { setDatapoints, setIsConnected } = useEdge();

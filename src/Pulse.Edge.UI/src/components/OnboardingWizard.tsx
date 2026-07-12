@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import './OnboardingWizard.css';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 
 interface OnboardingWizardProps {
   toast: {
@@ -25,6 +25,20 @@ interface OnboardingWizardProps {
   };
   onComplete: () => void;
   requireFirstAdmin: boolean;
+}
+
+interface PairingDashboard {
+  cloudStatus: string;
+  device?: {
+    organizationName?: string;
+    siteName?: string;
+    cloudEndpoint?: string;
+    pairingShortCode?: string;
+    pairingBaseUrl?: string;
+    pairingExpiresAt?: string;
+    pairingToken?: string;
+    deviceId?: string;
+  };
 }
 
 export default function OnboardingWizard({ toast, onComplete, requireFirstAdmin }: OnboardingWizardProps) {
@@ -37,7 +51,7 @@ export default function OnboardingWizard({ toast, onComplete, requireFirstAdmin 
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationSuccess, setValidationSuccess] = useState<boolean>(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(true);
-  const [pairingData, setPairingData] = useState<any>(null);
+  const [pairingData, setPairingData] = useState<PairingDashboard | null>(null);
   const [adminUsername, setAdminUsername] = useState('admin');
   const [adminPassword, setAdminPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

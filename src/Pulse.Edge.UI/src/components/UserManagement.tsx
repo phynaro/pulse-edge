@@ -10,7 +10,13 @@ export default function UserManagement({ currentUserId }: { currentUserId: strin
   const [role, setRole] = useState<'Admin' | 'ReadOnly'>('ReadOnly');
   const [message, setMessage] = useState('');
   const load = async () => { const res = await fetch('/api/users'); if (res.ok) setUsers(await res.json()); };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    let active = true;
+    fetch('/api/users')
+      .then(response => response.ok ? response.json() as Promise<User[]> : [])
+      .then(data => { if (active) setUsers(data); });
+    return () => { active = false; };
+  }, []);
   const update = async (id: string, body: object) => { const res = await fetch(`/api/users/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const data = await res.json().catch(() => ({})); setMessage(res.ok ? 'User updated.' : data.error || 'Update failed.'); if (res.ok) void load(); };
   return <div className="panel user-management">
     <div className="panel-header"><h2 className="panel-title"><Shield size={17} /> Local Access</h2></div>

@@ -30,9 +30,11 @@ import CriticalAlertBanner from './components/CriticalAlertBanner';
 import OnboardingWizard from './components/OnboardingWizard';
 import OnboardingTourBanner from './components/OnboardingTourBanner';
 
-import { EdgeProvider, useEdge } from './context/EdgeContext';
+import { EdgeProvider } from './context/EdgeContext';
+import { useEdge } from './context/edge';
 import { ConfirmProvider } from './context/ConfirmProvider';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/auth';
 import LoginScreen from './components/LoginScreen';
 import { useDashboardData } from './hooks/useDashboardData';
 import { useBufferStatus } from './hooks/useBufferStatus';
@@ -55,15 +57,15 @@ const getCloudStatusInfo = (status: string | undefined) => {
 };
 
 type Route = 'dashboard' | 'datasources' | 'tags' | 'protocols' | 'buffer' | 'logs' | 'settings';
+const validRoutes: Route[] = ['dashboard', 'datasources', 'tags', 'protocols', 'buffer', 'logs', 'settings'];
+
+function getRouteFromPath(defaultRoute: Route): Route {
+  const segment = window.location.pathname.split('/').filter(Boolean)[0] as Route;
+  return validRoutes.includes(segment) ? segment : defaultRoute;
+}
 
 function usePathRouting(defaultRoute: Route): [Route, (route: Route) => void] {
-  const getRouteFromPath = (): Route => {
-    const segment = window.location.pathname.split('/').filter(Boolean)[0] as Route;
-    const validRoutes: Route[] = ['dashboard', 'datasources', 'tags', 'protocols', 'buffer', 'logs', 'settings'];
-    return validRoutes.includes(segment) ? segment : defaultRoute;
-  };
-
-  const [currentRoute, setCurrentRoute] = useState<Route>(getRouteFromPath);
+  const [currentRoute, setCurrentRoute] = useState<Route>(() => getRouteFromPath(defaultRoute));
 
   const navigate = (newRoute: Route) => {
     window.history.pushState(null, '', `/${newRoute}`);
@@ -72,15 +74,14 @@ function usePathRouting(defaultRoute: Route): [Route, (route: Route) => void] {
 
   useEffect(() => {
     const handlePopState = () => {
-      setCurrentRoute(getRouteFromPath());
+      setCurrentRoute(getRouteFromPath(defaultRoute));
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [defaultRoute]);
 
   useEffect(() => {
     const path = window.location.pathname.split('/').filter(Boolean)[0] as Route;
-    const validRoutes: Route[] = ['dashboard', 'datasources', 'tags', 'protocols', 'buffer', 'logs', 'settings'];
     if (!validRoutes.includes(path)) {
       window.history.replaceState(null, '', `/${currentRoute}`);
     }

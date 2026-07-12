@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Tag, Plus, Search, Trash2 } from 'lucide-react';
 import type { DataPoint, DriverAdapter, MqttDevice } from '../types';
 import type { useToast } from '../hooks/useToast';
@@ -7,6 +7,7 @@ import EditTagModal from './TagsTab/EditTagModal';
 import DeleteTagModal from './TagsTab/DeleteTagModal';
 import BulkDeleteModal from './TagsTab/BulkDeleteModal';
 import TagGroupAccordion from './TagsTab/TagGroupAccordion';
+import { usePersistentOrder } from '../hooks/usePersistentOrder';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 
@@ -29,31 +30,8 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
   const [deletingPhysicalTag, setDeletingPhysicalTag] = useState<DataPoint | null>(null);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
 
-  const [orderedAdapters, setOrderedAdapters] = useState<DriverAdapter[]>([]);
   const [draggedAdapterIndex, setDraggedAdapterIndex] = useState<number | null>(null);
-
-  // Sync state with incoming adapters prop & sort by localStorage order
-  useEffect(() => {
-    const savedOrder = localStorage.getItem('pulse-adapters-order');
-    if (savedOrder) {
-      try {
-        const orderIds = JSON.parse(savedOrder) as string[];
-        const sorted = [...adapters].sort((a, b) => {
-          const idxA = orderIds.indexOf(a.id);
-          const idxB = orderIds.indexOf(b.id);
-          if (idxA === -1 && idxB === -1) return 0;
-          if (idxA === -1) return 1;
-          if (idxB === -1) return -1;
-          return idxA - idxB;
-        });
-        setOrderedAdapters(sorted);
-        return;
-      } catch (e) {
-        console.error('Failed to parse saved adapters order:', e);
-      }
-    }
-    setOrderedAdapters(adapters);
-  }, [adapters]);
+  const { orderedItems: orderedAdapters, saveOrder: saveAdapterOrder } = usePersistentOrder(adapters, 'pulse-adapters-order');
 
   const handleAdapterDragStart = (e: React.DragEvent, index: number) => {
     setDraggedAdapterIndex(index);
@@ -74,13 +52,11 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
     updated.splice(targetIndex, 0, draggedItem);
 
     setDraggedAdapterIndex(targetIndex);
-    setOrderedAdapters(updated);
+    saveAdapterOrder(updated);
   };
 
   const handleAdapterDragEnd = () => {
     setDraggedAdapterIndex(null);
-    const orderIds = orderedAdapters.map(a => a.id);
-    localStorage.setItem('pulse-adapters-order', JSON.stringify(orderIds));
   };
 
   const isSearchActive = tagSearchQuery.trim() !== '' || tagProtocolFilter !== 'All';

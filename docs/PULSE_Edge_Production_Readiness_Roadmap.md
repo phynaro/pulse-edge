@@ -26,8 +26,8 @@ Update this table first. Keep exactly one phase marked `In progress` unless an u
 
 | Phase | Outcome | Status | Owner | Target | Gate | Next action |
 |---|---|---|---|---|---|---|
-| 0 | Pilot baseline | In progress | Engineering + stakeholders | TBD | G0 | Run the Windows x64 validation with Windows PowerShell and attach its evidence |
-| 1 | Engineering candidate | Not started | Engineering | TBD | G1 | Execute the lint-remediation batches in the Phase 1 plan |
+| 0 | Pilot baseline | Blocked | Engineering + stakeholders | TBD | G0 | Resume Windows and load validation after the Phase 1 sequencing exception |
+| 1 | Engineering candidate | In progress | Engineering | TBD | G1 | Pin toolchains, establish blocking CI, and clear the lint baseline |
 | 2 | Security candidate | Not started | TBD | TBD | G2 | Create threat model and security hardening backlog |
 | 3 | Commissioning candidate | Not started | TBD | TBD | G3 | Design validate/apply/rollback configuration flow |
 | 4 | Reliability candidate | Not started | TBD | TBD | G4 | Define retention, queue limits, and disk thresholds |
@@ -52,6 +52,8 @@ These observations were recorded during the initial product review and should be
 **Goal:** Freeze the current working product as a measurable baseline.
 
 **Current status:** Windows x64 validation has started. The validator supports PowerShell 7 and built-in Windows PowerShell 5.1. After its evidence is attached, remaining gate work requires a disposable representative pilot/load fixture and named Product, Engineering, Operations, and Security reviewers. Phase 1 implementation must not begin under the phase-by-phase policy until G0 passes or the project owner records an explicit sequencing exception.
+
+**Sequencing exception:** On 2026-07-12, the project owner explicitly chose to postpone Windows validation and authorized implementation of the recommended Phase 1 engineering slice. G0 remains open and blocked; this exception changes execution order, not gate acceptance.
 
 ### Work
 
@@ -94,7 +96,7 @@ These observations were recorded during the initial product review and should be
 - [x] Verify the current `SQLitePCLRaw.lib.e_sqlite3` dependency has no reported advisory.
 - [x] Verify the earlier `Microsoft.OpenApi` version conflict no longer occurs after restore.
 - [x] Verify the backend builds without compiler warnings after restore.
-- [ ] Add CI for restore, backend build, and backend tests.
+- [x] Add CI for restore, backend build, and backend tests.
 - [ ] Add frontend type checking, linting, tests, and production build.
 - [ ] Add dependency, license, and secret scanning.
 - [ ] Produce versioned release artifacts with commit metadata.
@@ -113,12 +115,12 @@ These observations were recorded during the initial product review and should be
 
 **Evidence:**
 
-- CI run: TBD
+- CI run: Workflow implemented; first hosted run pending. See [Phase 1 engineering slice evidence](readiness-evidence/2026-07-12-phase-1-engineering-slice.md).
 - Implementation plan: [Phase 1 engineering plan](PULSE_Edge_Phase_1_Engineering_Plan.md)
 - Vulnerability report: [Initial production-readiness baseline](readiness-evidence/2026-07-12-initial-baseline.md#nuget-vulnerability-audit)
 - Artifact and checksum: TBD
 - SBOM: TBD
-- Warning baseline or exception record: [Initial production-readiness baseline](readiness-evidence/2026-07-12-initial-baseline.md#frontend-lint)
+- Warning baseline or exception record: [Phase 1 engineering slice evidence](readiness-evidence/2026-07-12-phase-1-engineering-slice.md)
 
 **Exit result:** `Engineering Candidate`
 
@@ -425,6 +427,10 @@ Add one row for every gate review, including unsuccessful reviews.
 | 2026-07-12 | G0 | Blocked | Autonomous/local evidence work is exhausted without overstating the gate. The Windows validation script and gate-review packet are ready, but execution needs a native Windows x64 runner, disposable load fixture, candidate commit, and authorized reviewers. | Resume from [the G0 gate review packet](PULSE_Edge_G0_Gate_Review_Packet.md) when those inputs are available. |
 | 2026-07-12 | G0 | In progress | Windows x64 validation resumed. The first invocation found that PowerShell 7 (`pwsh`) was unavailable; the validator now supports built-in Windows PowerShell 5.1 through `powershell.exe`. | Run the revised validator and attach the generated report and logs. |
 | 2026-07-12 | G0 | In progress | The first Windows PowerShell 5.1 parse found a missing closing parenthesis in the frontend package-path preflight. The syntax defect was corrected before any validation command ran. | Synchronize the corrected script and rerun the validator. |
+| 2026-07-12 | G0 | In progress | Windows PowerShell 5.1 converted native `dotnet.exe` stderr into `NativeCommandError` under the script's stop-on-error policy. Native execution now uses the actual process exit code as authority while retaining combined output in the evidence log. | Synchronize and rerun; if a command exits nonzero, provide its named log file. |
+| 2026-07-12 | G0 | Blocked | The project owner chose to postpone Windows validation. The remaining Windows, load, and stakeholder evidence stays required and no G0 check was waived. | Resume after the authorized Phase 1 engineering slice or when the Windows/load environments are ready. |
+| 2026-07-12 | G1 | In progress | The project owner authorized a sequencing exception to begin toolchain pinning, blocking CI, and lint remediation before G0 passes. | Complete the slice and attach local plus clean-room evidence; do not mark G1 passed without CI/enforcement evidence. |
+| 2026-07-12 | G1 | In progress | Toolchains and dependency locks are pinned, the quality workflow is implemented, frontend lint is clean, local builds and all 47 backend tests pass, and read-only browser smoke is clean. | Run the hosted workflow; then add frontend tests, secret/license scanning, artifacts, SBOMs, and branch enforcement. |
 
 ## Decision and risk log
 
@@ -434,8 +440,8 @@ Use this section for decisions or risks that materially change scope, sequence, 
 |---|---|---|---|---|---|---|
 | R-001 | 2026-07-12 | Risk | Host storage improved from 99% with approximately 3.6 GiB available to 94% with approximately 12.6 GiB available. PULSE database files total less than 10 MiB. Continue host monitoring; product thresholds and retention remain Phase 4 work. | Operations / Engineering | Ongoing | Mitigated / monitor |
 | R-002 | 2026-07-12 | Risk | Earlier high-severity NuGet advisories are not present in the current restored graph; continuous scanning is still required in CI. | Engineering | 2026-07-12 | Closed |
-| R-003 | 2026-07-12 | Risk | Frontend lint fails with 48 errors and 2 warnings across 24 files. The largest categories are state updates in effects (15) and explicit `any` types (12); see the Phase 1 plan for the staged remediation. | Engineering | TBD | Open |
-| R-004 | 2026-07-12 | Risk | No frontend tests or repository CI workflow are present, and .NET/Node runtime versions are not pinned. Manual Linux ARM64 clean-room builds pass, but are not automated or Windows certification evidence. | Engineering | TBD | Open |
+| R-003 | 2026-07-12 | Risk | The frontend lint baseline of 48 errors and 2 warnings was remediated without disabling the rules; production build and interaction smoke checks pass. | Engineering | 2026-07-12 | Closed |
+| R-004 | 2026-07-12 | Risk | Repository CI and runtime pins are now implemented, but the first hosted run and frontend automated tests remain open. This is not Windows certification evidence. | Engineering | TBD | Mitigated / open |
 | R-005 | 2026-07-12 | Risk | A default macOS source archive emitted AppleDouble `._*` files that fail C# compilation on Linux. Clean-room packaging passes with `COPYFILE_DISABLE=1`; release packaging must exclude host metadata deterministically. | Engineering | TBD | Open |
 
 ## Review cadence

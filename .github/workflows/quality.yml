@@ -1,0 +1,90 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend build, test, and audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore
+        run: dotnet restore Pulse.Edge.slnx --locked-mode
+
+      - name: Build
+        run: dotnet build Pulse.Edge.slnx --no-restore --warnaserror
+
+      - name: Test
+        run: dotnet test src/Pulse.Edge.Tests/Pulse.Edge.Tests.csproj --no-build --no-restore --logger "trx;LogFileName=pulse-edge-tests.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: backend-test-results
+          path: '**/TestResults/*.trx'
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Audit NuGet dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet list Pulse.Edge.slnx package --vulnerable --include-transitive | tee nuget-vulnerabilities.txt
+          ! grep -q "has the following vulnerable packages" nuget-vulnerabilities.txt
+
+      - name: Upload dependency audit
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nuget-vulnerability-audit
+          path: nuget-vulnerabilities.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint:ui
+
+      - name: Build
+        run: pnpm build:ui

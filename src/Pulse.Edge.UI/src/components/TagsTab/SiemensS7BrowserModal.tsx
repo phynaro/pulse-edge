@@ -75,10 +75,13 @@ export default function SiemensS7BrowserModal({
 
   useEffect(() => {
     if (isOpen && adapterId) {
-      setStep(1);
-      setSelectedTags({});
-      setSearchTerm('');
-      fetchPlcTags(adapterId);
+      const timer = window.setTimeout(() => {
+        setStep(1);
+        setSelectedTags({});
+        setSearchTerm('');
+        void fetchPlcTags(adapterId);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [isOpen, adapterId]);
 

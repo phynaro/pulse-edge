@@ -100,10 +100,13 @@ export default function RestApiBrowserModal({
 
   useEffect(() => {
     if (isOpen && adapterId) {
-      setStep(1);
-      setSelectedKeys({});
-      setPayloadItem(null);
-      fetchLivePayload(adapterId);
+      const timer = window.setTimeout(() => {
+        setStep(1);
+        setSelectedKeys({});
+        setPayloadItem(null);
+        void fetchLivePayload(adapterId);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [isOpen, adapterId]);
 

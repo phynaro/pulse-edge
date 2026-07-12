@@ -1,6 +1,6 @@
 # PULSE Edge Phase 1 Engineering Plan
 
-**Status:** Ready to execute after G0 review or by explicit exception  
+**Status:** In progress by explicit sequencing exception
 **Roadmap:** Phase 1 / Gate G1  
 **Last reviewed:** 2026-07-12
 
@@ -16,20 +16,20 @@ Make every accepted change reproducibly buildable, testable, auditable, and trac
 - Automated tests: 47 passed, 0 failed, 0 skipped.
 - NuGet vulnerability audit: no vulnerable direct or transitive package reported by current sources.
 - Database-using tests now use isolated temporary SQLite files.
-- No repository CI workflow is present.
-- The repository does not pin a .NET SDK with `global.json`.
+- A blocking repository quality workflow is implemented; its first hosted run is pending.
+- The repository pins the .NET SDK and restores from committed NuGet lock files.
 - A manual Linux ARM64 clean-room restore/build/test passes, providing a working reference for CI.
 
 ### Frontend
 
 - TypeScript and Vite production build passes.
 - No frontend unit or browser test file is currently present.
-- The repository does not pin a Node runtime.
+- The repository pins Node and pnpm runtimes.
 - The pnpm lockfile is present and uses lockfile version 9.
 - A manual Node 26 ARM64 clean-room frozen install and production build passes.
-- Lint reports 50 findings: 48 errors and 2 warnings across 24 files.
+- Lint passes with zero errors and zero warnings.
 
-Lint findings by rule:
+Remediated lint baseline by rule:
 
 | Rule | Errors | Warnings | Total |
 |---|---:|---:|---:|
@@ -48,11 +48,11 @@ Lint findings by rule:
 
 ### Batch 1 — Reproducible toolchain
 
-- [ ] Add `global.json` for the accepted .NET 10 SDK feature band and roll-forward policy.
-- [ ] Add a Node version file matching the runtime used to validate Vite 8 and TypeScript 6.
-- [ ] Record the required pnpm major version using Corepack/project metadata.
+- [x] Add `global.json` for the accepted .NET 10 SDK feature band and roll-forward policy.
+- [x] Add a Node version file matching the runtime used to validate Vite 8 and TypeScript 6.
+- [x] Record the required pnpm major version using Corepack/project metadata.
 - [ ] Document clean bootstrap commands for Windows and CI.
-- [ ] Prove dependency installation uses the lockfile without modification.
+- [x] Prove dependency installation uses the lockfile without modification.
 - [ ] Ensure source packaging excludes macOS AppleDouble files and extended-attribute metadata.
 
 **Acceptance:** Two clean environments use the same SDK/runtime families and produce equivalent build/test results.
@@ -68,6 +68,8 @@ Fix behavior-affecting findings before mechanical typing/style findings.
 5. Run the production build after every behavior-affecting batch.
 
 **Acceptance:** `pnpm --filter pulse-edge-ui lint` returns zero errors and zero unaccepted warnings; `pnpm --filter pulse-edge-ui build` still passes.
+
+**Result:** Complete. Evidence: [Phase 1 engineering slice](readiness-evidence/2026-07-12-phase-1-engineering-slice.md).
 
 ### Batch 3 — Automated frontend coverage
 

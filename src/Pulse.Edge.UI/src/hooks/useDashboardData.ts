@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useEdge } from '../context/EdgeContext';
+import { useEdge } from '../context/edge';
 
 export function useDashboardData(intervalMs: number = 5000) {
   const { setDashboard, setDiagnostics, setIsConnected, setIsLoading } = useEdge();

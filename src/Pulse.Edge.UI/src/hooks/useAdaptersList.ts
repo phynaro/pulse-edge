@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useEdge } from '../context/EdgeContext';
+import { useEdge } from '../context/edge';
 
 export function useAdaptersList(isVisible: boolean, intervalMs: number = 3000) {
   const { setAdapters, setIsConnected } = useEdge();

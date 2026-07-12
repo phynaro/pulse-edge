@@ -3,7 +3,7 @@ import { Database } from 'lucide-react';
 import type { DataSource, StreamTemplate } from '../../types';
 import type { useToast } from '../../hooks/useToast';
 import ModalShell from '../ModalShell';
-import { DynamicIcon } from './utils';
+import DynamicIcon from './DynamicIcon';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 

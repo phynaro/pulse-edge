@@ -13,6 +13,30 @@ interface CreateAdapterWizardProps {
   fetchData: () => Promise<void>;
 }
 
+interface OpcEndpoint {
+  securityMode: string;
+  securityPolicyUri?: string;
+}
+
+interface PowerMeterTemplate {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+interface CreatedDataPointSummary {
+  metric: string;
+  address: string;
+  dataType: string;
+  byteOrder: string;
+}
+
+interface CreatedPowerMeterSummary {
+  adapter?: { name?: string; host?: string; port?: number };
+  dataSource?: { name?: string };
+  dataPoints?: CreatedDataPointSummary[];
+}
+
 export default function CreateAdapterWizard({
   onClose,
   toast,
@@ -40,7 +64,7 @@ export default function CreateAdapterWizard({
   const [newMqttPassword, setNewMqttPassword] = useState<string>('');
   const [createTestStatus, setCreateTestStatus] = useState<'idle' | 'testing' | 'passed' | 'failed'>('idle');
   const [createTestMessage, setCreateTestMessage] = useState('');
-  const [opcEndpoints, setOpcEndpoints] = useState<any[]>([]);
+  const [opcEndpoints, setOpcEndpoints] = useState<OpcEndpoint[]>([]);
   const [webhookToken, setWebhookToken] = useState('');
   const [newSimulatorTemplate, setNewSimulatorTemplate] = useState<string>('energy');
   const [opcDiscoverStatus, setOpcDiscoverStatus] = useState<'idle' | 'discovering' | 'success' | 'error'>('idle');
@@ -70,8 +94,8 @@ export default function CreateAdapterWizard({
   const [selectedTemplateId, setSelectedTemplateId] = useState('schneider_pm5350');
   const [newDataSourceName, setNewDataSourceName] = useState('');
   const [newPowerMeterScanInterval, setNewPowerMeterScanInterval] = useState<number>(5000);
-  const [powerMeterTemplates, setPowerMeterTemplates] = useState<any[]>([]);
-  const [createdSummary, setCreatedSummary] = useState<any | null>(null);
+  const [powerMeterTemplates, setPowerMeterTemplates] = useState<PowerMeterTemplate[]>([]);
+  const [createdSummary, setCreatedSummary] = useState<CreatedPowerMeterSummary | null>(null);
 
   useEffect(() => {
     fetch('/api/adapters/templates/modbus-power-meters')
@@ -737,7 +761,7 @@ export default function CreateAdapterWizard({
                           </tr>
                         </thead>
                         <tbody>
-                          {createdSummary.dataPoints?.map((dp: any, idx: number) => (
+                          {createdSummary.dataPoints?.map((dp, idx) => (
                             <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                               <td style={{ padding: '6px 0', fontWeight: '600', color: '#0f172a' }}>{dp.metric}</td>
                               <td style={{ color: '#334155' }}>{dp.address}</td>

@@ -13,6 +13,7 @@ interface DiscoveredTag {
   typeHex: string;
   dimensions: number[];
   templateId?: number;
+  isStructure?: boolean;
 }
 
 interface EipConfiguringTag {
@@ -56,10 +57,10 @@ function BrowseTreeNode({
   selectedTags
 }: BrowseTreeNodeProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [children, setChildren] = useState<any[]>([]);
+  const [children, setChildren] = useState<DiscoveredTag[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const handleExpand = async (e: React.MouseEvent) => {
+  const handleExpand = async (e: { stopPropagation: () => void }) => {
     e.stopPropagation();
     if (isExpanded) {
       setIsExpanded(false);
@@ -122,7 +123,7 @@ function BrowseTreeNode({
           if ((!isStructure && !isProgram) || hasArray) {
             onToggleSelect(name, dataType);
           } else {
-            handleExpand({ stopPropagation: () => {} } as any);
+            void handleExpand({ stopPropagation: () => undefined });
           }
         }}
       >
@@ -194,7 +195,7 @@ function BrowseTreeNode({
           )}
           
           {children.map(child => {
-            const childIsStructure = child.isStructure || (child.dataType && child.dataType.toUpperCase() === 'STRUCTURE');
+            const childIsStructure = child.isStructure === true || child.dataType.toUpperCase() === 'STRUCTURE';
             return (
               <BrowseTreeNode 
                 key={child.name}
@@ -296,10 +297,13 @@ export default function EthernetIpBrowserModal({
 
   useEffect(() => {
     if (isOpen && adapterId) {
-      setStep(1);
-      setSelectedTags({});
-      setSearchTerm('');
-      fetchPlcTags(adapterId);
+      const timer = window.setTimeout(() => {
+        setStep(1);
+        setSelectedTags({});
+        setSearchTerm('');
+        void fetchPlcTags(adapterId);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [isOpen, adapterId]);
 

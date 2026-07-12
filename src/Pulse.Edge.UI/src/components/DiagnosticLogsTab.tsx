@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Bug, CirclePause, CirclePlay, Clock3, Database, Radio, Search, ShieldAlert, Square, Trash2 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 
 type LogLevel = 'Debug' | 'Information' | 'Warning' | 'Error' | 'Critical';
 type LogEntry = { sequence: number; timestampUtc: string; level: LogLevel; category: string; eventCode: string; message: string; details: string; adapterId: string; dataPointId: string; correlationId: string };
@@ -23,7 +23,7 @@ export default function DiagnosticLogsTab() {
   const [captureDuration, setCaptureDuration] = useState(15);
   const [captureBusy, setCaptureBusy] = useState(false);
   const [captureError, setCaptureError] = useState('');
-  const [clock, setClock] = useState(Date.now());
+  const [clock, setClock] = useState(() => Date.now());
 
   const refreshCapture = useCallback(async () => {
     const response = await fetch('/api/diagnostic-logs/debug-capture');

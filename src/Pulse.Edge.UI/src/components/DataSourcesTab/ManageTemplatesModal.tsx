@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Plus, Edit2, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import type { DataSource, StreamTemplate } from '../../types';
 import type { useToast } from '../../hooks/useToast';
-import { DynamicIcon, ICON_MAP } from './utils';
+import DynamicIcon from './DynamicIcon';
+import { ICON_MAP } from './icons';
 import ModalShell from '../ModalShell';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];

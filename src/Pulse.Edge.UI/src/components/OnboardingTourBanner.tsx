@@ -6,7 +6,7 @@ import './OnboardingTourBanner.css';
 interface OnboardingTourBannerProps {
   adapters: DriverAdapter[];
   datapoints: DataPoint[];
-  setActiveTab: (tab: any) => void;
+  setActiveTab: (tab: 'protocols' | 'tags' | 'datasources') => void;
 }
 
 export default function OnboardingTourBanner({

@@ -75,7 +75,9 @@ export default function WebhookBrowserModal({
     if (activeAdapter) {
       config = JSON.parse(activeAdapter.configJson || '{}');
     }
-  } catch {}
+  } catch {
+    config = {};
+  }
 
   const webhookUrl = activeAdapter
     ? `${window.location.origin}/api/webhooks/receive/${activeAdapter.id}?token=${config.Token || ''}`
@@ -88,7 +90,7 @@ export default function WebhookBrowserModal({
       setIsCopied(true);
       toast.success('Webhook URL copied to clipboard.');
       setTimeout(() => setIsCopied(false), 2000);
-    } catch (err) {
+    } catch {
       toast.error('Failed to copy Webhook URL.');
     }
   };
@@ -124,10 +126,13 @@ export default function WebhookBrowserModal({
 
   useEffect(() => {
     if (isOpen && adapterId) {
-      setStep(1);
-      setSelectedKeys({});
-      setPayloadItem(null);
-      fetchWebhookPayload(adapterId);
+      const timer = window.setTimeout(() => {
+        setStep(1);
+        setSelectedKeys({});
+        setPayloadItem(null);
+        void fetchWebhookPayload(adapterId);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [isOpen, adapterId]);
 

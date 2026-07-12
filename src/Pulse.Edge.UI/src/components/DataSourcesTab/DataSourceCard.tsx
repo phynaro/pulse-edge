@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Trash2, CheckCircle2, AlertCircle, Plus, Pencil, Check, X } from 'lucide-react';
 import type { DataSource, DataPoint, DriverAdapter, StreamTemplate } from '../../types';
-import { DynamicIcon, formatLiveValue } from './utils';
+import { formatLiveValue } from './utils';
+import DynamicIcon from './DynamicIcon';
 import { useConfirm } from '../../hooks/useConfirm';
 
 interface DataSourceCardProps {

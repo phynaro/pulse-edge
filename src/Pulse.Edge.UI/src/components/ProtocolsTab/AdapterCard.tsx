@@ -48,8 +48,12 @@ export default function AdapterCard({
 
 
   const adapterMqttDevices = mqttDevices.filter(d => d.adapterId === adapter.id);
-  let config: Record<string, any> = {};
-  try { config = JSON.parse(adapter.configJson || '{}'); } catch {}
+  let config: Record<string, unknown> = {};
+  try {
+    config = JSON.parse(adapter.configJson || '{}') as Record<string, unknown>;
+  } catch {
+    config = {};
+  }
 
   const handleDeleteMqttDevice = async (id: string) => {
     const confirmed = await confirm({
@@ -147,7 +151,7 @@ export default function AdapterCard({
             <div style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
               <span className="adapter-info-label">Simulation Template: </span>
               <span className="badge success badge-protocol" style={{ textTransform: 'capitalize' }}>
-                {config.Template || 'Energy'}
+                {String(config.Template ?? 'Energy')}
               </span>
             </div>
           ) : (
@@ -183,9 +187,9 @@ export default function AdapterCard({
           <div className="adapter-info-section">
             <span className="adapter-config-label">Configuration Parameters:</span>
             {(() => {
-              let config: Record<string, any> = {};
+              let config: Record<string, unknown> = {};
               let hasError = false;
-              try { config = JSON.parse(adapter.configJson || '{}'); } catch { hasError = true; }
+              try { config = JSON.parse(adapter.configJson || '{}') as Record<string, unknown>; } catch { hasError = true; }
 
               if (hasError) {
                 return <span className="adapter-info-error">Invalid JSON config</span>;
@@ -250,7 +254,7 @@ export default function AdapterCard({
                 return (
                   <div className="adapter-badge-group">
                     <span className="badge neutral badge-config">Token: {String(config.Token || '').substring(0, 12)}...</span>
-                    {config.LastSeen && (
+                    {(typeof config.LastSeen === 'string' || typeof config.LastSeen === 'number') && (
                       <span className="badge neutral badge-config">Last Seen: {new Date(config.LastSeen).toLocaleTimeString()}</span>
                     )}
                   </div>
@@ -261,7 +265,7 @@ export default function AdapterCard({
                     <span className="badge neutral badge-config">Method: {String(config.Method ?? 'GET')}</span>
                     <span className="badge neutral badge-config">Path: {String(config.Path ?? '/')}</span>
                     <span className="badge neutral badge-config">Interval: {String(config.PollIntervalMs ?? 10000)} ms</span>
-                    {config.LastSeen && (
+                    {(typeof config.LastSeen === 'string' || typeof config.LastSeen === 'number') && (
                       <span className="badge neutral badge-config">Last Seen: {new Date(config.LastSeen).toLocaleTimeString()}</span>
                     )}
                   </div>

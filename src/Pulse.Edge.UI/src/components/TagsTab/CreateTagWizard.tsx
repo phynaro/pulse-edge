@@ -201,7 +201,9 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
     try {
       const config = JSON.parse(activeAdapter.configJson);
       plcType = config.PlcType || '';
-    } catch (e) {}
+    } catch {
+      plcType = '';
+    }
   }
   const isBrowseSupported = (protocol === 'Ethernet/IP' &&
     (plcType === 'ControlLogix' || plcType === 'CompactLogix' || plcType === 'Micro800')) ||

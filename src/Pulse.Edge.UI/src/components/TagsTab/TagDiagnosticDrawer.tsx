@@ -38,12 +38,13 @@ export default function TagDiagnosticDrawer({ dp, adapter, isOrphan }: TagDiagno
   const [timeWindow, setTimeWindow] = useState<'1m' | '5m' | '15m' | 'all'>('all');
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; value: number; time: string; index: number } | null>(null);
   const [dimensions, setDimensions] = useState({ width: 500, height: 150 });
+  const [clock, setClock] = useState(() => Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver((entries) => {
-      for (let entry of entries) {
+      for (const entry of entries) {
         setDimensions({
           width: entry.contentRect.width || 500,
           height: entry.contentRect.height || 150
@@ -54,6 +55,11 @@ export default function TagDiagnosticDrawer({ dp, adapter, isOrphan }: TagDiagno
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   // Sync incoming polling value to history
   useEffect(() => {
     if (isPaused) return;
@@ -61,39 +67,29 @@ export default function TagDiagnosticDrawer({ dp, adapter, isOrphan }: TagDiagno
     const numVal = parseFloat(dp.lastValue);
     if (isNaN(numVal)) return;
 
-    setHistory(prev => {
-      let timeStr = formatToLocalTimeString(dp.lastUpdated);
-      if (!timeStr) {
-        timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      } else {
-        try {
-          const clean = dp.lastUpdated!.replace(' ', 'T') + 'Z';
-          const d = new Date(clean);
-          timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        } catch {
-          // fallback
+    const timer = window.setTimeout(() => {
+      setHistory(prev => {
+        let timeStr = formatToLocalTimeString(dp.lastUpdated);
+        if (!timeStr) {
+          timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         }
-      }
-      
-      const last = prev[prev.length - 1];
-      if (last && last.value === numVal && last.time === timeStr) {
-        return prev;
-      }
-      // Store up to 500 data points to support longer historical zoom ranges
-      return [...prev, { time: timeStr, value: numVal, timestamp: Date.now() }].slice(-500);
-    });
+        const last = prev[prev.length - 1];
+        if (last && last.value === numVal && last.time === timeStr) return prev;
+        return [...prev, { time: timeStr, value: numVal, timestamp: Date.now() }].slice(-500);
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [dp.lastValue, dp.lastUpdated, isPaused]);
 
   // Filter history based on the selected time window (1m, 5m, 15m, All)
   const filteredHistory = useMemo(() => {
     if (timeWindow === 'all') return history;
-    const now = Date.now();
-    let cutoff = now;
-    if (timeWindow === '1m') cutoff = now - 60 * 1000;
-    else if (timeWindow === '5m') cutoff = now - 5 * 60 * 1000;
-    else if (timeWindow === '15m') cutoff = now - 15 * 60 * 1000;
+    let cutoff = clock;
+    if (timeWindow === '1m') cutoff = clock - 60 * 1000;
+    else if (timeWindow === '5m') cutoff = clock - 5 * 60 * 1000;
+    else if (timeWindow === '15m') cutoff = clock - 15 * 60 * 1000;
     return history.filter(h => h.timestamp >= cutoff);
-  }, [history, timeWindow]);
+  }, [clock, history, timeWindow]);
 
   const numeric = isNumericType(dp.dataType);
   const values = filteredHistory.map(h => h.value);

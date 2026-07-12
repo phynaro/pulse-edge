@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import type { 
   DashboardData, 
   DataSource, 
@@ -9,72 +9,7 @@ import type {
   BufferEventItem,
   MqttDevice
 } from '../types';
-
-interface EdgeContextType {
-  isConnected: boolean;
-  setIsConnected: (val: boolean) => void;
-  isLoading: boolean;
-  setIsLoading: (val: boolean) => void;
-  dashboard: DashboardData | null;
-  setDashboard: (val: DashboardData | null) => void;
-  datasources: DataSource[];
-  setDatasources: (val: DataSource[]) => void;
-  adapters: DriverAdapter[];
-  setAdapters: (val: DriverAdapter[]) => void;
-  datapoints: DataPoint[];
-  setDatapoints: (val: DataPoint[]) => void;
-  mqttDevices: MqttDevice[];
-  setMqttDevices: (val: MqttDevice[]) => void;
-  diagnostics: DiagnosticData | null;
-  setDiagnostics: (val: DiagnosticData | null) => void;
-  isSyncEnabled: boolean;
-  setIsSyncEnabled: (val: boolean) => void;
-  bufferTelemetry: BufferTelemetryItem[];
-  setBufferTelemetry: (val: BufferTelemetryItem[]) => void;
-  bufferEvents: BufferEventItem[];
-  setBufferEvents: (val: BufferEventItem[]) => void;
-  
-  // Settings/UI Configurations
-  pollingInterval: number;
-  setPollingInterval: (val: number) => void;
-  maxLiveLogs: number;
-  setMaxLiveLogs: (val: number) => void;
-  telemetryWarningThreshold: number;
-  setTelemetryWarningThreshold: (val: number) => void;
-  eventWarningThreshold: number;
-  setEventWarningThreshold: (val: number) => void;
-  showDiagnosticsPanel: boolean;
-  setShowDiagnosticsPanel: (val: boolean) => void;
-  showLiveFeedPanel: boolean;
-  setShowLiveFeedPanel: (val: boolean) => void;
-  
-  // Live Feed log cache
-  liveFeed: { time: string; source: string; payload: string }[];
-  setLiveFeed: React.Dispatch<React.SetStateAction<{ time: string; source: string; payload: string }[]>>;
-  
-  // Onboarding & settings
-  cloudEndpoint: string;
-  setCloudEndpoint: (val: string) => void;
-  edgeSerial: string;
-  setEdgeSerial: (val: string) => void;
-  isOnboarded: boolean;
-  setIsOnboarded: (val: boolean) => void;
-  isSidebarCollapsed: boolean;
-  setIsSidebarCollapsed: (val: boolean) => void;
-  
-  // Shared Actions
-  fetchStaticData: () => Promise<void>;
-  hasInitializedSettings: boolean;
-  setHasInitializedSettings: (val: boolean) => void;
-}
-
-const EdgeContext = createContext<EdgeContextType | undefined>(undefined);
-
-export const useEdge = () => {
-  const context = useContext(EdgeContext);
-  if (!context) throw new Error('useEdge must be used within an EdgeProvider');
-  return context;
-};
+import { EdgeContext } from './edge';
 
 export const EdgeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isConnected, setIsConnected] = useState<boolean>(true);
@@ -125,7 +60,7 @@ export const EdgeProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [hasInitializedSettings, setHasInitializedSettings] = useState<boolean>(false);
 
-  const fetchStaticData = async () => {
+  const fetchStaticData = useCallback(async () => {
     try {
       const [dsRes, adaptersRes, dpRes, syncRes, settingsRes, mqttRes] = await Promise.all([
         fetch('/api/datasources'),
@@ -163,11 +98,12 @@ export const EdgeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Failed to fetch static configurations:', err);
       setIsConnected(false);
     }
-  };
+  }, [hasInitializedSettings]);
 
   useEffect(() => {
-    void fetchStaticData();
-  }, []);
+    const timer = window.setTimeout(() => void fetchStaticData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchStaticData]);
 
   return (
     <EdgeContext.Provider value={{

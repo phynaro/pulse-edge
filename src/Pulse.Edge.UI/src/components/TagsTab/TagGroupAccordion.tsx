@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Edit, Trash2 } from 'lucide-react';
 import type { DataPoint, DriverAdapter, MqttDevice } from '../../types';
 import TagDiagnosticDrawer from './TagDiagnosticDrawer';
+import { usePersistentOrder } from '../../hooks/usePersistentOrder';
 
 
 
@@ -87,30 +88,8 @@ export default function TagGroupAccordion({
   const [expandedTags, setExpandedTags] = useState<Record<string, boolean>>({});
   const [visibleLimit, setVisibleLimit] = useState(50);
 
-  const [orderedTags, setOrderedTags] = useState<DataPoint[]>([]);
   const [draggedTagIndex, setDraggedTagIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    const savedOrder = localStorage.getItem('pulse-tags-order');
-    if (savedOrder) {
-      try {
-        const orderIds = JSON.parse(savedOrder) as string[];
-        const sorted = [...tags].sort((a, b) => {
-          const idxA = orderIds.indexOf(a.id);
-          const idxB = orderIds.indexOf(b.id);
-          if (idxA === -1 && idxB === -1) return 0;
-          if (idxA === -1) return 1;
-          if (idxB === -1) return -1;
-          return idxA - idxB;
-        });
-        setOrderedTags(sorted);
-        return;
-      } catch (e) {
-        console.error('Failed to parse saved tags order:', e);
-      }
-    }
-    setOrderedTags(tags);
-  }, [tags]);
+  const { orderedItems: orderedTags, saveOrder: saveTagOrder } = usePersistentOrder(tags, 'pulse-tags-order');
 
   const handleTagDragStart = (e: React.DragEvent, index: number) => {
     e.stopPropagation();
@@ -132,27 +111,19 @@ export default function TagGroupAccordion({
     updated.splice(targetIndex, 0, draggedItem);
 
     setDraggedTagIndex(targetIndex);
-    setOrderedTags(updated);
+    saveTagOrder(updated);
   };
 
   const handleTagDragEnd = (e: React.DragEvent) => {
     e.stopPropagation();
     setDraggedTagIndex(null);
-    const savedOrder = localStorage.getItem('pulse-tags-order');
-    let globalOrder: string[] = [];
-    if (savedOrder) {
-      try { globalOrder = JSON.parse(savedOrder) as string[]; } catch {}
-    }
-    const localIds = orderedTags.map(t => t.id);
-    globalOrder = globalOrder.filter(id => !localIds.includes(id));
-    const finalOrder = [...localIds, ...globalOrder];
-    localStorage.setItem('pulse-tags-order', JSON.stringify(finalOrder));
   };
 
   const isOrphan = adapter === null;
   const isEventDriven = !isOrphan && (adapter.protocol === 'WEBHOOK' || adapter.protocol === 'MQTT');
   const abnormalCount = tags.filter(dp => !!dp.lastError).length;
-  const visibleTags = orderedTags.slice(0, visibleLimit);
+  const effectiveVisibleLimit = isExpanded ? visibleLimit : 50;
+  const visibleTags = orderedTags.slice(0, effectiveVisibleLimit);
   const orphanClass = isOrphan ? 'is-orphan' : 'is-normal';
 
   let pollIntervalMs: number | null = null;
@@ -162,8 +133,8 @@ export default function TagGroupAccordion({
       if (typeof config.PollIntervalMs === 'number') {
         pollIntervalMs = config.PollIntervalMs;
       }
-    } catch (e) {
-      // ignore
+    } catch {
+      pollIntervalMs = null;
     }
   }
 
@@ -171,9 +142,10 @@ export default function TagGroupAccordion({
     setExpandedTags(prev => ({ ...prev, [tagId]: !prev[tagId] }));
   };
 
-  useEffect(() => {
-    if (!isExpanded) setVisibleLimit(50);
-  }, [isExpanded]);
+  const handleToggleExpand = () => {
+    if (isExpanded) setVisibleLimit(50);
+    onToggleExpand();
+  };
 
   const renderMqttAddress = (dp: DataPoint) => {
     if (!isOrphan && adapter?.protocol === 'MQTT' && dp.mqttDeviceId) {
@@ -208,7 +180,7 @@ export default function TagGroupAccordion({
     <div className={`tag-accordion${isOrphan ? ' is-orphan' : ''}`}>
       <button
         type="button"
-        onClick={onToggleExpand}
+        onClick={handleToggleExpand}
         className={`tag-accordion-header ${orphanClass}${isExpanded ? ' is-expanded' : ''}`}
       >
         <div className="accordion-header-left">

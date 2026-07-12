@@ -8,6 +8,7 @@ import MqttDeviceModal from './ProtocolsTab/MqttDeviceModal';
 import CreateAdapterWizard from './ProtocolsTab/CreateAdapterWizard';
 import EditAdapterModal from './ProtocolsTab/EditAdapterModal';
 import DeleteAdapterModal from './ProtocolsTab/DeleteAdapterModal';
+import { usePersistentOrder } from '../hooks/usePersistentOrder';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 
@@ -33,31 +34,8 @@ export default function ProtocolsTab({
   const [editingDevice, setEditingDevice] = useState<MqttDevice | null>(null);
   const [deviceAdapterId, setDeviceAdapterId] = useState('');
 
-  const [orderedAdapters, setOrderedAdapters] = useState<DriverAdapter[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-
-  // Sync state with incoming adapters prop & sort by localStorage order
-  useEffect(() => {
-    const savedOrder = localStorage.getItem('pulse-adapters-order');
-    if (savedOrder) {
-      try {
-        const orderIds = JSON.parse(savedOrder) as string[];
-        const sorted = [...adapters].sort((a, b) => {
-          const idxA = orderIds.indexOf(a.id);
-          const idxB = orderIds.indexOf(b.id);
-          if (idxA === -1 && idxB === -1) return 0;
-          if (idxA === -1) return 1;
-          if (idxB === -1) return -1;
-          return idxA - idxB;
-        });
-        setOrderedAdapters(sorted);
-        return;
-      } catch (e) {
-        console.error('Failed to parse saved adapters order:', e);
-      }
-    }
-    setOrderedAdapters(adapters);
-  }, [adapters]);
+  const { orderedItems: orderedAdapters, saveOrder: saveAdapterOrder } = usePersistentOrder(adapters, 'pulse-adapters-order');
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
@@ -91,10 +69,7 @@ export default function ProtocolsTab({
     const [draggedItem] = updated.splice(sourceIndex, 1);
     updated.splice(targetIndex, 0, draggedItem);
 
-    setOrderedAdapters(updated);
-    
-    const orderIds = updated.map(a => a.id);
-    localStorage.setItem('pulse-adapters-order', JSON.stringify(orderIds));
+    saveAdapterOrder(updated);
   };
 
   const handleDragEnd = () => {

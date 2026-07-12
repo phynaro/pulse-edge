@@ -42,18 +42,21 @@ export default function EditTagModal({ isOpen, onClose, tag, adapters, mqttDevic
 
   useEffect(() => {
     if (tag) {
-      setEditDpAdapterId(tag.adapterId);
-      setEditDpMqttDeviceId(tag.mqttDeviceId || '');
-      setEditDpAddress(tag.address);
-      setEditDpDataType(tag.dataType);
-      setEditDpScanIntervalMs(tag.scanIntervalMs);
-      setEditDpScaleFactor(String(tag.scaleFactor));
-      setEditDpOffset(String(tag.offset));
-      setEditDpByteOrder(tag.byteOrder || (tag.dataType === 'Int16' || tag.dataType === 'UInt16' ? 'AB' : 'ABCD'));
-      setEditDpIsEnabled(tag.isEnabled);
-      setEditDpDescription(tag.description || '');
-      setEditDpMqttParseMode(tag.mqttParseMode || 'Plaintext');
-      setEditDpMqttJsonPath(tag.mqttJsonPath || '');
+      const timer = window.setTimeout(() => {
+        setEditDpAdapterId(tag.adapterId);
+        setEditDpMqttDeviceId(tag.mqttDeviceId || '');
+        setEditDpAddress(tag.address);
+        setEditDpDataType(tag.dataType);
+        setEditDpScanIntervalMs(tag.scanIntervalMs);
+        setEditDpScaleFactor(String(tag.scaleFactor));
+        setEditDpOffset(String(tag.offset));
+        setEditDpByteOrder(tag.byteOrder || (tag.dataType === 'Int16' || tag.dataType === 'UInt16' ? 'AB' : 'ABCD'));
+        setEditDpIsEnabled(tag.isEnabled);
+        setEditDpDescription(tag.description || '');
+        setEditDpMqttParseMode(tag.mqttParseMode || 'Plaintext');
+        setEditDpMqttJsonPath(tag.mqttJsonPath || '');
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [tag]);
 

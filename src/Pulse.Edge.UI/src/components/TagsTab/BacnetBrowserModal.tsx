@@ -75,10 +75,13 @@ export default function BacnetBrowserModal({
 
   useEffect(() => {
     if (isOpen && adapterId) {
-      setStep(1);
-      setSelectedTags({});
-      setSearchTerm('');
-      fetchBacnetTags(adapterId);
+      const timer = window.setTimeout(() => {
+        setStep(1);
+        setSelectedTags({});
+        setSearchTerm('');
+        void fetchBacnetTags(adapterId);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [isOpen, adapterId]);
 
@@ -126,7 +129,7 @@ export default function BacnetBrowserModal({
     setStep(2);
   };
 
-  const handleUpdateConfiguringTag = (index: number, field: keyof BacnetConfiguringTag, value: any) => {
+  const handleUpdateConfiguringTag = <K extends keyof BacnetConfiguringTag>(index: number, field: K, value: BacnetConfiguringTag[K]) => {
     setConfiguringTags(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
   };
 
@@ -162,7 +165,7 @@ export default function BacnetBrowserModal({
         });
         if (res.ok) successes++;
         else failures++;
-      } catch (err) {
+      } catch {
         failures++;
       }
     }

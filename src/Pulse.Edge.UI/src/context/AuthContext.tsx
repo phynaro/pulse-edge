@@ -1,19 +1,5 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-
-export type AuthUser = { id: string; username: string; role: 'Admin' | 'ReadOnly' };
-type SetupState = 'NeedsCloudSetup' | 'NeedsFirstAdmin' | 'Operational';
-
-type AuthContextValue = {
-  loading: boolean;
-  setupState: SetupState;
-  user: AuthUser | null;
-  login: (username: string, password: string) => Promise<string | null>;
-  createFirstAdmin: (username: string, password: string) => Promise<string | null>;
-  logout: () => Promise<void>;
-  refresh: () => Promise<void>;
-};
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+import { useEffect, useState } from 'react';
+import { AuthContext, type AuthUser, type SetupState } from './auth';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
@@ -49,10 +35,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return <AuthContext.Provider value={{ loading, setupState, user, login: (u, p) => submit('/api/auth/login', u, p), createFirstAdmin: (u, p) => submit('/api/auth/first-admin', u, p), logout, refresh }}>{children}</AuthContext.Provider>;
 }
-
-export function useAuth() {
-  const value = useContext(AuthContext);
-  if (!value) throw new Error('useAuth must be used within AuthProvider');
-  return value;
-}
-

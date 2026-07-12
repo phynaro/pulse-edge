@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Cpu, Play, Pause, Activity, HardDrive, Clock } from 'lucide-react';
 import CustomSelect from './CustomSelect';
 import OperationalOverview from './Dashboard/OperationalOverview';
@@ -91,26 +91,26 @@ export default function DashboardTab({
     .slice(0, maxLiveLogs);
 
   // Helper to parse CPU percentage
-  const cpuPercent = useMemo(() => {
+  const cpuPercent = (() => {
     if (!diagnostics?.cpuUsage) return 0;
     const match = diagnostics.cpuUsage.match(/(\d+)/);
     return match ? parseInt(match[1], 10) : 0;
-  }, [diagnostics?.cpuUsage]);
+  })();
 
   // Helper to parse Memory usage and percentage (budget 512MB for lightweight agent)
-  const memUsageMb = useMemo(() => {
+  const memUsageMb = (() => {
     if (!diagnostics?.memoryUsage) return 0;
     const match = diagnostics.memoryUsage.match(/(\d+)/);
     return match ? parseInt(match[1], 10) : 0;
-  }, [diagnostics?.memoryUsage]);
+  })();
   
-  const memPercent = useMemo(() => {
+  const memPercent = (() => {
     const maxAgentMemory = 512; // budget limit for edge agent in MB
     return Math.min(100, Math.round((memUsageMb / maxAgentMemory) * 100));
-  }, [memUsageMb]);
+  })();
 
   // Helper to parse Disk usage and percentage
-  const diskInfo = useMemo(() => {
+  const diskInfo = (() => {
     if (!diagnostics?.diskSpace) return { used: 0, total: 100, percent: 0 };
     const matches = diagnostics.diskSpace.match(/([\d.]+)\s*GB\s*\/\s*([\d.]+)\s*GB/i);
     if (matches && matches.length >= 3) {
@@ -120,7 +120,7 @@ export default function DashboardTab({
       return { used, total, percent };
     }
     return { used: 0, total: 100, percent: 0 };
-  }, [diagnostics?.diskSpace]);
+  })();
 
   // Helper to format payload JSON nicely
   const renderPayload = (payloadStr: string) => {
@@ -130,10 +130,13 @@ export default function DashboardTab({
         return (
           <div className="telemetry-pill-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
             {Object.entries(parsed).map(([key, val]) => {
-              let displayVal = '';
-              if (val === null || val === undefined) displayVal = 'null';
-              else if (typeof val === 'object') displayVal = JSON.stringify(val);
-              else displayVal = typeof val === 'number' ? parseFloat(val.toFixed(3)).toString() : String(val);
+              const displayVal = val === null || val === undefined
+                ? 'null'
+                : typeof val === 'object'
+                  ? JSON.stringify(val)
+                  : typeof val === 'number'
+                    ? parseFloat(val.toFixed(3)).toString()
+                    : String(val);
 
               return (
                 <div 
@@ -158,7 +161,7 @@ export default function DashboardTab({
           </div>
         );
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
     return <span className="cell-mono-code">{payloadStr}</span>;

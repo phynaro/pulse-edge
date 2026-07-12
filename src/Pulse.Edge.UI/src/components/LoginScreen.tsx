@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Activity, LockKeyhole, LogIn, ShieldCheck } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 
 export default function LoginScreen() {
   const { login } = useAuth();

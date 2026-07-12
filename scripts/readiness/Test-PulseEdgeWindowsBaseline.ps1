@@ -22,8 +22,18 @@ function Invoke-EvidenceCommand {
     )
 
     "COMMAND: $Command $($Arguments -join ' ')" | Set-Content -Path $LogPath -Encoding utf8
-    & $Command @Arguments 2>&1 | Tee-Object -FilePath $LogPath -Append | Out-Host
-    $exitCode = $LASTEXITCODE
+    # Windows PowerShell 5.1 wraps native stderr as a non-terminating
+    # NativeCommandError. Temporarily allow it through and use the process exit
+    # code as the authoritative result instead.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Command @Arguments 2>&1 | Tee-Object -FilePath $LogPath -Append | Out-Host
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     if ($exitCode -ne 0 -and -not $NonBlocking) {
         throw "$Name failed with exit code $exitCode. See $LogPath"
     }

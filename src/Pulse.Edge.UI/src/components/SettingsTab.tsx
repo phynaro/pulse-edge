@@ -4,7 +4,7 @@ import CustomSelect from './CustomSelect';
 import FactoryResetModal from './FactoryResetModal';
 import SoftResetModal from './SoftResetModal';
 import type { DashboardData } from '../types';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import UserManagement from './UserManagement';
 import ConfigurationBackupPanel from './ConfigurationBackupPanel';
 
