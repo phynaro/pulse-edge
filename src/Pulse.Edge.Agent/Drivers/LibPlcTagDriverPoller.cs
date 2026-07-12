@@ -125,7 +125,7 @@ public class LibPlcTagDriverPoller : IProtocolDriver
                 await _storageService.EnqueueTelemetryBatchAsync(dataSourceId, now, metrics);
                 foreach (var metricKvp in metrics)
                 {
-                    _logger.LogInformation("[Queue Buffer] Enqueued Ethernet/IP telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
+                    _logger.LogDebug("[Queue Buffer] Enqueued Ethernet/IP telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
                 }
             }
         }

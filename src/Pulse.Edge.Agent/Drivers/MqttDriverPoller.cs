@@ -469,7 +469,7 @@ public class MqttDriverPoller : IProtocolDriver
                 if (await _storageService.IsDataSourceEnabledAsync(dp.DataSourceId))
                 {
                     await _storageService.EnqueueTelemetryAsync(dp.DataSourceId, receivedAt, dp.Metric, processedVal, "Good");
-                    _logger.LogInformation("[Queue Buffer] Enqueued MQTT telemetry for Stream {Source} | Metric: {Metric} | Val: {Val}", dp.DataSourceId, dp.Metric, processedVal);
+                    _logger.LogDebug("[Queue Buffer] Enqueued MQTT telemetry for Stream {Source} | Metric: {Metric} | Val: {Val}", dp.DataSourceId, dp.Metric, processedVal);
 
                     // If this is a heartbeat/status tag, restore sibling MQTT tags on the same DataSource back to online (legacy fallback)
                     bool isStatusTag = string.Equals(dp.Metric, "heartbeat", StringComparison.OrdinalIgnoreCase) ||

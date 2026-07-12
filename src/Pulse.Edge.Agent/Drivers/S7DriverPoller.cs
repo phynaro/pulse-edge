@@ -124,7 +124,7 @@ public class S7DriverPoller : IProtocolDriver
                 await _storageService.EnqueueTelemetryBatchAsync(dataSourceId, now, metrics);
                 foreach (var metricKvp in metrics)
                 {
-                    _logger.LogInformation("[Queue Buffer] Enqueued Siemens S7 telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
+                    _logger.LogDebug("[Queue Buffer] Enqueued Siemens S7 telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
                 }
             }
         }

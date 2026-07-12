@@ -139,7 +139,7 @@ public class BacnetDriverPoller : IProtocolDriver
                 await _storageService.EnqueueTelemetryBatchAsync(dataSourceId, now, metrics);
                 foreach (var metricKvp in metrics)
                 {
-                    _logger.LogInformation("[Queue Buffer] Enqueued BACnet telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
+                    _logger.LogDebug("[Queue Buffer] Enqueued BACnet telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
                 }
             }
         }

@@ -356,7 +356,7 @@ public class ModbusDriverPoller : IProtocolDriver
                 await _storageService.EnqueueTelemetryBatchAsync(dataSourceId, now, metrics);
                 foreach (var metricKvp in metrics)
                 {
-                    _logger.LogInformation("[Queue Buffer] Enqueued Modbus telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
+                    _logger.LogDebug("[Queue Buffer] Enqueued Modbus telemetry | Stream: {Source} Metric: {Metric}", dataSourceId, metricKvp.Key);
                 }
             }
         }
