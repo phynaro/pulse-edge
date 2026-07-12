@@ -17,6 +17,7 @@ function streamThemeClass(type?: string): string {
 interface ConfiguringBinding {
   tagId: string;
   address: string;
+  description: string;
   dataType: string;
   metric: string;
 }
@@ -168,6 +169,7 @@ export default function BindMetricModal({
       return {
         tagId,
         address,
+        description: dp?.description?.trim() || '',
         dataType: dp?.dataType || 'Float',
         metric
       };
@@ -328,7 +330,9 @@ export default function BindMetricModal({
                           onClick={(e) => e.stopPropagation()}
                         />
                         <div className="browser-node-details">
-                          <div className="browser-node-name">{dp.address}</div>
+                          <div className="browser-node-name">
+                            {dp.description?.trim() ? `${dp.description.trim()} (${dp.address})` : dp.address}
+                          </div>
                           <div className="browser-node-id" style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'flex', gap: '8px' }}>
                             <span>{adp?.name || 'Unknown'}</span>
                             <span>{dp.dataType}</span>
@@ -342,7 +346,7 @@ export default function BindMetricModal({
                           </div>
                         </div>
                         {dp.lastValue !== undefined && dp.lastValue !== null && dp.lastValue !== '' && (
-                          <span className="browser-type-chip">Val: {formattedValue}</span>
+                          <span className="browser-type-chip">{formattedValue}</span>
                         )}
                       </div>
                     );
@@ -373,7 +377,9 @@ export default function BindMetricModal({
                     return (
                       <div key={tagId} className="browser-selected-item">
                         <div className="browser-selected-details">
-                          <div className="browser-selected-name">{dp.address}</div>
+                          <div className="browser-selected-name">
+                            {dp.description?.trim() ? `${dp.description.trim()} (${dp.address})` : dp.address}
+                          </div>
                           <div className="browser-selected-id">{dp.dataType}</div>
                         </div>
                         <button type="button" onClick={() => handleToggleTag(tagId)} className="btn-browser-remove">✕</button>
@@ -400,7 +406,9 @@ export default function BindMetricModal({
                   {configuringBindings.map((binding, idx) => (
                     <tr key={binding.tagId}>
                       <td className="browser-cell-max">
-                        <div className="browser-cell-name">{binding.address}</div>
+                        <div className="browser-cell-name">
+                          {binding.description ? `${binding.description} (${binding.address})` : binding.address}
+                        </div>
                       </td>
                       <td style={{ width: '120px', color: 'var(--text-muted)', fontSize: '13px' }}>
                         {binding.dataType}
