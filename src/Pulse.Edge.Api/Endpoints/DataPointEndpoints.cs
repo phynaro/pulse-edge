@@ -99,7 +99,7 @@ public static class DataPointEndpoints
             // Unbind old mappings for the same stream and metric keys to avoid conflicts
             var metricsToBind = request.Bindings.Select(b => b.Metric).ToList();
             var existingBound = await db.DataPoints
-                .Where(x => x.DataSourceId == request.DataSourceId && metricsToBind.Contains(x.Metric))
+                .Where(x => x.DataSourceId == request.DataSourceId && x.Metric != null && metricsToBind.Contains(x.Metric))
                 .ToListAsync();
                 
             foreach (var oldDp in existingBound)

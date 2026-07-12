@@ -5,6 +5,20 @@ namespace Pulse.Edge.Storage;
 
 public class QueueDbContext : DbContext
 {
+    private readonly string? _databasePath;
+
+    public QueueDbContext()
+    {
+    }
+
+    public QueueDbContext(string databasePath)
+    {
+        if (string.IsNullOrWhiteSpace(databasePath))
+            throw new ArgumentException("A database path is required.", nameof(databasePath));
+
+        _databasePath = Path.GetFullPath(databasePath);
+    }
+
     public DbSet<DeviceConfig> DeviceConfigs => Set<DeviceConfig>();
     public DbSet<QueueEvent> QueueEvents => Set<QueueEvent>();
     public DbSet<QueueTelemetry> QueueTelemetry => Set<QueueTelemetry>();
@@ -20,6 +34,15 @@ public class QueueDbContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
+        if (optionsBuilder.IsConfigured) return;
+
+        if (_databasePath is not null)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_databasePath)!);
+            optionsBuilder.UseSqlite($"Data Source={_databasePath}");
+            return;
+        }
+
         string pulseFolder;
         if (OperatingSystem.IsWindows())
         {

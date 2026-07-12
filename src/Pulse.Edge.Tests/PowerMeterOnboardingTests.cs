@@ -7,8 +7,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Pulse.Edge.Tests;
 
-public class PowerMeterOnboardingTests
+public class PowerMeterOnboardingTests : IDisposable
 {
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), $"pulse-edge-power-meter-tests-{Guid.NewGuid():N}");
+    private string DatabasePath => Path.Combine(_directory, "edge.db");
+
     [Fact]
     public void TestTemplatesCatalog_ContainsSchneiderPM5350()
     {
@@ -35,7 +38,9 @@ public class PowerMeterOnboardingTests
     [Fact]
     public async Task TestPowerMeterCreationLogicAsync()
     {
-        using var db = new QueueDbContext();
+        Directory.CreateDirectory(_directory);
+        using var db = new QueueDbContext(DatabasePath);
+        await db.Database.EnsureCreatedAsync();
         
         var adapterName = "Test Power Meter " + Guid.NewGuid().ToString("N");
         var host = "192.168.1.100";
@@ -128,5 +133,10 @@ public class PowerMeterOnboardingTests
             // Roll back changes so database remains clean
             await transaction.RollbackAsync();
         }
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
     }
 }

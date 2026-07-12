@@ -10,14 +10,24 @@ namespace Pulse.Edge.Api.Services;
 public sealed class ConfigurationBackupService
 {
     public const int CurrentFormatVersion = 1;
+    private readonly Func<QueueDbContext> _createDbContext;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
     };
 
+    public ConfigurationBackupService() : this(() => new QueueDbContext())
+    {
+    }
+
+    public ConfigurationBackupService(Func<QueueDbContext> createDbContext)
+    {
+        _createDbContext = createDbContext ?? throw new ArgumentNullException(nameof(createDbContext));
+    }
+
     public async Task<ConfigurationBackupDocument> CreateAsync(CancellationToken cancellationToken = default)
     {
-        await using var db = new QueueDbContext();
+        await using var db = _createDbContext();
         var payload = new ConfigurationBackupPayload(
             await db.DriverAdapters.AsNoTracking().OrderBy(x => x.Id).Select(x => new DriverAdapter
             {
@@ -79,7 +89,7 @@ public sealed class ConfigurationBackupService
         if (!inspection.IsValid) return inspection;
 
         var payload = document.Configuration;
-        await using var db = new QueueDbContext();
+        await using var db = _createDbContext();
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         try
         {
