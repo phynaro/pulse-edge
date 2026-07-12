@@ -97,10 +97,10 @@ These observations were recorded during the initial product review and should be
 - [x] Verify the earlier `Microsoft.OpenApi` version conflict no longer occurs after restore.
 - [x] Verify the backend builds without compiler warnings after restore.
 - [x] Add CI for restore, backend build, and backend tests.
-- [ ] Add frontend type checking, linting, tests, and production build.
-- [ ] Add dependency, license, and secret scanning.
-- [ ] Produce versioned release artifacts with commit metadata.
-- [ ] Generate and archive an SBOM for each release artifact.
+- [x] Add frontend type checking, linting, initial unit tests, and production build.
+- [x] Add dependency, license, and secret scanning to CI.
+- [x] Produce checksummed CI artifacts with commit metadata; release-tag artifacts remain open.
+- [x] Generate and archive an SPDX SBOM for each CI artifact bundle.
 - [ ] Protect the main branch with required checks.
 
 ### Gate G1 — Build integrity
@@ -115,7 +115,7 @@ These observations were recorded during the initial product review and should be
 
 **Evidence:**
 
-- CI run: Workflow implemented; first hosted run pending. See [Phase 1 engineering slice evidence](readiness-evidence/2026-07-12-phase-1-engineering-slice.md).
+- CI run: [First hosted Quality run passed](https://github.com/phynaro/pulse-edge/actions/runs/29193876254); follow-up security/artifact workflow run pending. See [Phase 1 engineering slice evidence](readiness-evidence/2026-07-12-phase-1-engineering-slice.md).
 - Implementation plan: [Phase 1 engineering plan](PULSE_Edge_Phase_1_Engineering_Plan.md)
 - Vulnerability report: [Initial production-readiness baseline](readiness-evidence/2026-07-12-initial-baseline.md#nuget-vulnerability-audit)
 - Artifact and checksum: TBD
@@ -431,6 +431,7 @@ Add one row for every gate review, including unsuccessful reviews.
 | 2026-07-12 | G0 | Blocked | The project owner chose to postpone Windows validation. The remaining Windows, load, and stakeholder evidence stays required and no G0 check was waived. | Resume after the authorized Phase 1 engineering slice or when the Windows/load environments are ready. |
 | 2026-07-12 | G1 | In progress | The project owner authorized a sequencing exception to begin toolchain pinning, blocking CI, and lint remediation before G0 passes. | Complete the slice and attach local plus clean-room evidence; do not mark G1 passed without CI/enforcement evidence. |
 | 2026-07-12 | G1 | In progress | Toolchains and dependency locks are pinned, the quality workflow is implemented, frontend lint is clean, local builds and all 47 backend tests pass, and read-only browser smoke is clean. | Run the hosted workflow; then add frontend tests, secret/license scanning, artifacts, SBOMs, and branch enforcement. |
+| 2026-07-12 | G1 | In progress | The first hosted workflow passed. Initial frontend unit tests plus dependency/license/secret scanning and checksummed SBOM-bearing artifacts are implemented for follow-up validation. GitHub reports branch protection unavailable for this private repository on its current plan. | Run the follow-up workflow, then upgrade the GitHub plan or make the repository public to enable and prove required-check enforcement. |
 
 ## Decision and risk log
 

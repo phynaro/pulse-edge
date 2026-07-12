@@ -88,3 +88,98 @@ jobs:
 
       - name: Build
         run: pnpm build:ui
+
+      - name: Unit tests
+        run: pnpm test:ui
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level high
+
+      - name: Enforce frontend license policy
+        shell: bash
+        run: |
+          pnpm licenses list --prod --json > frontend-licenses.json
+          if grep -Eiq '\"(AGPL|GPL|LGPL)(-|\")' frontend-licenses.json; then
+            echo "Disallowed copyleft production license detected."
+            exit 1
+          fi
+
+      - name: Upload frontend audit evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-license-audit
+          path: frontend-licenses.json
+          if-no-files-found: error
+          retention-days: 14
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Scan repository history
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false
+
+  artifacts:
+    name: Versioned artifacts and SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Build versioned artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="0.0.0-${GITHUB_SHA::12}"
+          mkdir -p artifacts/agent artifacts/ui
+          dotnet restore Pulse.Edge.slnx --locked-mode
+          dotnet publish src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj --no-restore --configuration Release --output artifacts/agent -p:Version="$version" -p:InformationalVersion="$version"
+          pnpm install --frozen-lockfile
+          pnpm build:ui
+          cp -R src/Pulse.Edge.UI/dist/. artifacts/ui/
+          printf 'version=%s\ncommit=%s\nbuild_date=%s\nrun=%s\n' "$version" "$GITHUB_SHA" "$(date -u +%FT%TZ)" "$GITHUB_RUN_ID" > artifacts/build-metadata.txt
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: artifacts
+          format: spdx-json
+          output-file: artifacts/pulse-edge.spdx.json
+          artifact-name: pulse-edge-sbom.spdx.json
+          upload-release-assets: false
+
+      - name: Generate checksums
+        run: find artifacts -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > artifacts/SHA256SUMS
+
+      - name: Upload checksummed artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: pulse-edge-${{ github.sha }}
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 30
