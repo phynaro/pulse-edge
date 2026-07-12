@@ -16,14 +16,14 @@ Make every accepted change reproducibly buildable, testable, auditable, and trac
 - Automated tests: 47 passed, 0 failed, 0 skipped.
 - NuGet vulnerability audit: no vulnerable direct or transitive package reported by current sources.
 - Database-using tests now use isolated temporary SQLite files.
-- A blocking repository quality workflow is implemented; its first hosted run is pending.
+- The blocking repository quality workflow passes on pull requests and on merged `main`.
 - The repository pins the .NET SDK and restores from committed NuGet lock files.
 - A manual Linux ARM64 clean-room restore/build/test passes, providing a working reference for CI.
 
 ### Frontend
 
 - TypeScript and Vite production build passes.
-- No frontend unit or browser test file is currently present.
+- Four Vitest unit tests cover dashboard health classification and data-source formatting; browser coverage remains open.
 - The repository pins Node and pnpm runtimes.
 - The pnpm lockfile is present and uses lockfile version 9.
 - A manual Node 26 ARM64 clean-room frozen install and production build passes.
@@ -107,7 +107,7 @@ Required pull-request jobs:
 
 **Acceptance:** Every job is deterministic, required, and fails the pull request when its policy is violated. Temporary `continue-on-error` jobs do not satisfy G1.
 
-**Progress:** Hosted backend and frontend jobs passed once. Unit tests, Node audit, license enforcement, secret scanning, artifacts, checksums, and SBOM generation are implemented in the follow-up workflow and await their hosted run.
+**Progress:** Backend, frontend, Node audit, license enforcement, secret scanning, artifacts, checksums, and SBOM jobs pass on the merged `main` commit. Automated browser smoke remains open.
 
 ### Batch 5 — Versioned artifacts and SBOM
 
