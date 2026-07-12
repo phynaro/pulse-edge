@@ -73,8 +73,8 @@ Fix behavior-affecting findings before mechanical typing/style findings.
 
 ### Batch 3 — Automated frontend coverage
 
-- [ ] Add a unit/component test runner compatible with the accepted React/Vite toolchain.
-- [ ] Cover dashboard health classification and formatting utilities.
+- [x] Add a unit/component test runner compatible with the accepted React/Vite toolchain.
+- [x] Cover dashboard health classification and formatting utilities.
 - [ ] Cover authentication state and Admin/ReadOnly rendering boundaries.
 - [ ] Cover configuration backup inspection messaging without applying a live restore.
 - [ ] Add Playwright smoke coverage for login, navigation, and the read-only dashboard.
@@ -107,23 +107,27 @@ Required pull-request jobs:
 
 **Acceptance:** Every job is deterministic, required, and fails the pull request when its policy is violated. Temporary `continue-on-error` jobs do not satisfy G1.
 
+**Progress:** Hosted backend and frontend jobs passed once. Unit tests, Node audit, license enforcement, secret scanning, artifacts, checksums, and SBOM generation are implemented in the follow-up workflow and await their hosted run.
+
 ### Batch 5 — Versioned artifacts and SBOM
 
-- [ ] Derive version metadata from the release tag plus commit.
+- [x] Derive pre-release version metadata from the commit; release-tag derivation remains release-workflow work.
 - [ ] Embed version, commit, build date, and schema version in the service and UI diagnostics.
-- [ ] Publish immutable checksummed artifacts.
-- [ ] Generate CycloneDX or SPDX SBOMs for .NET and frontend dependencies.
-- [ ] Archive test, audit, SBOM, and checksum evidence with the artifact.
+- [x] Publish immutable checksummed CI artifacts.
+- [x] Generate an SPDX SBOM covering the packaged backend and frontend artifacts.
+- [x] Archive test, audit, SBOM, and checksum evidence with the artifact.
 
 **Acceptance:** A downloaded artifact can be mapped back to its source commit, dependency inventory, checks, and release decision.
 
 ### Batch 6 — Enforcement
 
-- [ ] Protect the main branch.
-- [ ] Require G1 jobs before merge.
-- [ ] Require review for workflow, dependency, and release configuration changes.
+- [x] Protect the main branch.
+- [x] Require G1 jobs before merge.
+- [x] Require one approving review; workflow, dependency, and release configuration ownership rules remain open.
 - [ ] Document emergency exception authority, expiry, and retrospective review.
-- [ ] Prove a deliberately failing check prevents merge/release in a test branch.
+- [x] Prove a deliberately failing check prevents merge in a disposable test branch.
+
+**Result:** After the repository became public, protection was enabled for `main`. Temporary PR #2 deliberately failed frontend lint and GitHub reported the PR as blocked. The proof PR was then closed and its branch deleted. Release-creation enforcement still requires a dedicated release workflow.
 
 **Acceptance:** Required checks cannot be bypassed through the ordinary merge path.
 

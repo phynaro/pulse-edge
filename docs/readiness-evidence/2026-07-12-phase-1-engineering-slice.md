@@ -40,3 +40,11 @@ These observations are not new compiler or lint failures, but should be handled 
 ## Gate interpretation
 
 This evidence completes the authorized initial slice; it does not pass Gate G1. A hosted CI run, frontend automated tests, secret/license scanning, versioned artifacts, SBOMs, and branch enforcement remain open.
+
+## Gate follow-up
+
+The first hosted Quality run passed for commit `854955e37070b913ae672e4592e67b4b8fbd716d`: backend restore/build/test/audit and frontend install/lint/build were green. Run: https://github.com/phynaro/pulse-edge/actions/runs/29193876254
+
+The follow-up change adds four frontend unit tests, production dependency and license-policy enforcement, full-history secret scanning, checksummed version/commit-stamped build artifacts, and an SPDX JSON SBOM. Local frontend checks pass, and all four expanded hosted jobs passed in [Quality run 29194077549](https://github.com/phynaro/pulse-edge/actions/runs/29194077549).
+
+After the repository became public, `main` protection was enabled with all four Quality jobs required, strict/current-branch checks, one approval, stale-review dismissal, conversation resolution, linear history, admin enforcement, and force-push/deletion prevention. Temporary PR #2 intentionally failed frontend lint; GitHub reported it as blocked. The run was cancelled after proof, and the PR and temporary branch were closed/deleted. Evidence: https://github.com/phynaro/pulse-edge/pull/2 and https://github.com/phynaro/pulse-edge/actions/runs/29194525820.
