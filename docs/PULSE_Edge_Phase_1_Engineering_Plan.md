@@ -121,13 +121,13 @@ Required pull-request jobs:
 
 ### Batch 6 — Enforcement
 
-- [ ] Protect the main branch.
-- [ ] Require G1 jobs before merge.
-- [ ] Require review for workflow, dependency, and release configuration changes.
+- [x] Protect the main branch.
+- [x] Require G1 jobs before merge.
+- [x] Require one approving review; workflow, dependency, and release configuration ownership rules remain open.
 - [ ] Document emergency exception authority, expiry, and retrospective review.
-- [ ] Prove a deliberately failing check prevents merge/release in a test branch.
+- [x] Prove a deliberately failing check prevents merge in a disposable test branch.
 
-**Blocker:** GitHub reports that branch protection is unavailable for this private repository on its current plan. Upgrade the plan or make the repository public before the required-check controls can be enabled and tested.
+**Result:** After the repository became public, protection was enabled for `main`. Temporary PR #2 deliberately failed frontend lint and GitHub reported the PR as blocked. The proof PR was then closed and its branch deleted. Release-creation enforcement still requires a dedicated release workflow.
 
 **Acceptance:** Required checks cannot be bypassed through the ordinary merge path.
 
