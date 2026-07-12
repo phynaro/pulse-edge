@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+
+const g1EnforcementProof: string = 1;
 import { 
   Activity, 
   Shuffle,
