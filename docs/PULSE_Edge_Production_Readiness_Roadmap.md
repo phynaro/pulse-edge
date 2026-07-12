@@ -115,7 +115,7 @@ These observations were recorded during the initial product review and should be
 
 **Evidence:**
 
-- CI run: [First hosted Quality run passed](https://github.com/phynaro/pulse-edge/actions/runs/29193876254); follow-up security/artifact workflow run pending. See [Phase 1 engineering slice evidence](readiness-evidence/2026-07-12-phase-1-engineering-slice.md).
+- CI runs: [Initial hosted run passed](https://github.com/phynaro/pulse-edge/actions/runs/29193876254); [expanded security, test, and artifact run passed](https://github.com/phynaro/pulse-edge/actions/runs/29194077549). See [Phase 1 engineering slice evidence](readiness-evidence/2026-07-12-phase-1-engineering-slice.md).
 - Implementation plan: [Phase 1 engineering plan](PULSE_Edge_Phase_1_Engineering_Plan.md)
 - Vulnerability report: [Initial production-readiness baseline](readiness-evidence/2026-07-12-initial-baseline.md#nuget-vulnerability-audit)
 - Artifact and checksum: TBD

@@ -45,6 +45,6 @@ This evidence completes the authorized initial slice; it does not pass Gate G1. 
 
 The first hosted Quality run passed for commit `854955e37070b913ae672e4592e67b4b8fbd716d`: backend restore/build/test/audit and frontend install/lint/build were green. Run: https://github.com/phynaro/pulse-edge/actions/runs/29193876254
 
-The follow-up change adds four frontend unit tests, production dependency and license-policy enforcement, full-history secret scanning, checksummed version/commit-stamped build artifacts, and an SPDX JSON SBOM. Local frontend test, lint, build, audit, and license checks pass. Hosted validation of the follow-up change remains required.
+The follow-up change adds four frontend unit tests, production dependency and license-policy enforcement, full-history secret scanning, checksummed version/commit-stamped build artifacts, and an SPDX JSON SBOM. Local frontend checks pass, and all four expanded hosted jobs passed in [Quality run 29194077549](https://github.com/phynaro/pulse-edge/actions/runs/29194077549).
 
 GitHub returned HTTP 403 when branch protection was inspected: this private repository must be upgraded to a plan supporting branch protection or made public before required checks can be enforced on `main`. G1 therefore remains open even if all workflow jobs pass.
