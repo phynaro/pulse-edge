@@ -27,7 +27,7 @@ Update this table first. Keep exactly one phase marked `In progress` unless an u
 | Phase | Outcome | Status | Owner | Target | Gate | Next action |
 |---|---|---|---|---|---|---|
 | 0 | Pilot baseline | Blocked | Engineering + stakeholders | TBD | G0 | Windows validation deferred (R-006); close the Linux-target G0 items — support matrix, capacity thresholds, accepted limitations — and the load/outage fixture |
-| 1 | Engineering candidate | In progress | Engineering | TBD | G1 | Add auth/backup/browser coverage and a gated tag-based release workflow |
+| 1 | Engineering candidate | Gate review | Engineering | TBD | G1 | All G1 checks have evidence (auth/backup tests + gated tag-based release with enforcement + happy-path proofs); obtain the authorized G1 review |
 | 2 | Security candidate | Not started | TBD | TBD | G2 | Create threat model and security hardening backlog |
 | 3 | Commissioning candidate | Not started | TBD | TBD | G3 | Design validate/apply/rollback configuration flow |
 | 4 | Reliability candidate | Not started | TBD | TBD | G4 | Define retention, queue limits, and disk thresholds |
@@ -113,7 +113,7 @@ These observations were recorded during the initial product review and should be
 - [x] No unintended compiler warning remains.
 - [x] Artifacts contain version, commit, and build metadata.
 - [x] An SBOM is generated and retained.
-- [ ] A failed required check prevents release creation.
+- [x] A failed required check prevents release creation.
 
 **Evidence:**
 
@@ -124,6 +124,10 @@ These observations were recorded during the initial product review and should be
 - SBOM: [`pulse-edge-sbom.spdx.json` retained by the post-merge run](https://github.com/phynaro/pulse-edge/actions/runs/29195409651)
 - Branch enforcement: [deliberately failing PR was blocked](https://github.com/phynaro/pulse-edge/pull/2); [failure run](https://github.com/phynaro/pulse-edge/actions/runs/29194525820)
 - Warning baseline or exception record: [Phase 1 engineering slice evidence](readiness-evidence/2026-07-12-phase-1-engineering-slice.md)
+- Release pipeline: tag-triggered `release.yml` runs the reusable required checks (`guard` → `validate` → `publish`); `publish` needs `[guard, validate]`, so a red check structurally blocks it. Design: [release-tag enforcement design](superpowers/specs/2026-07-13-release-tag-enforcement-design.md).
+- Release enforcement proof: [a deliberately failing check left `publish` skipped with no release created](https://github.com/phynaro/pulse-edge/actions/runs/29237934034).
+- Release happy path: [a passing tag built the Linux artifacts and created a GitHub Release with the arm64 `.deb`, per-arch zips, and SHA256SUMS](https://github.com/phynaro/pulse-edge/actions/runs/29257973968).
+- Deferred: MinIO/`pulse.trazor.cloud` **staging** upload is paused behind `ENABLE_STAGING_UPLOAD` — large artifacts (~90 MB zips) exceed Cloudflare's ~100s proxy timeout; re-enable via a Cloudflare-bypass upload origin or presigned MinIO URLs. Does not affect this gate item.
 
 **Exit result:** `Engineering Candidate`
 
@@ -438,6 +442,7 @@ Add one row for every gate review, including unsuccessful reviews.
 | 2026-07-12 | G1 | In progress | The repository is public; `main` protection requires all four Quality jobs and one approval. Temporary PR #2 deliberately failed frontend lint and GitHub blocked it. The proof PR and branch were removed after evidence capture. | Complete remaining frontend/auth/backup/browser coverage, release-tag metadata and release enforcement, then obtain the authorized G1 review. |
 | 2026-07-12 | G0 | Blocked | The project owner chose to defer Windows deployment/certification (R-006) and target Linux for near-term gate work. No G0 check was waived; Windows validation remains required if Windows returns to the supported-platform scope. | Close the Linux-target G0 items (support matrix, capacity thresholds, accepted-limitations sign-off) and run the load/outage/recovery fixture; keep progressing G1 in parallel under the existing sequencing exception. |
 | 2026-07-12 | G1 | In progress | Added Testing Library + jsdom frontend infrastructure and component tests for the local authentication (LoginScreen, AuthProvider) and configuration backup/restore (ConfigurationBackupPanel) flows; the UI suite is 20 tests and lint/build/test pass locally. Browser/device-modal coverage deferred to the G8 end-to-end scope. | Push and attach the hosted CI run as evidence, then complete release-tag metadata and the release-creation enforcement item before requesting the authorized G1 review. |
+| 2026-07-13 | G1 | In progress | Tag-triggered `release.yml` gates a versioned Linux build/publish on the reusable Quality checks. Enforcement proof (run 29237934034): a failed check left `publish` skipped, no release. Happy path (run 29257973968): a passing tag produced a GitHub Release with the arm64 `.deb`, per-arch zips, and SHA256SUMS. All G1 gate checks now have evidence. MinIO staging upload is paused behind `ENABLE_STAGING_UPLOAD` pending a Cloudflare-bypass upload path. | Obtain the authorized G1 gate review to mark the phase Passed. |
 
 ## Decision and risk log
 
@@ -451,6 +456,7 @@ Use this section for decisions or risks that materially change scope, sequence, 
 | R-004 | 2026-07-12 | Risk | Repository CI and runtime pins are now implemented, but the first hosted run and frontend automated tests remain open. This is not Windows certification evidence. | Engineering | TBD | Mitigated / open |
 | R-005 | 2026-07-12 | Risk | A default macOS source archive emitted AppleDouble `._*` files that fail C# compilation on Linux. Clean-room packaging passes with `COPYFILE_DISABLE=1`; release packaging must exclude host metadata deterministically. | Engineering | TBD | Open |
 | R-006 | 2026-07-12 | Decision | Defer Windows deployment and certification for now; target Linux for near-term gate work. Narrows current supported-platform scope to Linux without waiving any gate check. Windows validation (G0 matrix + `PULSE_Edge_Windows_Deployment_Specification.md`) and G8 Windows installer/repair/uninstall tests must be reinstated before any Windows-supporting production release. | Engineering + stakeholders | TBD | Open |
+| R-007 | 2026-07-13 | Decision | Automated release upload to the MinIO/`pulse.trazor.cloud` staging repo is paused (gated behind repo variable `ENABLE_STAGING_UPLOAD`). Cause: self-contained artifacts (~90 MB zips, ~70 MB `.deb`) exceed Cloudflare's ~100s proxy timeout (524) when PUT through the API. Releases currently publish to GitHub Release only. Re-enable via a Cloudflare-bypass upload origin or presigned MinIO URLs (optionally drop the redundant Agent binary from SinglePort packages to shrink size). Does not affect G1 (release-creation enforcement is proven). | Engineering | TBD | Open |
 
 ## Review cadence
 
