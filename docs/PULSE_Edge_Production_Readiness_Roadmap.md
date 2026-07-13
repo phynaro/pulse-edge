@@ -28,7 +28,7 @@ Update this table first. Keep exactly one phase marked `In progress` unless an u
 |---|---|---|---|---|---|---|
 | 0 | Pilot baseline | Blocked | Engineering + stakeholders | TBD | G0 | Windows validation deferred (R-006); close the Linux-target G0 items — support matrix, capacity thresholds, accepted limitations — and the load/outage fixture |
 | 1 | Engineering candidate | Passed | Engineering | 2026-07-13 | G1 | Gate passed 2026-07-13 by project-owner authorization (formal multi-reviewer panel waived). Phase closed. |
-| 2 | Security candidate | In progress | Engineering | TBD | G2 | Threat model + hardening backlog delivered ([PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md)); execute Slice 2A next, starting with the Critical finding B-01 (stop returning `PairingToken`/`ClaimSecret` in plaintext) |
+| 2 | Security candidate | In progress | Engineering | TBD | G2 | Threat model + hardening backlog delivered ([PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md)); no Critical finding after verified review; execute Slice 2A next (priority order: B-06 setup-window, B-02 explicit authz, then B-01/B-04/B-05) |
 | 3 | Commissioning candidate | Not started | TBD | TBD | G3 | Design validate/apply/rollback configuration flow |
 | 4 | Reliability candidate | Not started | TBD | TBD | G4 | Define retention, queue limits, and disk thresholds |
 | 5 | Operations candidate | Not started | TBD | TBD | G5 | Define subsystem health and support bundle contract |
@@ -162,7 +162,7 @@ These observations were recorded during the initial product review and should be
 
 **Evidence:**
 
-- Threat model: [PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md) — STRIDE-per-boundary register (23 threats), decomposed hardening backlog (16 items), and the Slice 2A–2D implementation sequence. One Critical finding (B-01) is open pending Slice 2A.
+- Threat model: [PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md) — STRIDE-per-boundary register (23 threats), decomposed hardening backlog (16 items), and the Slice 2A–2D implementation sequence. No Critical finding after verified review (an initial Critical on B-01 was corrected to Medium — see the threat-model correction note); highest open severity is High (B-06 setup-window hardening).
 - Endpoint authorization test report: TBD
 - Security scan: TBD
 - Backup abuse test report: TBD
@@ -445,6 +445,7 @@ Add one row for every gate review, including unsuccessful reviews.
 | 2026-07-13 | G1 | In progress | Tag-triggered `release.yml` gates a versioned Linux build/publish on the reusable Quality checks. Enforcement proof (run 29237934034): a failed check left `publish` skipped, no release. Happy path (run 29257973968): a passing tag produced a GitHub Release with the arm64 `.deb`, per-arch zips, and SHA256SUMS. All G1 gate checks now have evidence. MinIO staging upload is paused behind `ENABLE_STAGING_UPLOAD` pending a Cloudflare-bypass upload path. | Obtain the authorized G1 gate review to mark the phase Passed. |
 | 2026-07-13 | G1 | Passed | All seven G1 checks have durable evidence (clean CI build, backend+frontend pipelines pass, no unaccepted high/critical vuln, no compiler warnings, artifacts carry version/commit/build metadata, SBOM retained, and a failed required check structurally blocks release creation — proven by run 29237934034). The project owner authorized the pass and waived the formal multi-reviewer panel. | Proceed to Phase 2 (G2). MinIO staging upload remains paused (R-007); does not affect this gate. |
 | 2026-07-13 | G2 | In progress | Phase 2 opened. Threat model delivered ([PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md)): STRIDE per trust boundary, 23 threats, 16-item decomposed backlog, Slice 2A–2D sequence. One Critical finding (B-01: `PairingToken`/`ClaimSecret` returned plaintext by the anonymous `/api/dashboard`). Decision R-008 recorded (device creds stay plaintext + backup-recoverable; the "encrypt … protocol credentials" gate item is narrowed to cloud keys only). | Execute Slice 2A (B-01, B-02, B-04, B-05, B-06), starting with the Critical finding B-01. |
+| 2026-07-13 | G2 | In progress | Threat-model finding reassessed against the code: the B-01 "Critical" (pairing secret readable anonymously) was overstated. `/api/dashboard` is auth-gated once the device is commissioned (`CurrentUserValidationMiddleware.cs:51-59`) and `ClaimSecret` is never returned to any client. B-01 corrected to Medium (restrict pairing fields to the Admin role); the residual anonymous exposure exists only during the pre-first-admin setup window and folds into B-06. **No Critical finding remains.** | Proceed with Slice 2A in corrected priority order: B-06, B-02, B-01, B-04, B-05. |
 
 ## Decision and risk log
 

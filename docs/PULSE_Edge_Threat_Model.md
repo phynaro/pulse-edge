@@ -20,6 +20,13 @@ security equivalent of an FMEA: the "components" are the interfaces where trust 
 Status references (`file:line`) reflect the code map taken on 2026-07-13; verify before
 implementing, as line numbers drift.
 
+**Correction (2026-07-13):** an initial draft rated T-03 / B-01 as **Critical** based on an
+incomplete reading of the auth middleware. On verification, `/api/dashboard` is auth-gated once
+the device is commissioned (`CurrentUserValidationMiddleware.cs:51-59`) and `ClaimSecret` is
+never returned to any client. T-03 / B-01 are corrected to **Medium** (restrict the pairing
+fields to Admin), and the residual anonymous exposure — which exists only during the
+pre-first-admin setup window — is folded into T-04 / B-06. **No Critical finding remains.**
+
 ---
 
 ## 1. Scope and system model
@@ -119,8 +126,8 @@ are marked with their target phase.
 |----|--------|--------|---------------------------|---------------|----------|---------|
 | T-01 | S | Password guessing / spray against admin login | PBKDF2-SHA256, 210k iterations, 16-byte salt, fixed-time compare (`PasswordService.cs`); 5-attempt / 15-min per-account lockout (`AuthEndpoints.cs`) | No **IP-based** throttling — an attacker can spray *many* usernames, or hammer login to cause lockouts (DoS of a real user) | Medium | B-05 |
 | T-02 | I | Session cookie sniffed on the LAN | `HttpOnly` + `SameSite=Strict`; 8h sliding expiry (`Program.cs`) | `SecurePolicy = SameAsRequest` + **HTTP default** → cookie transmitted in clear on plain-HTTP deployments | High | B-03 |
-| T-03 | I/E | **Pairing secret readable with no auth** — `PairingToken`/`ClaimSecret` returned in plaintext by `/api/dashboard`, which is an **anonymous** endpoint | None | Any unauthenticated LAN client (ADV2) can read the pairing secret and claim/impersonate the device (A1) | **Critical** | B-01 |
-| T-04 | S/E | First-admin claim race — any network client can POST `/api/auth/first-admin` during the setup window | Setup-status gate only | On an open network, ADV2 claims admin before the operator does | High | B-06 |
+| T-03 | I | Cloud/pairing fields (`PairingToken`, pairing URLs) returned by `/api/dashboard` are visible to **any authenticated user, including ReadOnly** — pairing is an Admin function | Endpoint is auth-gated once `hasUsers == true` (`CurrentUserValidationMiddleware.cs:51-59`); `ClaimSecret` is never returned to any client | A ReadOnly local operator can read the pairing token. Anonymous exposure exists **only during the pre-first-admin setup window** (see T-04) | Medium | B-01 |
+| T-04 | S/E/I | Setup-window trust-on-first-use — during commissioning (`hasUsers == false`), `/api/dashboard` is anonymous (exposing the pairing token) **and** any network client can POST `/api/auth/first-admin` | Setup-status gate only; the window closes the moment the first admin exists | On an open network, ADV2 reads the pairing token and/or claims admin before the operator does | High | B-06 |
 | T-05 | E | Reset endpoints (factory/soft reset) rely on the middleware mutation rule, not an explicit role check | Middleware requires `Admin` for all non-GET (`CurrentUserValidationMiddleware.cs`) | Fragile defense-in-depth: a future middleware-order change silently exposes destructive endpoints | Medium | B-02 |
 | T-06 | T/E | Clickjacking, MIME-sniffing, injected content | None | No `CSP`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` | Medium | B-04 |
 | T-07 | D | Flooding of unauthenticated endpoints (login, dashboard, webhooks, diagnostic ingest) | None specific | Local DoS; resource exhaustion | Low–Medium | B-05 |
@@ -180,7 +187,7 @@ slice (§5). Effort is rough (S/M/L).
 
 | ID | Sev | Eff | Item | Closes threat | G2 gate check advanced |
 |----|-----|-----|------|---------------|------------------------|
-| **B-01** | Critical | S | Stop returning `PairingToken`/`ClaimSecret` in plaintext; require auth on `/api/dashboard` or omit the secret fields | T-03 | Redact secrets from API responses; anonymous clients cannot access protected data |
+| **B-01** | Medium | S | Restrict the cloud/pairing fields (`PairingToken`, pairing URLs) in `/api/dashboard` to the Admin role — currently visible to any authenticated user incl. ReadOnly. (`ClaimSecret` is already never returned.) | T-03 | Read-only users cannot read pairing credentials; least-privilege on responses |
 | **B-02** | High | M | Endpoint authorization audit: add explicit `IsInRole("Admin")` guards on every mutating endpoint (reset, restore) + an automated test asserting the authz matrix for every route | T-05, T-20 | Verify admin/read-only authorization on every endpoint; read-only users cannot mutate |
 | **B-03** | High | M | TLS for the local UI: HTTPS binding (self-signed cert generated on install) or documented reverse-proxy TLS; force cookie `Secure`; add HSTS | T-02 | Enforce TLS; secure cookie settings; production TLS cannot be bypassed |
 | **B-04** | Medium | S | Security-headers middleware (`CSP`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`) + make CORS origins deployment-configurable | T-06, T-08 | Restrictive CORS and security headers |
@@ -205,9 +212,11 @@ Each slice is an independently-shippable unit that later gets its own spec → p
 cycle. Ordered so the highest-severity, lowest-infrastructure work ships first.
 
 **Slice 2A — Response & authorization hygiene** (quick wins, no new infrastructure)
-> B-01, B-02, B-04, B-05, B-06.
-> Closes the Critical finding (B-01) and hardens authz/brute-force with in-process changes only.
-> Highest risk-reduction per unit effort.
+> B-06, B-02, B-01, B-04, B-05 (priority order).
+> Hardens the setup-window trust boundary (B-06), makes authorization explicit and tested
+> (B-02), applies least-privilege to responses (B-01), and adds security headers/configurable
+> CORS (B-04) + IP throttling (B-05) — all in-process changes. Highest risk-reduction per unit
+> effort.
 
 **Slice 2B — Transport security**
 > B-03, B-08, B-14.
@@ -252,7 +261,7 @@ cycle. Ordered so the highest-severity, lowest-infrastructure work ships first.
 | Malformed/oversized/tampered backups rejected safely | B-09 (+ Slice 2D tests) |
 | Production TLS verification cannot be bypassed | B-03, B-08 |
 | Dependency/static-analysis/secret scans pass | Slice 2D (builds on G1 CI) |
-| Threat model has no unresolved critical finding | This document + resolving **B-01** |
+| Threat model has no unresolved critical finding | **No Critical finding remains** after verified review (the earlier B-01 "Critical" was corrected to Medium on re-reading the middleware). Highest open severity is High: B-06 (setup-window) and T-02/B-03 (HTTP-default cookie, Slice 2B) |
 
 ---
 
