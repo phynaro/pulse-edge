@@ -136,7 +136,8 @@ uploads each artifact through the PULSE repo API:
   `${PULSE_API_ORIGIN}/download/staging/<relative-path>` — matching the APT URL
   the generated `install.sh` points to.
 
-Credentials (added by the user in GitHub):
+Credentials live in the GitHub **environment `PULSE`**, so the `publish` job must
+declare `environment: PULSE` to read them:
 
 - `REPO_UPLOAD_TOKEN` — **Secret** (same value as the API's `REPO_UPLOAD_TOKEN`).
 - `PULSE_API_ORIGIN` — **Variable** (e.g. `https://pulse.trazor.cloud`).

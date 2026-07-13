@@ -52,6 +52,9 @@ jobs:
     needs: [guard, validate]
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # The upload token + API origin live in the "PULSE" environment, so this job
+    # must declare it to access secrets.REPO_UPLOAD_TOKEN and vars.PULSE_API_ORIGIN.
+    environment: PULSE
     permissions:
       contents: write
     steps:
