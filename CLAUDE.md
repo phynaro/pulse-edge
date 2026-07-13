@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working with me (how to communicate)
+
+My background is Electrical / Automation Engineering, and I am transitioning into full-stack software development. I know the domain (PLCs, protocols, industrial systems) deeply, and I understand most of this project's web/.NET stack — but I am not yet fluent in it, so treat me as a capable learner, not a senior web developer.
+
+When you explain things:
+
+- **Spell out the reasoning, don't just name it.** Instead of "it's a race condition, add a mutex," say what two things are happening at the same time, why that causes the bug, and what the fix actually does. Avoid dropping a jargon term as if it's self-explanatory.
+- **Expand acronyms and web/.NET idioms the first time** they come up in a discussion (e.g. DI, middleware, hydration, CORS, tree-shaking, WAL). One short clause is enough — "CORS (the browser rule that blocks a page from calling a different origin)".
+- **Prefer a plain sentence over a terse senior-dev shorthand.** If a phrase only makes sense to someone who already knows the pattern, rewrite it so it lands at a glance.
+- **Connect new web concepts to things I already know** from automation/embedded work when a fair analogy exists — it helps me anchor them.
+- **Don't over-explain the industrial/domain side.** I know that part; keep the teaching focused on the software stack, tooling, and web patterns.
+- I would rather understand *why* than just be handed a command. When you suggest a fix or a tool, include the one-line reason it's the right call.
+
+This is about clarity, not hand-holding — keep the engineering rigor, just make the software-side explanations legible to someone still building fluency.
+
 ## What this repository is
 
 **PULSE Edge** is the on-premise industrial edge appliance for the PULSE platform (Integra Innovation). It runs on a plant-floor machine, polls industrial devices (PLCs, meters, gateways) over multiple protocols, buffers telemetry locally in SQLite, and forwards it to PULSE Cloud with store-and-forward reliability. A local web UI handles commissioning, data binding, and diagnostics.
