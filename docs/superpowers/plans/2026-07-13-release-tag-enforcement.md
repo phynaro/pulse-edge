@@ -1,22 +1,22 @@
-# Release-tag Check Enforcement Implementation Plan
+# Release-tag Build, Staging Deploy, and Check Enforcement — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Produce a versioned GitHub Release only from a `main` commit that passes every required check, by making the checks reusable and gating a tag-triggered release pipeline on them.
+**Goal:** On a version tag, only if every required check passes, build the Linux release artifacts, upload them to MinIO `staging/`, and create a matching GitHub Release.
 
-**Architecture:** `quality.yml` gains a `workflow_call` trigger so it can be run as a reusable unit. A new `release.yml` fires on a `v*` tag and runs three chained jobs: `guard` (validate tag shape + confirm the commit is on `main` + derive the version), `validate` (calls `quality.yml` — the gate), and `publish` (downloads the validated artifact and creates the GitHub Release). `publish` has `needs: [guard, validate]`, so a red check structurally blocks the release. The tricky version-parsing lives in a unit-tested bash script.
+**Architecture:** `quality.yml` becomes reusable (`workflow_call`). A new `release.yml` fires on a `v*` tag with three chained jobs: `guard` (tag/branch/version), `validate` (calls the reusable checks — the gate), `publish` (`needs: [guard, validate]`, so a red check structurally blocks it). `publish` runs `stage-linux.sh`, which reuses `build.sh` + `build-deb.sh` + a shared `make-apt-repo.sh`, then uploads via `mc` and creates the Release.
 
-**Tech Stack:** GitHub Actions (reusable workflows, `workflow_call`), bash (POSIX / bash 3.2 compatible), `gh` CLI, `actions/download-artifact@v6`.
+**Tech Stack:** GitHub Actions (reusable workflows), bash (bash 3.2 compatible for local scripts), .NET self-contained publish, `dpkg-deb`, MinIO client `mc`, `gh` CLI.
 
 ## Global Constraints
 
-- Tag format accepted: `v` + semver, optional pre-release suffix — regex `^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`. Examples valid: `v0.9.0`, `v1.0.0`, `v1.0.0-rc.1`, `v0.9.0-pilot.2`. Invalid: `1.2.3`, `v1.2`, `vfoo`, `v1.2.3.4`.
-- `.NET` version stamping: `-p:Version=<numeric part before any '-'>` and `-p:InformationalVersion=<full version>`.
-- Release only commits reachable from `main` (strict). Re-tagging an existing version is an error (versions immutable).
-- Scripts must run on macOS bash 3.2 (no associative arrays, no `${var,,}`). Use `grep -E`, `sed`, and POSIX parameter expansion only.
-- Do not change how `quality.yml` behaves for `pull_request` / `push: main` — the reuse is additive.
-- No new third-party Actions beyond those already used, except `actions/download-artifact` (official).
-- Installers / signing / per-platform builds are OUT of scope (G6).
+- Tag regex: `^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`. Valid: `v0.9.0`, `v1.0.0-rc.1`, `v0.9.0-pilot.2`. Invalid: `1.2.3`, `v1.2`, `vfoo`, `v1.2.3.4`.
+- Version stamping: `.deb` and APT use full `version`; `.NET -p:Version` uses numeric part before `-`; `-p:InformationalVersion` uses full `version`.
+- Platforms: Linux only — `linux-x64`, `linux-arm`, `linux-arm64` + arm64 `.deb`. Windows/macOS deferred (R-006).
+- Release only commits reachable from `main`. Re-tagging an existing version is an error. MinIO `staging/` is overwrite (latest wins).
+- Local scripts must run on macOS bash 3.2 (indexed arrays OK; no associative arrays / `${var,,}`).
+- Do not change `quality.yml` behavior for `pull_request` / `push: main` (reuse is additive).
+- Required GitHub secrets (user-provided): `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`.
 
 ---
 
@@ -27,7 +27,7 @@
 - Test: `scripts/release/derive-version.test.sh`
 
 **Interfaces:**
-- Produces: `scripts/release/derive-version.sh <tag-or-ref>` prints two lines to stdout — `version=<X.Y.Z[-pre]>` and `numeric_version=<X.Y.Z>` — and exits 0 on a valid tag; prints an error to stderr and exits 1 on an invalid tag. Accepts either `refs/tags/v1.2.3` or `v1.2.3`. Later tasks (`release.yml` guard job) append its stdout to `$GITHUB_OUTPUT`.
+- Produces: `derive-version.sh <tag-or-ref>` prints `version=<X.Y.Z[-pre]>` and `numeric_version=<X.Y.Z>` to stdout, exit 0 on valid, exit 1 + stderr on invalid. Accepts `refs/tags/v1.2.3` or `v1.2.3`. Consumed by Task 6 `guard`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -82,7 +82,7 @@ if [ "$fails" -eq 0 ]; then echo "All tests passed."; else echo "$fails test(s) 
 chmod +x scripts/release/derive-version.test.sh
 bash scripts/release/derive-version.test.sh
 ```
-Expected: fails — `derive-version.sh` does not exist yet (every case FAILs / errors).
+Expected: fails — script does not exist yet.
 
 - [ ] **Step 3: Write the script**
 
@@ -92,7 +92,6 @@ Create `scripts/release/derive-version.sh`:
 #!/usr/bin/env bash
 # Validate a release tag and emit its version parts.
 # Usage: derive-version.sh <refs/tags/vX.Y.Z[-pre] | vX.Y.Z[-pre]>
-# Prints: version=<X.Y.Z[-pre]> and numeric_version=<X.Y.Z>
 set -euo pipefail
 
 raw="${1:-}"
@@ -103,8 +102,8 @@ if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
   exit 1
 fi
 
-version="${tag#v}"            # strip leading v
-numeric_version="${version%%-*}"  # part before first '-'
+version="${tag#v}"
+numeric_version="${version%%-*}"
 
 echo "version=${version}"
 echo "numeric_version=${numeric_version}"
@@ -130,14 +129,14 @@ git commit -m "Add tested version-derivation script for releases"
 ### Task 2: Make quality.yml reusable and version-aware
 
 **Files:**
-- Modify: `.github/workflows/quality.yml` (the `on:` block, and the `artifacts` job's "Build versioned artifacts" step)
+- Modify: `.github/workflows/quality.yml` (`on:` block + `artifacts` job "Build versioned artifacts" step)
 
 **Interfaces:**
-- Produces: `quality.yml` callable via `workflow_call` with an optional string input `version` (default `''`). When `version` is non-empty, the `artifacts` job stamps it; otherwise it falls back to `0.0.0-<sha12>`. The uploaded artifact is named `pulse-edge-<github.sha>` (unchanged). Consumed by Task 3's `validate` job.
+- Produces: `quality.yml` callable via `workflow_call` with optional string input `version` (default `''`). Consumed by Task 6 `validate`.
 
 - [ ] **Step 1: Add the `workflow_call` trigger**
 
-In `.github/workflows/quality.yml`, replace the `on:` block:
+Replace the `on:` block:
 
 ```yaml
 on:
@@ -163,9 +162,9 @@ on:
         default: ''
 ```
 
-- [ ] **Step 2: Make the artifacts step use the input version**
+- [ ] **Step 2: Make the artifacts step honor the input version**
 
-In the `artifacts` job's "Build versioned artifacts" step, replace this line:
+In the `artifacts` job "Build versioned artifacts" step, replace:
 
 ```bash
           version="0.0.0-${GITHUB_SHA::12}"
@@ -179,30 +178,13 @@ with:
           numeric="${version%%-*}"
 ```
 
-and replace the `dotnet publish` line's version arguments — change:
-
-```bash
-          dotnet publish src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj --no-restore --configuration Release --output artifacts/agent -p:Version="$version" -p:InformationalVersion="$version"
-```
-
-to:
+and change the Agent publish version args from `-p:Version="$version"` to `-p:Version="$numeric"` (keep `-p:InformationalVersion="$version"`):
 
 ```bash
           dotnet publish src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj --no-restore --configuration Release --output artifacts/agent -p:Version="$numeric" -p:InformationalVersion="$version"
 ```
 
-(Note: `${{ inputs.version }}` renders to an empty string for `pull_request` / `push` events, so the fallback keeps today's behavior. Splitting `numeric` also fixes stamping `.NET`'s `Version` with a pre-release string, which is invalid.)
-
-- [ ] **Step 3: Verify the file still parses as valid workflow YAML**
-
-Local linters aren't installed, so confirm indentation/structure by eye against the surrounding jobs, then rely on the CI run in Task 4 as the real check. If `actionlint` is available (`command -v actionlint`), run:
-
-```bash
-actionlint .github/workflows/quality.yml
-```
-Expected: no output (clean). If not installed, skip — Task 4 validates by execution.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add .github/workflows/quality.yml
@@ -211,14 +193,303 @@ git commit -m "Make quality workflow reusable with an optional version input"
 
 ---
 
-### Task 3: Create the release workflow
+### Task 3: Add `linux-all` group and version stamping to build.sh
+
+**Files:**
+- Modify: `build.sh`
+
+**Interfaces:**
+- Produces: `./build.sh linux-all` builds `linux-x64`, `linux-arm`, `linux-arm64` into `dist/<rid>/`. When env `VERSION` is set, binaries are stamped with it. Consumed by Task 5 `stage-linux.sh`.
+
+- [ ] **Step 1: Add the `linux-all` target group**
+
+In the `case "$INPUT_TARGET" in` block, add a branch before the `"all")` branch:
+
+```bash
+        "linux-all" | "linuxall")
+            TARGETS=("linux-x64" "linux-arm" "linux-arm64")
+            ;;
+```
+
+- [ ] **Step 2: Compute optional version publish args**
+
+Immediately after the target-selection `if/else/fi` block (just before the `echo "📦 Package Manager..."` line), add:
+
+```bash
+# Optional version stamping via VERSION env (unset = current csproj default)
+VERSION_ARGS=()
+if [ -n "${VERSION:-}" ]; then
+    NUMERIC_VERSION="${VERSION%%-*}"
+    VERSION_ARGS=(-p:Version="$NUMERIC_VERSION" -p:InformationalVersion="$VERSION")
+    echo "🏷️  Stamping version: $VERSION (numeric $NUMERIC_VERSION)"
+fi
+```
+
+- [ ] **Step 3: Pass the version args into both publishes**
+
+In `build_target()`, add `"${VERSION_ARGS[@]}"` to each `dotnet publish`. For the API publish, change the last line from `-o "$out_dir/"` to:
+
+```bash
+      -o "$out_dir/" \
+      "${VERSION_ARGS[@]}"
+```
+
+and identically for the Agent publish (add the same two lines after its `-o "$out_dir/"`).
+
+- [ ] **Step 4: Verify existing behavior and the new group locally**
+
+```bash
+bash -n build.sh                      # syntax check
+VERSION=9.9.9-test ./build.sh linux-arm64
+ls dist/linux-arm64/Pulse.Edge dist/linux-arm64/Pulse.Edge.Agent
+```
+Expected: syntax OK; the two self-contained binaries exist (cross-compiled from macOS). (Full `linux-all` also works but is slower; one RID is enough to confirm.)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add build.sh
+git commit -m "Add linux-all build group and optional version stamping"
+```
+
+---
+
+### Task 4: Extract the shared APT-repo helper and de-duplicate deploy-staging.sh
+
+**Files:**
+- Create: `scripts/release/make-apt-repo.sh`
+- Test: `scripts/release/make-apt-repo.test.sh`
+- Modify: `deploy-staging.sh`
+
+**Interfaces:**
+- Produces: `make-apt-repo.sh <debian_dir> <version>` — finds the `pulse-edge_*_arm64.deb` in `<debian_dir>` and writes `Packages`, `Packages.gz`, `Release`, and `install.sh` there. Consumed by Task 5 and by `deploy-staging.sh`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `scripts/release/make-apt-repo.test.sh`:
+
+```bash
+#!/usr/bin/env bash
+# Verify make-apt-repo.sh emits a valid flat APT index for a stub .deb.
+set -uo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+script="$here/make-apt-repo.sh"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+fails=0
+
+mkdir -p "$tmp/debian"
+printf 'stub-deb-content' > "$tmp/debian/pulse-edge_1.2.3_arm64.deb"
+
+if ! "$script" "$tmp/debian" "1.2.3" >/dev/null 2>&1; then
+  echo "FAIL: script exited nonzero"; fails=$((fails+1))
+fi
+for f in Packages Packages.gz Release install.sh; do
+  if [ ! -f "$tmp/debian/$f" ]; then echo "FAIL: missing $f"; fails=$((fails+1)); fi
+done
+if ! grep -q '^Version: 1.2.3$' "$tmp/debian/Packages" 2>/dev/null; then
+  echo "FAIL: Packages missing Version: 1.2.3"; fails=$((fails+1))
+fi
+if ! grep -q '^Filename: pulse-edge_1.2.3_arm64.deb$' "$tmp/debian/Packages" 2>/dev/null; then
+  echo "FAIL: Packages missing correct Filename"; fails=$((fails+1))
+fi
+
+if [ "$fails" -eq 0 ]; then echo "All tests passed."; else echo "$fails failure(s)."; exit 1; fi
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+```bash
+chmod +x scripts/release/make-apt-repo.test.sh
+bash scripts/release/make-apt-repo.test.sh
+```
+Expected: fails — `make-apt-repo.sh` does not exist.
+
+- [ ] **Step 3: Write the helper**
+
+Create `scripts/release/make-apt-repo.sh`:
+
+```bash
+#!/usr/bin/env bash
+# Generate a flat APT repo index + staging install.sh for the arm64 .deb in a dir.
+# Usage: make-apt-repo.sh <debian_dir> <version>
+set -euo pipefail
+
+debian_dir="${1:?usage: make-apt-repo.sh <debian_dir> <version>}"
+version="${2:?usage: make-apt-repo.sh <debian_dir> <version>}"
+staging_url="pulse.trazor.cloud/download/staging/debian"
+
+deb_file="$(ls "$debian_dir"/pulse-edge_*_arm64.deb 2>/dev/null | head -n 1)"
+if [ -z "$deb_file" ] || [ ! -f "$deb_file" ]; then
+  echo "error: no arm64 .deb found in $debian_dir" >&2
+  exit 1
+fi
+deb_name="$(basename "$deb_file")"
+file_size="$(wc -c < "$deb_file" | tr -d ' ')"
+sha256_hash="$(shasum -a 256 "$deb_file" | awk '{print $1}')"
+
+packages_file="$debian_dir/Packages"
+cat > "$packages_file" <<EOF
+Package: pulse-edge
+Version: $version
+Section: utils
+Priority: optional
+Architecture: arm64
+Maintainer: Integra Innovation Co., Ltd. <support@integra.co.th>
+Depends: libicu-dev
+Filename: $deb_name
+Size: $file_size
+SHA256: $sha256_hash
+Description: PULSE Edge Unified IoT Gateway Server
+ PULSE Edge platform collects telemetry and provides an asset-centric
+ management API and UI.
+EOF
+
+gzip -c "$packages_file" > "$packages_file.gz"
+
+pkg_size="$(wc -c < "$packages_file" | tr -d ' ')"
+pkg_hash="$(shasum -a 256 "$packages_file" | awk '{print $1}')"
+pkg_gz_size="$(wc -c < "$packages_file.gz" | tr -d ' ')"
+pkg_gz_hash="$(shasum -a 256 "$packages_file.gz" | awk '{print $1}')"
+
+cat > "$debian_dir/Release" <<EOF
+Archive: stable
+Component: main
+Origin: PULSE
+Label: PULSE Edge Staging Repository
+Architecture: arm64
+SHA256:
+ $pkg_hash $pkg_size Packages
+ $pkg_gz_hash $pkg_gz_size Packages.gz
+EOF
+
+cat > "$debian_dir/install.sh" <<EOF
+#!/bin/bash
+# install.sh - Configure PULSE Edge STAGING repository
+set -e
+if [ "\$EUID" -ne 0 ]; then
+    echo "Please run this script as root (e.g. using sudo)." >&2
+    exit 1
+fi
+echo "deb [trusted=yes] https://$staging_url ./" > /etc/apt/sources.list.d/pulse.list
+apt-get update -y
+echo "Staging repository registered. Install via: sudo apt install pulse-edge"
+EOF
+chmod +x "$debian_dir/install.sh"
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+```bash
+chmod +x scripts/release/make-apt-repo.sh
+bash scripts/release/make-apt-repo.test.sh
+```
+Expected: `All tests passed.`
+
+- [ ] **Step 5: Refactor deploy-staging.sh to use the helper**
+
+In `deploy-staging.sh`, after the line that copies the deb into staging
+(`cp "$DEB_FILE" "$STAGING_DIR/debian/"`), delete the inline index/Release/
+install.sh generation (from `# Generate Flat APT Repository index` through the
+`chmod +x "$STAGING_DIR/debian/install.sh"` line) and replace the whole block with:
+
+```bash
+# Generate APT repo index + install.sh via the shared helper
+log_info "Generating APT repository metadata indices..."
+"$SCRIPT_DIR/scripts/release/make-apt-repo.sh" "$STAGING_DIR/debian" "1.0.0"
+```
+
+- [ ] **Step 6: Verify deploy-staging.sh still parses**
+
+```bash
+bash -n deploy-staging.sh
+```
+Expected: no output. (Full run is user-smoke-tested later — it needs macOS tools + MinIO.)
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add scripts/release/make-apt-repo.sh scripts/release/make-apt-repo.test.sh deploy-staging.sh
+git commit -m "Extract shared APT-repo helper and reuse it in deploy-staging.sh"
+```
+
+---
+
+### Task 5: Linux staging build script
+
+**Files:**
+- Create: `scripts/release/stage-linux.sh`
+
+**Interfaces:**
+- Consumes: `build.sh linux-all` + `VERSION` (Task 3), `build-deb.sh <arch> <version>`, `make-apt-repo.sh` (Task 4).
+- Produces: `stage-linux.sh <version>` assembles `dist/staging/{debian,linux}` + `dist/staging/SHA256SUMS`. Consumed by Task 6 `publish`.
+
+- [ ] **Step 1: Write the script**
+
+Create `scripts/release/stage-linux.sh`:
+
+```bash
+#!/usr/bin/env bash
+# Build Linux release artifacts and assemble the MinIO staging tree (no upload).
+# Usage: stage-linux.sh <version>
+set -euo pipefail
+
+version="${1:?usage: stage-linux.sh <version>}"
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$root"
+
+echo "==> Building Linux binaries for $version"
+VERSION="$version" ./build.sh linux-all
+
+echo "==> Building arm64 .deb for $version"
+./build-deb.sh arm64 "$version"
+
+staging="dist/staging"
+rm -rf "$staging"
+mkdir -p "$staging/debian" "$staging/linux"
+
+deb_file="dist/pulse-edge_${version}_arm64.deb"
+if [ ! -f "$deb_file" ]; then
+  echo "error: expected $deb_file not found" >&2
+  exit 1
+fi
+cp "$deb_file" "$staging/debian/"
+scripts/release/make-apt-repo.sh "$staging/debian" "$version"
+
+for rid in linux-x64 linux-arm linux-arm64; do
+  ( cd "dist/$rid" && zip -r -q "../staging/linux/pulse-edge-${rid}.zip" . )
+done
+
+( cd "$staging" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS )
+
+echo "==> Staging tree ready at $staging"
+find "$staging" -type f | sort
+```
+
+- [ ] **Step 2: Partial local verification**
+
+```bash
+chmod +x scripts/release/stage-linux.sh
+bash -n scripts/release/stage-linux.sh
+```
+Expected: no syntax errors. A full run needs `dpkg-deb` (absent on stock macOS), so the complete build is verified in CI (Task 8). If `dpkg-deb` is installed locally (`brew install dpkg`), a full `./scripts/release/stage-linux.sh 9.9.9-test` should produce `dist/staging/` with the `.deb`, three zips, APT files, and `SHA256SUMS`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add scripts/release/stage-linux.sh
+git commit -m "Add Linux staging build-and-package script"
+```
+
+---
+
+### Task 6: Release workflow (tag → gated build → MinIO + GitHub Release)
 
 **Files:**
 - Create: `.github/workflows/release.yml`
 
 **Interfaces:**
-- Consumes: `scripts/release/derive-version.sh` (Task 1); `quality.yml`'s `workflow_call` + `version` input and its `pulse-edge-<sha>` artifact (Task 2).
-- Produces: on a `v*` tag push, a GitHub Release `v<version>` with the bundle zip, SBOM, and `SHA256SUMS`, gated on the reusable checks.
+- Consumes: `derive-version.sh` (Task 1), reusable `quality.yml` (Task 2), `stage-linux.sh` (Task 5), the four MinIO secrets.
 
 - [ ] **Step 1: Write the workflow**
 
@@ -252,11 +523,9 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
       - name: Derive and validate version from tag
         id: derive
         run: ./scripts/release/derive-version.sh "$GITHUB_REF" >> "$GITHUB_OUTPUT"
-
       - name: Require tag commit to be on main
         run: |
           set -euo pipefail
@@ -275,26 +544,41 @@ jobs:
     secrets: inherit
 
   publish:
-    name: Publish GitHub Release
+    name: Build, stage, and release
     needs: [guard, validate]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     permissions:
       contents: write
     steps:
-      - name: Download the validated artifact
-        uses: actions/download-artifact@v6
+      - name: Check out source
+        uses: actions/checkout@v6
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
         with:
-          name: pulse-edge-${{ github.sha }}
-          path: artifacts
-
-      - name: Package the release bundle
+          global-json-file: global.json
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Build and assemble Linux staging tree
+        run: ./scripts/release/stage-linux.sh "${{ needs.guard.outputs.version }}"
+      - name: Upload to MinIO staging
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
         run: |
           set -euo pipefail
-          version="${{ needs.guard.outputs.version }}"
-          ( cd artifacts && zip -r "../pulse-edge-${version}.zip" . )
-
-      - name: Create the GitHub Release
+          curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o "$RUNNER_TEMP/mc"
+          chmod +x "$RUNNER_TEMP/mc"
+          "$RUNNER_TEMP/mc" alias set pulse-minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" --api S3v4
+          "$RUNNER_TEMP/mc" mirror --overwrite dist/staging/ "pulse-minio/$MINIO_BUCKET/staging/"
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -308,27 +592,25 @@ jobs:
           fi
           gh release create "v$version" \
             --title "v$version" \
-            --notes "Automated release for v$version. Contains the validated Agent + UI bundle, SPDX SBOM, and SHA256SUMS." \
+            --notes "Automated Linux staging release v$version (also uploaded to MinIO staging)." \
             $prerelease \
-            "pulse-edge-${version}.zip" \
-            "artifacts/pulse-edge.spdx.json" \
-            "artifacts/SHA256SUMS"
+            "dist/staging/debian/pulse-edge_${version}_arm64.deb" \
+            "dist/staging/linux/pulse-edge-linux-x64.zip" \
+            "dist/staging/linux/pulse-edge-linux-arm.zip" \
+            "dist/staging/linux/pulse-edge-linux-arm64.zip" \
+            "dist/staging/SHA256SUMS"
 ```
 
-- [ ] **Step 2: Verify structure**
-
-If `actionlint` is available, run `actionlint .github/workflows/release.yml` (expect clean). Otherwise eyeball indentation and confirm each `run:` block's shell is valid, then rely on Task 5's execution proof.
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
 git add .github/workflows/release.yml
-git commit -m "Add tag-triggered release workflow gated on required checks"
+git commit -m "Add tag-triggered release workflow: gated build, MinIO staging, GitHub Release"
 ```
 
 ---
 
-### Task 4: Verify the reusable change does not break the normal path
+### Task 7: Verify the reusable change does not break the normal path
 
 **Files:** none (verification only)
 
@@ -336,8 +618,8 @@ git commit -m "Add tag-triggered release workflow gated on required checks"
 
 ```bash
 git push -u origin feature/g1-release-enforcement
-gh pr create --base main --title "G1: release-tag check enforcement" \
-  --body "Adds reusable quality workflow + tag-triggered release pipeline gated on required checks. See docs/superpowers/specs/2026-07-13-release-tag-enforcement-design.md."
+gh pr create --base main --title "G1: release-tag build, staging deploy, and check enforcement" \
+  --body "Reusable quality workflow + tag-triggered release pipeline (Linux artifacts → MinIO staging + GitHub Release), gated on required checks. See docs/superpowers/specs/2026-07-13-release-tag-enforcement-design.md."
 ```
 
 - [ ] **Step 2: Watch the Quality workflow on the PR**
@@ -348,23 +630,16 @@ until gh run list --commit "$SHA" --workflow Quality --limit 1 | grep -q Quality
 RID=$(gh run list --commit "$SHA" --workflow Quality --limit 1 --json databaseId -q '.[0].databaseId')
 gh run watch "$RID" --exit-status
 ```
-Expected: all four Quality jobs pass — proves adding `workflow_call` + the version-input wiring did not change PR behavior.
-
-- [ ] **Step 3: Confirm PR is mergeable**
-
-```bash
-gh pr checks   # required checks green
-```
-Do NOT merge yet — Task 5's enforcement proof runs before we rely on the pipeline.
+Expected: all four Quality jobs pass — proves the reusable change didn't alter PR behavior. Do NOT merge yet.
 
 ---
 
-### Task 5: Prove enforcement and happy path, then record gate evidence
+### Task 8: Prove enforcement + happy path, record gate evidence
 
 **Files:**
 - Modify: `docs/PULSE_Edge_Production_Readiness_Roadmap.md`
 
-This task produces the durable evidence the G1 gate requires. It uses throwaway tags/branches that are deleted afterward. It needs the feature branch merged to `main` first (so `release.yml` and the guard exist on `main` and the on-main guard can pass for the happy-path tag).
+**Prerequisite:** the user must add the four MinIO secrets before the happy-path proof (Step 4). Confirm with the user before running Steps 1–4 (they push to `main` and to real staging).
 
 - [ ] **Step 1: Merge the feature PR to main**
 
@@ -375,13 +650,13 @@ git checkout main && git pull --ff-only origin main
 
 - [ ] **Step 2: Enforcement proof — a failed check blocks the release**
 
-On a throwaway branch, make the guard pass but a required check fail, then tag it and confirm `publish` never runs and no release is created. First create the branch:
+Create a throwaway branch, neutralize the guard on that branch so `validate` is reached, break a required check, tag it, and confirm no build/upload/release happens.
 
 ```bash
 git checkout -b ci/release-enforce-proof
 ```
 
-Neutralize the on-main guard on this branch only, so `validate` is actually reached (otherwise `guard` fails first and we'd prove the wrong thing). In `.github/workflows/release.yml`, replace the entire "Require tag commit to be on main" step:
+In `.github/workflows/release.yml`, replace the entire "Require tag commit to be on main" step:
 
 ```yaml
       - name: Require tag commit to be on main
@@ -394,64 +669,62 @@ Neutralize the on-main guard on this branch only, so `validate` is actually reac
           fi
 ```
 
-with this temporary proof version:
+with the temporary proof version:
 
 ```yaml
       - name: Require tag commit to be on main
         run: echo "guard temporarily disabled for enforcement proof"
 ```
 
-Break a required check deliberately (this is invalid TypeScript, so the frontend lint/build fails), commit, push the branch, and tag the commit:
+Break a required check (invalid TypeScript fails the frontend job), then tag:
 
 ```bash
 printf '\nconst unused_bad = ;\n' >> src/Pulse.Edge.UI/src/main.tsx
-git commit -am "PROOF: disable guard + intentionally failing check for release-gate evidence"
+git commit -am "PROOF: disable guard + failing check for release-gate evidence"
 git push -u origin ci/release-enforce-proof
 git tag v0.0.1-enforce-proof.1
 git push origin v0.0.1-enforce-proof.1
 ```
 
-(The tag points at the proof-branch commit, so the release run uses that commit's relaxed `release.yml` — `guard` passes, `validate` runs and fails, and we observe `publish` get skipped.)
-
-Watch the release run:
+Observe:
 
 ```bash
 RID=$(gh run list --workflow Release --limit 1 --json databaseId -q '.[0].databaseId')
 gh run watch "$RID" || true
-gh run view "$RID"      # expect: validate FAILED, publish SKIPPED
-gh release view v0.0.1-enforce-proof.1 2>&1 | head -1   # expect: "release not found"
+gh run view "$RID"                                  # validate FAILED, publish SKIPPED
+gh release view v0.0.1-enforce-proof.1 2>&1 | head -1   # expect: release not found
 ```
-Expected evidence: `validate` red, `publish` skipped, no release exists. Capture the run URL.
+Evidence: `validate` red, `publish` skipped, no release, nothing uploaded. Capture the run URL.
 
 - [ ] **Step 3: Clean up the proof**
 
 ```bash
-git push origin :refs/tags/v0.0.1-enforce-proof.1   # delete remote tag
-git push origin :ci/release-enforce-proof            # delete remote branch
+git push origin :refs/tags/v0.0.1-enforce-proof.1
+git push origin :ci/release-enforce-proof
 git tag -d v0.0.1-enforce-proof.1
 git checkout main
 ```
 
-- [ ] **Step 4: Happy-path proof — a passing commit produces a release**
+- [ ] **Step 4: Happy-path proof — a passing tag produces a release**
 
-Tag a real `main` commit with a throwaway pre-release tag, confirm the Release appears with a real version, then remove it:
+(Requires the MinIO secrets to be set.) Tag a real `main` commit with a throwaway pre-release tag:
 
 ```bash
 git tag v0.0.1-pipeline-proof.1
 git push origin v0.0.1-pipeline-proof.1
 RID=$(gh run list --workflow Release --limit 1 --json databaseId -q '.[0].databaseId')
 gh run watch "$RID" --exit-status
-gh release view v0.0.1-pipeline-proof.1   # expect: release with bundle zip, SBOM, SHA256SUMS
+gh release view v0.0.1-pipeline-proof.1     # release with .deb, 3 zips, SHA256SUMS
 ```
-Confirm `build-metadata.txt` inside the bundle shows `version=0.0.1-pipeline-proof.1` (not `0.0.0-...`). Capture the release/run URL, then clean up:
+Also confirm the MinIO `staging/` tree updated (via the site or `mc ls`). Capture the run/release URL, then clean up the GitHub release (staging is overwritten by the next real release):
 
 ```bash
 gh release delete v0.0.1-pipeline-proof.1 --yes --cleanup-tag
 ```
 
-- [ ] **Step 5: Record evidence in the roadmap and check the gate item**
+- [ ] **Step 5: Record evidence and check the gate item**
 
-In `docs/PULSE_Edge_Production_Readiness_Roadmap.md`, in the Phase 1 / Gate G1 section, change:
+In `docs/PULSE_Edge_Production_Readiness_Roadmap.md`, Phase 1 / Gate G1, change:
 
 ```markdown
 - [ ] A failed required check prevents release creation.
@@ -463,17 +736,17 @@ to:
 - [x] A failed required check prevents release creation.
 ```
 
-and add these two lines under the G1 **Evidence** list (replace the run/release URLs with the ones captured above):
+Add under the G1 **Evidence** list (use the captured URLs):
 
 ```markdown
-- Release enforcement proof: [failed check skipped publish, no release created](<enforcement-proof-run-url>)
-- Release happy path: [tag produced a versioned GitHub Release with SBOM and checksums](<happy-path-run-url>)
+- Release enforcement proof: [failed check skipped publish; no release or upload](<enforcement-proof-run-url>)
+- Release happy path: [tag built Linux artifacts, uploaded to MinIO staging, and created a GitHub Release](<happy-path-run-url>)
 ```
 
-Also add a row to the **Gate review log** table:
+Add a **Gate review log** row:
 
 ```markdown
-| 2026-07-13 | G1 | In progress | Tag-triggered release pipeline gated on the reusable Quality checks. Enforcement proof shows a failed check skips publish with no release; happy-path tag produces a versioned GitHub Release with SBOM and checksums. | Request the authorized G1 gate review. |
+| 2026-07-13 | G1 | In progress | Tag-triggered release pipeline gated on the reusable Quality checks builds Linux artifacts (self-contained binaries + arm64 .deb/APT repo), uploads to MinIO staging, and creates a GitHub Release. Enforcement proof shows a failed check skips publish with no upload or release. | Request the authorized G1 gate review. |
 ```
 
 - [ ] **Step 6: Commit**
@@ -488,5 +761,7 @@ git push origin main
 
 ## Notes for the implementer
 
-- **The flagged risk (spec):** in Task 5 Step 4, verify `publish` successfully downloads the `pulse-edge-<sha>` artifact built inside the reusable `validate` run. If `download-artifact` reports the artifact missing, apply the documented fallback: replace the "Download the validated artifact" step with a rebuild (reuse the `artifacts` job's build commands from `quality.yml`, stamping `${{ needs.guard.outputs.version }}`). Re-run the happy-path proof.
-- **On-main guard during the enforcement proof:** Task 5 Step 2 requires temporarily editing the guard's merge-base target to the proof branch so `validate` is actually reached (otherwise `guard` fails first and you'd be proving the wrong thing). That edit lives only on the throwaway branch and is deleted in Step 3.
+- **macOS cross-compile:** `dotnet publish -r linux-*` works from macOS, so `build.sh linux-all` runs locally; only `.deb` packaging needs `dpkg-deb` (Ubuntu has it; macOS needs `brew install dpkg`). Don't block on a full local `stage-linux.sh` run — CI is the real check.
+- **`shasum` portability:** used by `make-apt-repo.sh` and `stage-linux.sh`; present on both macOS and ubuntu-latest.
+- **Secrets:** Task 8 Step 4 fails without the four MinIO secrets. The enforcement proof (Step 2) does not need them (it never reaches upload).
+- **deploy-staging.sh:** the refactor changes only the APT-index block; the user should run it once locally after merge to confirm the manual full-platform flow still works (CI cannot exercise its macOS/upload path).

@@ -1,93 +1,105 @@
-# Release-tag build with check enforcement — Design
+# Release-tag build, staging deploy, and check enforcement — Design
 
-**Date:** 2026-07-13
-**Gate:** G1 (Build integrity) — closes the open item *"a failed required check prevents release creation"* and the *release-tag artifact/metadata* work.
-**Status:** Approved for planning.
+**Date:** 2026-07-13 (revised after clarifying the real release target)
+**Gate:** G1 (Build integrity) — closes *"a failed required check prevents release creation"* and defines the real release pipeline.
+**Status:** Revised; awaiting approval.
 
 ## Goal
 
-Produce a versioned, downloadable release **only** from a commit that has passed
-every required check. On GitHub you cannot stop a human from clicking "create a
-release" in the web UI, so the enforceable form of the gate is: *releases are
-produced by an automated pipeline that runs the required checks first and refuses
-to publish anything if they fail.*
+On pushing a version tag, **only if every required check passes**, build the
+Linux release artifacts (self-contained binaries + Debian package/APT repo),
+upload them to the MinIO staging area at `pulse.trazor.cloud`, and create a
+matching GitHub Release. A failed check must stop the build and the upload.
 
-## Decisions (from brainstorming)
+## Decisions
 
-| Decision | Choice |
+| Topic | Choice |
 |---|---|
-| Trigger | Push a semver git tag `vMAJOR.MINOR.PATCH` |
-| Version format | Semver + pre-releases (`v1.2.3`, `v1.0.0-rc.1`, `v0.9.0-pilot.2`) |
-| Output | Versioned bundle + SBOM published as a GitHub Release |
-| Enforcement wiring | Reusable workflow (`quality.yml` exposed via `workflow_call`) |
-| Installers / signing | Out of scope — deferred to G6 |
+| Trigger | Push semver tag `vMAJOR.MINOR.PATCH[-pre]` |
+| Platforms | **Linux only**: `linux-x64`, `linux-arm`, `linux-arm64`, plus the arm64 `.deb`/APT repo. Windows + macOS deferred (R-006). |
+| Output targets | **Both** — upload to MinIO `staging/`, and create a GitHub Release |
+| Staging layout | Overwrite `staging/` each release (latest tag wins), matching `deploy-staging.sh` today |
+| Enforcement wiring | Reusable workflow (`quality.yml` via `workflow_call`) gates a `publish` job |
+| Version source | Derived from the tag; injected into `.deb`, APT index, filenames, and binary metadata |
+
+## What the release contains (the artifacts)
+
+For each Linux RID, a self-contained single-file build of **both** executables
+(`Pulse.Edge` — the unified server — and `Pulse.Edge.Agent`), mirroring
+`build.sh`'s `build_target`. Assembled into a `dist/staging/` tree:
+
+```
+dist/staging/
+  debian/
+    pulse-edge_<version>_arm64.deb     # RevPi / apt install path
+    Packages  Packages.gz  Release     # flat APT repo index
+    install.sh                         # registers the staging apt repo
+  linux/
+    pulse-edge-linux-x64.zip           # self-contained binaries, per arch
+    pulse-edge-linux-arm.zip
+    pulse-edge-linux-arm64.zip
+  SHA256SUMS                           # checksums over everything above
+```
+
+The arm64 `.deb` + APT repo is the primary Linux deploy path (RevPi is arm64,
+installed via `sudo apt install pulse-edge`). The per-arch zips give direct
+downloads for x64/arm/arm64. This is what the chosen "x64, arm, arm64 + .deb"
+means concretely. (x64/armhf `.deb` packages can be added later if needed — out
+of scope now.)
 
 ## Architecture
 
-Two workflow files, one calling the other.
+Three workflow files/scripts, plus targeted edits to existing build scripts.
 
-### 1. `quality.yml` becomes reusable
+### 1. `quality.yml` becomes reusable (unchanged from prior design)
 
-Add a `workflow_call` trigger with an optional `version` input alongside the
-existing `pull_request` and `push: main` triggers:
+Add a `workflow_call` trigger with an optional `version` input. Its four jobs
+remain the required checks. This is what the release gates on.
 
-```yaml
-on:
-  pull_request:
-  push:
-    branches: [main]
-  workflow_call:
-    inputs:
-      version:
-        type: string
-        default: ''
-```
+### 2. Build-script changes (reused by both local and CI, DRY)
 
-The `artifacts` job derives its version as: use `inputs.version` when non-empty,
-otherwise fall back to today's `0.0.0-${GITHUB_SHA::12}` placeholder. This keeps
-PR/push behavior identical and lets a release run stamp the real version. The
-uploaded artifact name stays `pulse-edge-${{ github.sha }}`.
+- **`build.sh`**: add a `linux-all` target group that builds `linux-x64`,
+  `linux-arm`, `linux-arm64` in one invocation (today each call runs
+  `rm -rf dist`, so three separate calls would wipe each other). Add optional
+  `VERSION` env support: when set, pass `-p:Version=<numeric>` and
+  `-p:InformationalVersion=<version>` to the `dotnet publish` calls; when unset,
+  behavior is exactly as today. Windows/mac targets untouched.
+- **`build-deb.sh`**: already accepts `build-deb.sh <arch> <version>` — no change
+  needed beyond passing the version.
+- **`scripts/release/make-apt-repo.sh`** (new): generate the flat APT repo files
+  (`Packages`, `Packages.gz`, `Release`) and the staging `install.sh` for a given
+  `.deb` and version. This logic currently lives inline in `deploy-staging.sh`
+  (lines ~146–228); extracting it lets CI and the local script share one
+  implementation so the APT metadata can't drift. `deploy-staging.sh` is
+  refactored to call this helper. (Local script must be smoke-tested once by the
+  user, since CI cannot exercise its macOS/upload path.)
 
-No check logic changes — the point of reuse is a single source of truth so PRs
-and releases run the *same* checks and cannot drift.
+### 3. `scripts/release/stage-linux.sh` (new) — build + package, no upload
 
-### 2. `release.yml` — new, triggered by a version tag
+Takes `<version>`. Runs `VERSION=<version> ./build.sh linux-all`, then
+`./build-deb.sh arm64 <version>`, then `make-apt-repo.sh`, zips the three arch
+folders, assembles `dist/staging/`, and writes `SHA256SUMS`. Produces the full
+staging tree locally with no network — so it is runnable and inspectable outside
+CI. The MinIO upload is deliberately *not* in this script (keeps it testable).
 
-```yaml
-on:
-  push:
-    tags: ['v*']
-```
+### 4. `release.yml` (new) — tag-triggered, gated pipeline
 
-Three jobs in a dependency chain:
+Trigger: `push: tags: ['v*']`. Jobs:
 
-**`guard`** (safety + version derivation)
-- Fetches `main` and confirms the tagged commit is reachable from it:
-  `git merge-base --is-ancestor "$GITHUB_SHA" origin/main`. If false, fail —
-  this blocks releasing an unreviewed side branch that never went through the
-  PR + checks flow.
-- Validates the tag matches the accepted semver shape
-  (`v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?`); reject malformed tags.
-- Derives `version` = tag without the leading `v`, and `numeric_version` =
-  the part before any `-`. Exposes both as job outputs.
-
-**`validate`** (the gate)
-- `uses: ./.github/workflows/quality.yml`
-- `needs: guard`
-- `with: { version: ${{ needs.guard.outputs.version }} }`
-- `secrets: inherit` (so the reusable workflow's gitleaks step keeps its token)
-- Runs the full backend / frontend / secret-scan / artifact checks.
-
-**`publish`** (release creation)
-- `needs: [guard, validate]` — cannot start unless validation fully passed.
-- Downloads the artifact `pulse-edge-${{ github.sha }}` that `validate` already
-  built. We release the exact bits that passed the checks rather than rebuilding,
-  so the released artifact provably equals the validated one.
-- Zips the bundle to `pulse-edge-<version>.zip`.
-- Creates a GitHub Release `v<version>` via `gh release create`, attaching the
-  zip, the SBOM (`pulse-edge.spdx.json`), and `SHA256SUMS`.
-- Marks it `--prerelease` when `version` contains a `-`.
-- Needs `permissions: { contents: write }` to create the release.
+- **`guard`** — validate tag shape (`scripts/release/derive-version.sh`), confirm
+  the tagged commit is reachable from `main`, output `version` + `numeric_version`.
+- **`validate`** — `uses: ./.github/workflows/quality.yml`, `needs: guard`,
+  `secrets: inherit`. The gate: runs all required checks on the tagged commit.
+- **`publish`** — `needs: [guard, validate]`, so it cannot start unless every
+  check passed. Steps:
+  1. Check out the tagged commit; set up .NET, pnpm, Node.
+  2. `scripts/release/stage-linux.sh "${{ needs.guard.outputs.version }}"` →
+     builds `dist/staging/`.
+  3. Install the MinIO client (`mc`), configure the alias from secrets, and
+     `mc mirror --overwrite dist/staging/ pulse-minio/$MINIO_BUCKET/staging/`.
+  4. Create the GitHub Release `v<version>` (via `gh release create`), marking it
+     `--prerelease` when the version has a `-`, attaching the `.deb`, the three
+     zips, and `SHA256SUMS`.
 
 ### Data flow
 
@@ -96,77 +108,82 @@ git push origin v1.2.3
         │
         ▼
    release.yml
-        │
-     [guard] ── not on main / bad tag ──▶ FAIL (no release)
-        │ ok, outputs version=1.2.3
+     [guard]  bad tag / not on main ──▶ FAIL (nothing built)
+        │ version=1.2.3
         ▼
-    [validate]  uses quality.yml (backend, frontend, secrets, artifacts)
-        │        any check red ──▶ FAIL (publish never runs, no release)
-        │ all green, builds pulse-edge-<sha> artifact
+   [validate] uses quality.yml (backend, frontend, secrets, artifacts)
+        │  any check red ──▶ FAIL ──▶ publish skipped ──▶ NOTHING built or uploaded
+        │ all green
         ▼
-    [publish]  download validated artifact → zip → gh release create v1.2.3
-        │
-        ▼
-   GitHub Release "v1.2.3": bundle.zip + SBOM + SHA256SUMS
+   [publish] stage-linux.sh → dist/staging/ (binaries + .deb + apt + zips + sums)
+        │        │
+        │        ├─▶ mc mirror ─▶ MinIO pulse-repo/staging/  (pulse.trazor.cloud)
+        │        └─▶ gh release create v1.2.3 (.deb, zips, SHA256SUMS)
 ```
+
+## Secrets required (added by the user in GitHub)
+
+- `MINIO_ENDPOINT` (e.g. `https://pulse.trazor.cloud`)
+- `MINIO_ACCESS_KEY`
+- `MINIO_SECRET_KEY`
+- `MINIO_BUCKET` (e.g. `pulse-repo`)
+
+The `publish` job needs `contents: write` (for the GitHub Release) and reads the
+MinIO secrets from the repository/environment secrets.
 
 ## Version stamping
 
 - Tag `v1.2.3` → `version=1.2.3`, `numeric_version=1.2.3`.
 - Tag `v1.0.0-rc.1` → `version=1.0.0-rc.1`, `numeric_version=1.0.0`.
-- .NET publish uses `-p:Version=<numeric_version>` (the `Version`/`AssemblyVersion`
-  property only accepts numeric `Major.Minor.Patch`) and
-  `-p:InformationalVersion=<version>` (carries the full human-readable string,
-  including any pre-release suffix). The GitHub Release name/tag uses the full
-  `version`.
+- `.deb` control `Version:` and filename use `version` (dpkg accepts the full
+  string). `.NET` `-p:Version` uses `numeric_version`; `-p:InformationalVersion`
+  uses the full `version`. APT `Packages` `Version:` uses `version`.
 
 ## Error handling / edge cases
 
-- **Tag not on main** → `guard` fails; no build, no release.
-- **Malformed tag** (`v1.2`, `1.2.3`, `vfoo`) → `guard` rejects; no release.
-- **Any required check fails** → `validate` fails; `publish` is skipped; no release.
-- **Re-tagging an existing version** → `gh release create` fails if the release
-  already exists; treated as an error (versions are immutable). Documented, not
-  auto-overwritten.
-- **Pre-release tag** → release is flagged pre-release so tooling ranks it below
-  the final version.
-
-## Implementation risk to verify
-
-The `publish` job downloads an artifact uploaded by a job *inside* the reusable
-`validate` workflow. Artifacts are scoped per run, and a called workflow's jobs
-execute within the same run, so this is expected to work — but it is the one
-non-obvious assumption in the design and must be confirmed early during
-implementation (a quick throwaway run). Fallback if it does not: have `publish`
-rebuild the versioned bundle from the validated commit instead of downloading it
-(slightly less ideal for supply-chain provenance, but functionally equivalent for
-the gate).
+- Malformed tag or tag not on `main` → `guard` fails; nothing built.
+- Any required check fails → `validate` fails → `publish` skipped → nothing built
+  or uploaded (this is the gate).
+- MinIO auth/upload failure → `publish` fails after build; no partial "success".
+  The GitHub Release step runs only after a successful upload.
+- Re-tagging an existing version → `gh release create` errors if the release
+  exists (versions immutable). MinIO `staging/` is overwrite-by-design.
+- Pre-release tag → GitHub Release flagged pre-release.
 
 ## Verification / gate evidence
 
-CI workflows are validated by exercising them, not unit tests. Evidence plan:
-
-1. **Happy path:** tag a real commit on `main` (e.g. an early `v0.9.0-pilot.0`),
-   confirm the Release appears with the bundle, SBOM, and checksums, and that the
-   version is stamped (not `0.0.0-...`).
-2. **Enforcement proof:** on a throwaway branch, temporarily break one required
-   check, tag that commit, push the tag, and capture that `validate` went red and
-   **no Release was created**. Delete the proof tag/branch afterward. This failed
-   run plus the absent release is the durable evidence, mirroring the earlier
-   PR-block proof.
-3. Attach both run links to the roadmap G1 gate item and check it off.
+1. **`stage-linux.sh` locally (partial):** on the dev Mac, `.deb` packaging needs
+   `dpkg-deb` (not default on macOS). Verify the non-deb parts locally
+   (`build.sh linux-all` cross-compiles Linux binaries from macOS; zip + checksum
+   steps run). Full `.deb` + APT steps are verified in CI (Ubuntu has `dpkg-deb`).
+2. **`derive-version.sh`:** unit-tested locally (bash test harness).
+3. **Normal path unaffected:** the reusable `quality.yml` change is proven by a
+   PR whose four checks stay green.
+4. **Enforcement proof:** on a throwaway branch, relax the guard and break one
+   check, tag it, and capture that `validate` went red, `publish` was skipped, and
+   **nothing reached MinIO or a GitHub Release**. Delete the proof tag/branch.
+5. **Happy-path proof:** tag a real `main` commit with a throwaway pre-release
+   tag; confirm the MinIO `staging/` tree and the GitHub Release appear with the
+   real version; then clean up.
+6. Record run/release links in the roadmap G1 evidence and check the gate item.
 
 ## Files touched
 
-- `.github/workflows/quality.yml` — add `workflow_call` + version-input wiring in
-  the `artifacts` job.
+- `.github/workflows/quality.yml` — add `workflow_call` + version input.
 - `.github/workflows/release.yml` — new.
-- `docs/PULSE_Edge_Production_Readiness_Roadmap.md` — check the gate item and add
-  evidence links after the proof.
+- `scripts/release/derive-version.sh` (+ `.test.sh`) — new.
+- `scripts/release/make-apt-repo.sh` — new (extracted from `deploy-staging.sh`).
+- `scripts/release/stage-linux.sh` — new.
+- `build.sh` — add `linux-all` group + optional `VERSION` env.
+- `deploy-staging.sh` — call `make-apt-repo.sh` (de-duplicate).
+- `docs/PULSE_Edge_Production_Readiness_Roadmap.md` — evidence + gate item.
 
 ## Out of scope (later gates)
 
-Signed installers, per-platform `.msi` / `.deb`, self-contained per-RID builds,
-staged install, and rollback — all G6 (Update, rollback, disaster recovery).
-Release-numbering *policy* (support window, upgrade-compatibility rules) is a
-Phase 0 item; this design only needs the tag *format* convention, not the policy.
+- Windows (`.exe`/`.msi` installers or ZIPs) and macOS ZIPs — deferred (R-006);
+  the CI script builds Linux only. `deploy-staging.sh` keeps building them for
+  local manual use.
+- Signed packages, rollback, staged install — G6.
+- Promotion from `staging/` to production on MinIO — remains the manual
+  `mc cp` step documented in `deploy-staging.sh`; not automated here.
+- x64/armhf `.deb` packages and a multi-arch APT repo — future, if needed.
