@@ -143,89 +143,10 @@ fi
 DEB_NAME=$(basename "$DEB_FILE")
 cp "$DEB_FILE" "$STAGING_DIR/debian/"
 
-# Generate Flat APT Repository index
+# Generate APT repo index + install.sh via the shared helper (also used by CI's
+# release pipeline) so the staging repo metadata cannot drift between the two.
 log_info "Generating APT repository metadata indices..."
-FILE_SIZE=$(wc -c < "$DEB_FILE" | tr -d ' ')
-SHA256_HASH=$(shasum -a 256 "$DEB_FILE" | awk '{print $1}')
-PACKAGES_FILE="$STAGING_DIR/debian/Packages"
-
-cat <<EOF > "$PACKAGES_FILE"
-Package: pulse-edge
-Version: 1.0.0
-Section: utils
-Priority: optional
-Architecture: arm64
-Maintainer: Integra Innovation Co., Ltd. <support@integra.co.th>
-Depends: libicu-dev
-Filename: $DEB_NAME
-Size: $FILE_SIZE
-SHA256: $SHA256_HASH
-Description: PULSE Edge Unified IoT Gateway Server
- PULSE Edge platform collects telemetry and provides an asset-centric
- management API and UI.
-EOF
-
-# Compress Packages index
-gzip -c "$PACKAGES_FILE" > "$PACKAGES_FILE.gz"
-
-# Generate Release file
-RELEASE_FILE="$STAGING_DIR/debian/Release"
-PKG_SIZE=$(wc -c < "$PACKAGES_FILE" | tr -d ' ')
-PKG_HASH=$(shasum -a 256 "$PACKAGES_FILE" | awk '{print $1}')
-PKG_GZ_SIZE=$(wc -c < "$PACKAGES_FILE.gz" | tr -d ' ')
-PKG_GZ_HASH=$(shasum -a 256 "$PACKAGES_FILE.gz" | awk '{print $1}')
-
-cat <<EOF > "$RELEASE_FILE"
-Archive: stable
-Component: main
-Origin: PULSE
-Label: PULSE Edge Staging Repository
-Architecture: arm64
-SHA256:
- $PKG_HASH $PKG_SIZE Packages
- $PKG_GZ_HASH $PKG_GZ_SIZE Packages.gz
-EOF
-
-# 8. Generate Staging install.sh script
-log_info "Generating custom install.sh setup script..."
-STAGING_URL="pulse.trazor.cloud/download/staging/debian"
-
-cat <<EOF > "$STAGING_DIR/debian/install.sh"
-#!/bin/bash
-# install.sh - Configure PULSE Edge STAGING repository on RevPi
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log_info() { echo -e "\${BLUE}[INFO]\${NC} \$1"; }
-log_success() { echo -e "\${GREEN}[SUCCESS]\${NC} \$1"; }
-log_error() { echo -e "\${RED}[ERROR]\${NC} \$1"; }
-
-if [ "\$EUID" -ne 0 ]; then
-    log_error "Please run this script as root (e.g. using sudo)."
-    exit 1
-fi
-
-SOURCES_PATH="/etc/apt/sources.list.d/pulse.list"
-
-log_info "Registering PULSE Edge Staging repository..."
-
-# Write flat APT source (flat repo needs the trailing "./" component)
-echo "deb [trusted=yes] https://$STAGING_URL ./" > "\$SOURCES_PATH"
-
-log_info "Refreshing package lists..."
-apt-get update -y &>/dev/null
-
-log_success "Staging repository registered successfully!"
-echo "---------------------------------------------"
-echo -e "Install via: \${GREEN}sudo apt install pulse-edge\${NC}"
-echo "---------------------------------------------"
-EOF
-
-chmod +x "$STAGING_DIR/debian/install.sh"
+"$SCRIPT_DIR/scripts/release/make-apt-repo.sh" "$STAGING_DIR/debian" "1.0.0"
 
 # 9. Upload to MinIO
 log_info "Configuring MinIO client alias..."
