@@ -82,7 +82,13 @@ jobs:
           VERSION: ${{ needs.guard.outputs.version }}
         run: ./scripts/release/stage-linux.sh "$VERSION"
 
+      # Staging upload is PAUSED: large artifacts (~100 MB .deb) exceed
+      # Cloudflare's ~100s proxy timeout (524). Re-enable by setting the repo
+      # variable ENABLE_STAGING_UPLOAD=true once uploads go through a
+      # Cloudflare-bypass origin or presigned MinIO URLs. Until then, releases
+      # are published only as GitHub Release assets (below).
       - name: Publish staging artifacts to PULSE repo
+        if: vars.ENABLE_STAGING_UPLOAD == 'true'
         env:
           REPO_UPLOAD_TOKEN: ${{ secrets.REPO_UPLOAD_TOKEN }}
           PULSE_API_ORIGIN: ${{ vars.PULSE_API_ORIGIN }}
@@ -123,7 +129,7 @@ jobs:
           fi
           gh release create "v$VERSION" \
             --title "v$VERSION" \
-            --notes "Automated Linux staging release v$VERSION (also published to the PULSE repo staging area)." \
+            --notes "Automated Linux release v$VERSION: self-contained arm64 .deb, per-arch zips (x64/arm/arm64), and SHA256SUMS. (Staging-repo upload is paused; see ENABLE_STAGING_UPLOAD.)" \
             $prerelease \
             "dist/staging/debian/pulse-edge_${VERSION}_arm64.deb" \
             "dist/staging/linux/pulse-edge-linux-x64.zip" \
