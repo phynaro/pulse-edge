@@ -26,6 +26,7 @@ the device is commissioned (`CurrentUserValidationMiddleware.cs:51-59`) and `Cla
 never returned to any client. T-03 / B-01 are corrected to **Medium** (restrict the pairing
 fields to Admin), and the residual anonymous exposure — which exists only during the
 pre-first-admin setup window — is folded into T-04 / B-06. **No Critical finding remains.**
+T-04 / B-06 was subsequently **accepted** as risk **R-009** (no mechanism implemented — see §6).
 
 ---
 
@@ -127,7 +128,7 @@ are marked with their target phase.
 | T-01 | S | Password guessing / spray against admin login | PBKDF2-SHA256, 210k iterations, 16-byte salt, fixed-time compare (`PasswordService.cs`); 5-attempt / 15-min per-account lockout (`AuthEndpoints.cs`) | No **IP-based** throttling — an attacker can spray *many* usernames, or hammer login to cause lockouts (DoS of a real user) | Medium | B-05 |
 | T-02 | I | Session cookie sniffed on the LAN | `HttpOnly` + `SameSite=Strict`; 8h sliding expiry (`Program.cs`) | `SecurePolicy = SameAsRequest` + **HTTP default** → cookie transmitted in clear on plain-HTTP deployments | High | B-03 |
 | T-03 | I | Cloud/pairing fields (`PairingToken`, pairing URLs) returned by `/api/dashboard` are visible to **any authenticated user, including ReadOnly** — pairing is an Admin function | Endpoint is auth-gated once `hasUsers == true` (`CurrentUserValidationMiddleware.cs:51-59`); `ClaimSecret` is never returned to any client | A ReadOnly local operator can read the pairing token. Anonymous exposure exists **only during the pre-first-admin setup window** (see T-04) | Medium | B-01 |
-| T-04 | S/E/I | Setup-window trust-on-first-use — during commissioning (`hasUsers == false`), `/api/dashboard` is anonymous (exposing the pairing token) **and** any network client can POST `/api/auth/first-admin` | Setup-status gate only; the window closes the moment the first admin exists | On an open network, ADV2 reads the pairing token and/or claims admin before the operator does | High | B-06 |
+| T-04 | S/E/I | Setup-window trust-on-first-use — during commissioning (`hasUsers == false`), `/api/dashboard` is anonymous (exposing the pairing token) **and** any network client can POST `/api/auth/first-admin` | Setup-status gate only; the window closes the moment the first admin exists | **Accepted (R-009):** window is brief, during install, on an operator-controlled network | Accepted | — |
 | T-05 | E | Reset endpoints (factory/soft reset) rely on the middleware mutation rule, not an explicit role check | Middleware requires `Admin` for all non-GET (`CurrentUserValidationMiddleware.cs`) | Fragile defense-in-depth: a future middleware-order change silently exposes destructive endpoints | Medium | B-02 |
 | T-06 | T/E | Clickjacking, MIME-sniffing, injected content | None | No `CSP`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy` | Medium | B-04 |
 | T-07 | D | Flooding of unauthenticated endpoints (login, dashboard, webhooks, diagnostic ingest) | None specific | Local DoS; resource exhaustion | Low–Medium | B-05 |
@@ -192,7 +193,7 @@ slice (§5). Effort is rough (S/M/L).
 | **B-03** | High | M | TLS for the local UI: HTTPS binding (self-signed cert generated on install) or documented reverse-proxy TLS; force cookie `Secure`; add HSTS | T-02 | Enforce TLS; secure cookie settings; production TLS cannot be bypassed |
 | **B-04** | Medium | S | Security-headers middleware (`CSP`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`) + make CORS origins deployment-configurable | T-06, T-08 | Restrictive CORS and security headers |
 | **B-05** | Medium | M | IP-based login throttling in addition to per-account lockout | T-01, T-07 | Add login throttling; brute-force protection verified automatically |
-| **B-06** | High | S | First-admin setup hardening: bind setup to loopback, or require a one-time setup token / bounded time window | T-04 | Anonymous clients cannot seize privilege |
+| ~~B-06~~ | Accepted | — | **Accepted risk (R-009)** — setup-window trust-on-first-use is accepted; no mechanism (setup token / loopback-only / bounded window) implemented | T-04 | (accepted — see R-009) |
 | **B-07** | High | L | Encrypt **cloud** credentials (A1) at rest via the OS credential store (Linux keyring / `systemd-creds`; DPAPI when Windows returns). **Not** whole-DB, **not** device creds. **Open decision:** Linux key-management mechanism | T-09 | Encrypt cloud keys at rest (narrowed — see R-008) |
 | **B-08** | High | S | Enforce `https://` for the cloud endpoint (reject `http://` except localhost dev) and define certificate-trust behavior | T-12 | Enforce TLS for external communication; define certificate trust |
 | **B-09** | Medium | M | Backup hardening: confirm cloud creds excluded from **export**; add size limit + real schema validation; explicit Admin authz on `inspect`/`apply` | T-18, T-19 | Validate backup size, schema, content, integrity before import |
@@ -212,11 +213,10 @@ Each slice is an independently-shippable unit that later gets its own spec → p
 cycle. Ordered so the highest-severity, lowest-infrastructure work ships first.
 
 **Slice 2A — Response & authorization hygiene** (quick wins, no new infrastructure)
-> B-06, B-02, B-01, B-04, B-05 (priority order).
-> Hardens the setup-window trust boundary (B-06), makes authorization explicit and tested
-> (B-02), applies least-privilege to responses (B-01), and adds security headers/configurable
-> CORS (B-04) + IP throttling (B-05) — all in-process changes. Highest risk-reduction per unit
-> effort.
+> B-02, B-01, B-04, B-05 (priority order). *(B-06 was accepted as risk R-009 and dropped.)*
+> Makes authorization explicit and tested (B-02), applies least-privilege to responses (B-01),
+> and adds security headers/configurable CORS (B-04) + IP throttling (B-05) — all in-process
+> changes. Highest risk-reduction per unit effort.
 
 **Slice 2B — Transport security**
 > B-03, B-08, B-14.
@@ -246,22 +246,23 @@ cycle. Ordered so the highest-severity, lowest-infrastructure work ships first.
 | ID | Decision | Rationale | Consequence accepted |
 |----|----------|-----------|----------------------|
 | **R-008** | Device/protocol credentials (`DriverAdapter.ConfigJson`) remain **plaintext and backup-recoverable**; they are **not** encrypted at rest and are **not** redacted from backups | Local OT-device control credentials are frequently the only copy maintenance staff hold; encryption with a losable key would strand the entire configuration. The devices sit on the customer-controlled OT network (Pillar 4). Recoverability outweighs confidentiality for this asset class | A leaked backup (ADV4) or stolen box (ADV3) exposes **device** credentials. This **narrows the G2 gate item** "Encrypt cloud keys *and protocol credentials* at rest" to **cloud keys only** |
+| **R-009** | Setup-window trust-on-first-use is **accepted** — no B-06 mechanism (setup token / loopback-only / bounded window) is implemented | The pre-first-admin window is brief, occurs during physical install, and on a network the operator controls at that moment; the mechanisms add commissioning friction not justified for this deployment context | During that window a network client (ADV2) could read the pairing token or claim the first admin. Mitigated operationally by commissioning on a controlled/isolated network |
 
-> This decision must also be recorded as **R-008** in the roadmap's Decision and risk log, and
-> the G2 work item / gate wording annotated to reflect the narrowed scope.
+> These decisions must also be recorded as **R-008** and **R-009** in the roadmap's Decision and
+> risk log; for R-008 the G2 work item / gate wording is annotated to reflect the narrowed scope.
 
 ### G2 gate-coverage map
 
 | G2 gate check | Covered by |
 |---------------|-----------|
-| Anonymous clients cannot access protected endpoints | B-01, B-02, B-06 |
+| Anonymous clients cannot access protected endpoints | B-01, B-02 (setup-window exposure accepted per R-009) |
 | Read-only users cannot mutate state via direct API calls | B-02 (+ Slice 2D tests) |
 | Brute-force protection is verified automatically | B-05 (+ Slice 2D tests) |
 | No plaintext **secret** in logs/exports/bundles | B-10 (cloud creds; device creds accepted per R-008) |
 | Malformed/oversized/tampered backups rejected safely | B-09 (+ Slice 2D tests) |
 | Production TLS verification cannot be bypassed | B-03, B-08 |
 | Dependency/static-analysis/secret scans pass | Slice 2D (builds on G1 CI) |
-| Threat model has no unresolved critical finding | **No Critical finding remains** after verified review (the earlier B-01 "Critical" was corrected to Medium on re-reading the middleware). Highest open severity is High: B-06 (setup-window) and T-02/B-03 (HTTP-default cookie, Slice 2B) |
+| Threat model has no unresolved critical finding | **No Critical finding remains** after verified review. B-06 (setup-window, was High) is accepted as R-009. Highest open (unaccepted) severity is High: T-02/B-03 (HTTP-default cookie, Slice 2B) |
 
 ---
 
