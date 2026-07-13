@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read   # the reusable quality.yml declares this; a called
+                        # workflow cannot request more than the caller grants.
 
 concurrency:
   group: release-${{ github.ref }}
