@@ -96,7 +96,12 @@ jobs:
           while IFS= read -r rel; do
             [ -n "$rel" ] || continue
             echo "==> Publishing staging/$rel"
-            curl --fail-with-body -sS -X PUT \
+            # --http1.1: large bodies (the ~100 MB .deb/zips) hit HTTP/2
+            #   PROTOCOL_ERROR through the proxy; HTTP/1.1 uploads cleanly.
+            # --retry: tolerate transient upload blips on big files.
+            curl --fail-with-body -sS --http1.1 \
+              --retry 3 --retry-all-errors --retry-delay 5 \
+              -X PUT \
               -H "Authorization: Bearer ${REPO_UPLOAD_TOKEN}" \
               -H "Content-Type: application/octet-stream" \
               --data-binary @"$rel" \
