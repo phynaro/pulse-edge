@@ -5,6 +5,12 @@ on:
   push:
     branches:
       - main
+  workflow_call:
+    inputs:
+      version:
+        description: Version to stamp on built artifacts (blank = dev placeholder)
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -154,12 +160,16 @@ jobs:
 
       - name: Build versioned artifacts
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          version="0.0.0-${GITHUB_SHA::12}"
+          version="$INPUT_VERSION"
+          if [ -z "$version" ]; then version="0.0.0-${GITHUB_SHA::12}"; fi
+          numeric="${version%%-*}"
           mkdir -p artifacts/agent artifacts/ui
           dotnet restore Pulse.Edge.slnx --locked-mode
-          dotnet publish src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj --no-restore --configuration Release --output artifacts/agent -p:Version="$version" -p:InformationalVersion="$version"
+          dotnet publish src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj --no-restore --configuration Release --output artifacts/agent -p:Version="$numeric" -p:InformationalVersion="$version"
           pnpm install --frozen-lockfile
           pnpm build:ui
           cp -R src/Pulse.Edge.UI/dist/. artifacts/ui/

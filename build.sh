@@ -47,6 +47,9 @@ if [ -n "$INPUT_TARGET" ]; then
         "linux-arm64" | "linuxarm64" | "arm64" | "rpi" | "rpi64")
             TARGETS=("linux-arm64")
             ;;
+        "linux-all" | "linuxall")
+            TARGETS=("linux-x64" "linux-arm" "linux-arm64")
+            ;;
         "all")
             TARGETS=("win-x86" "win-x64" "linux-x64" "linux-arm" "linux-arm64")
             ;;
@@ -59,6 +62,14 @@ if [ -n "$INPUT_TARGET" ]; then
 else
     # Default to all targets if no argument is passed
     TARGETS=("win-x86" "win-x64" "linux-x64" "linux-arm" "linux-arm64")
+fi
+
+# Optional version stamping via VERSION env (unset = current csproj default)
+VERSION_ARGS=()
+if [ -n "${VERSION:-}" ]; then
+    NUMERIC_VERSION="${VERSION%%-*}"
+    VERSION_ARGS=(-p:Version="$NUMERIC_VERSION" -p:InformationalVersion="$VERSION")
+    echo "🏷️  Stamping version: $VERSION (numeric $NUMERIC_VERSION)"
 fi
 
 echo "📦 Package Manager: $PKG_MANAGER"
@@ -94,7 +105,8 @@ build_target() {
       -p:PublishSingleFile=true \
       -p:IncludeNativeLibrariesForSelfExtract=true \
       -p:PublishTrimmed=false \
-      -o "$out_dir/"
+      -o "$out_dir/" \
+      "${VERSION_ARGS[@]}"
 
     echo "🤖 Compiling standalone background Agent daemon for target: $rid..."
     dotnet publish src/Pulse.Edge.Agent/Pulse.Edge.Agent.csproj \
@@ -104,7 +116,8 @@ build_target() {
       -p:PublishSingleFile=true \
       -p:IncludeNativeLibrariesForSelfExtract=true \
       -p:PublishTrimmed=false \
-      -o "$out_dir/"
+      -o "$out_dir/" \
+      "${VERSION_ARGS[@]}"
 
     # Copy app.ico if it exists in UI public directory
     if [ -f "src/Pulse.Edge.UI/public/app.ico" ]; then

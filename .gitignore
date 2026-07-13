@@ -23,6 +23,11 @@ bin/
 obj/
 publish/
 
+# Release automation scripts — override the unanchored [Rr]elease/ build rule
+# above, which otherwise ignores this source directory.
+!scripts/release/
+!scripts/release/**
+
 # Node modules / UI distribution
 node_modules/
 dist/
