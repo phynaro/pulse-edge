@@ -95,8 +95,9 @@ Trigger: `push: tags: ['v*']`. Jobs:
   1. Check out the tagged commit; set up .NET, pnpm, Node.
   2. `scripts/release/stage-linux.sh "${{ needs.guard.outputs.version }}"` →
      builds `dist/staging/`.
-  3. Install the MinIO client (`mc`), configure the alias from secrets, and
-     `mc mirror --overwrite dist/staging/ pulse-minio/$MINIO_BUCKET/staging/`.
+  3. `PUT` each file in `dist/staging/` to
+     `${PULSE_API_ORIGIN}/api/repo/objects/staging/<relative>` with the bearer
+     token (raw bytes). Same key overwrites (latest tag wins).
   4. Create the GitHub Release `v<version>` (via `gh release create`), marking it
      `--prerelease` when the version has a `-`, attaching the `.deb`, the three
      zips, and `SHA256SUMS`.
@@ -117,19 +118,32 @@ git push origin v1.2.3
         ▼
    [publish] stage-linux.sh → dist/staging/ (binaries + .deb + apt + zips + sums)
         │        │
-        │        ├─▶ mc mirror ─▶ MinIO pulse-repo/staging/  (pulse.trazor.cloud)
+        │        ├─▶ PUT /api/repo/objects/staging/*  (bearer token) → pulse.trazor.cloud
         │        └─▶ gh release create v1.2.3 (.deb, zips, SHA256SUMS)
 ```
 
-## Secrets required (added by the user in GitHub)
+## Upload mechanism and credentials
 
-- `MINIO_ENDPOINT` (e.g. `https://pulse.trazor.cloud`)
-- `MINIO_ACCESS_KEY`
-- `MINIO_SECRET_KEY`
-- `MINIO_BUCKET` (e.g. `pulse-repo`)
+CI does **not** talk to MinIO directly and must not hold MinIO keys. Instead it
+uploads each artifact through the PULSE repo API:
 
-The `publish` job needs `contents: write` (for the GitHub Release) and reads the
-MinIO secrets from the repository/environment secrets.
+- `PUT ${PULSE_API_ORIGIN}/api/repo/objects/<key>` with header
+  `Authorization: Bearer <REPO_UPLOAD_TOKEN>`, body = raw file bytes
+  (`--data-binary`, not multipart). Same key overwrites. Keys are relative
+  (no `..`, no leading `/`), max body ~100 MB.
+- The `publish` job walks `dist/staging/` and PUTs each file under the key
+  `staging/<relative-path>`, so the public URL becomes
+  `${PULSE_API_ORIGIN}/download/staging/<relative-path>` — matching the APT URL
+  the generated `install.sh` points to.
+
+Credentials (added by the user in GitHub):
+
+- `REPO_UPLOAD_TOKEN` — **Secret** (same value as the API's `REPO_UPLOAD_TOKEN`).
+- `PULSE_API_ORIGIN` — **Variable** (e.g. `https://pulse.trazor.cloud`).
+
+The `publish` job also needs `contents: write` for the GitHub Release. The local
+`deploy-staging.sh` keeps using the MinIO client directly (that runs on the
+user's Mac with `.env` MinIO keys) — only CI switches to the token API.
 
 ## Version stamping
 
@@ -144,8 +158,10 @@ MinIO secrets from the repository/environment secrets.
 - Malformed tag or tag not on `main` → `guard` fails; nothing built.
 - Any required check fails → `validate` fails → `publish` skipped → nothing built
   or uploaded (this is the gate).
-- MinIO auth/upload failure → `publish` fails after build; no partial "success".
-  The GitHub Release step runs only after a successful upload.
+- Upload failure (bad token, HTTP >= 400, oversize > ~100 MB) → `curl
+  --fail-with-body` exits nonzero, `publish` fails; the GitHub Release step runs
+  only after all uploads succeed. Note: a self-contained `.deb`/zip bundles the
+  .NET runtime; confirm each stays under the ~100 MB object limit.
 - Re-tagging an existing version → `gh release create` errors if the release
   exists (versions immutable). MinIO `staging/` is overwrite-by-design.
 - Pre-release tag → GitHub Release flagged pre-release.

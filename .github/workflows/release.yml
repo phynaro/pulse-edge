@@ -77,18 +77,27 @@ jobs:
           VERSION: ${{ needs.guard.outputs.version }}
         run: ./scripts/release/stage-linux.sh "$VERSION"
 
-      - name: Upload to MinIO staging
+      - name: Publish staging artifacts to PULSE repo
         env:
-          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
-          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
-          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
-          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+          REPO_UPLOAD_TOKEN: ${{ secrets.REPO_UPLOAD_TOKEN }}
+          PULSE_API_ORIGIN: ${{ vars.PULSE_API_ORIGIN }}
         run: |
           set -euo pipefail
-          curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o "$RUNNER_TEMP/mc"
-          chmod +x "$RUNNER_TEMP/mc"
-          "$RUNNER_TEMP/mc" alias set pulse-minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" --api S3v4
-          "$RUNNER_TEMP/mc" mirror --overwrite dist/staging/ "pulse-minio/$MINIO_BUCKET/staging/"
+          # PUT each staging file to the repo API under a "staging/<relative>" key
+          # so its public URL is ${PULSE_API_ORIGIN}/download/staging/<relative>,
+          # matching the APT URL baked into the generated install.sh.
+          cd dist/staging
+          find . -type f | sed 's#^\./##' | sort > "$RUNNER_TEMP/keys.txt"
+          while IFS= read -r rel; do
+            [ -n "$rel" ] || continue
+            echo "==> Publishing staging/$rel"
+            curl --fail-with-body -sS -X PUT \
+              -H "Authorization: Bearer ${REPO_UPLOAD_TOKEN}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$rel" \
+              "${PULSE_API_ORIGIN}/api/repo/objects/staging/${rel}"
+            echo
+          done < "$RUNNER_TEMP/keys.txt"
 
       - name: Create GitHub Release
         env:
@@ -104,7 +113,7 @@ jobs:
           fi
           gh release create "v$VERSION" \
             --title "v$VERSION" \
-            --notes "Automated Linux staging release v$VERSION (also uploaded to MinIO staging)." \
+            --notes "Automated Linux staging release v$VERSION (also published to the PULSE repo staging area)." \
             $prerelease \
             "dist/staging/debian/pulse-edge_${VERSION}_arm64.deb" \
             "dist/staging/linux/pulse-edge-linux-x64.zip" \

@@ -6,7 +6,7 @@
 
 **Architecture:** `quality.yml` becomes reusable (`workflow_call`). A new `release.yml` fires on a `v*` tag with three chained jobs: `guard` (tag/branch/version), `validate` (calls the reusable checks — the gate), `publish` (`needs: [guard, validate]`, so a red check structurally blocks it). `publish` runs `stage-linux.sh`, which reuses `build.sh` + `build-deb.sh` + a shared `make-apt-repo.sh`, then uploads via `mc` and creates the Release.
 
-**Tech Stack:** GitHub Actions (reusable workflows), bash (bash 3.2 compatible for local scripts), .NET self-contained publish, `dpkg-deb`, MinIO client `mc`, `gh` CLI.
+**Tech Stack:** GitHub Actions (reusable workflows), bash (bash 3.2 compatible for local scripts), .NET self-contained publish, `dpkg-deb`, `curl` (PULSE repo upload API), `gh` CLI. (The local `deploy-staging.sh` still uses the MinIO client `mc` directly.)
 
 ## Global Constraints
 
@@ -16,7 +16,7 @@
 - Release only commits reachable from `main`. Re-tagging an existing version is an error. MinIO `staging/` is overwrite (latest wins).
 - Local scripts must run on macOS bash 3.2 (indexed arrays OK; no associative arrays / `${var,,}`).
 - Do not change `quality.yml` behavior for `pull_request` / `push: main` (reuse is additive).
-- Required GitHub secrets (user-provided): `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`.
+- CI uploads via the PULSE repo API, NOT MinIO directly (no MinIO keys in GitHub). `PUT ${PULSE_API_ORIGIN}/api/repo/objects/<key>`, `Authorization: Bearer <REPO_UPLOAD_TOKEN>`, raw bytes, relative key, ~100 MB max, same key overwrites. Required: `REPO_UPLOAD_TOKEN` (**secret**), `PULSE_API_ORIGIN` (**variable**). Object keys use a `staging/` prefix.
 
 ---
 
@@ -489,7 +489,7 @@ git commit -m "Add Linux staging build-and-package script"
 - Create: `.github/workflows/release.yml`
 
 **Interfaces:**
-- Consumes: `derive-version.sh` (Task 1), reusable `quality.yml` (Task 2), `stage-linux.sh` (Task 5), the four MinIO secrets.
+- Consumes: `derive-version.sh` (Task 1), reusable `quality.yml` (Task 2), `stage-linux.sh` (Task 5), and `REPO_UPLOAD_TOKEN` (secret) + `PULSE_API_ORIGIN` (variable).
 
 - [ ] **Step 1: Write the workflow**
 
@@ -566,18 +566,24 @@ jobs:
           cache: pnpm
       - name: Build and assemble Linux staging tree
         run: ./scripts/release/stage-linux.sh "${{ needs.guard.outputs.version }}"
-      - name: Upload to MinIO staging
+      - name: Publish staging artifacts to PULSE repo
         env:
-          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
-          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
-          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
-          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+          REPO_UPLOAD_TOKEN: ${{ secrets.REPO_UPLOAD_TOKEN }}
+          PULSE_API_ORIGIN: ${{ vars.PULSE_API_ORIGIN }}
         run: |
           set -euo pipefail
-          curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o "$RUNNER_TEMP/mc"
-          chmod +x "$RUNNER_TEMP/mc"
-          "$RUNNER_TEMP/mc" alias set pulse-minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" --api S3v4
-          "$RUNNER_TEMP/mc" mirror --overwrite dist/staging/ "pulse-minio/$MINIO_BUCKET/staging/"
+          cd dist/staging
+          find . -type f | sed 's#^\./##' | sort > "$RUNNER_TEMP/keys.txt"
+          while IFS= read -r rel; do
+            [ -n "$rel" ] || continue
+            echo "==> Publishing staging/$rel"
+            curl --fail-with-body -sS -X PUT \
+              -H "Authorization: Bearer ${REPO_UPLOAD_TOKEN}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$rel" \
+              "${PULSE_API_ORIGIN}/api/repo/objects/staging/${rel}"
+            echo
+          done < "$RUNNER_TEMP/keys.txt"
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -592,7 +598,7 @@ jobs:
           fi
           gh release create "v$version" \
             --title "v$version" \
-            --notes "Automated Linux staging release v$version (also uploaded to MinIO staging)." \
+            --notes "Automated Linux staging release v$version (also published to the PULSE repo staging area)." \
             $prerelease \
             "dist/staging/debian/pulse-edge_${version}_arm64.deb" \
             "dist/staging/linux/pulse-edge-linux-x64.zip" \
@@ -639,7 +645,7 @@ Expected: all four Quality jobs pass — proves the reusable change didn't alter
 **Files:**
 - Modify: `docs/PULSE_Edge_Production_Readiness_Roadmap.md`
 
-**Prerequisite:** the user must add the four MinIO secrets before the happy-path proof (Step 4). Confirm with the user before running Steps 1–4 (they push to `main` and to real staging).
+**Prerequisite:** the user must add `REPO_UPLOAD_TOKEN` (secret) and `PULSE_API_ORIGIN` (variable) before the happy-path proof (Step 4). Confirm with the user before running Steps 1–4 (they push to `main` and to real staging).
 
 - [ ] **Step 1: Merge the feature PR to main**
 
@@ -707,7 +713,7 @@ git checkout main
 
 - [ ] **Step 4: Happy-path proof — a passing tag produces a release**
 
-(Requires the MinIO secrets to be set.) Tag a real `main` commit with a throwaway pre-release tag:
+(Requires `REPO_UPLOAD_TOKEN` + `PULSE_API_ORIGIN` to be set.) Tag a real `main` commit with a throwaway pre-release tag:
 
 ```bash
 git tag v0.0.1-pipeline-proof.1
@@ -716,7 +722,7 @@ RID=$(gh run list --workflow Release --limit 1 --json databaseId -q '.[0].databa
 gh run watch "$RID" --exit-status
 gh release view v0.0.1-pipeline-proof.1     # release with .deb, 3 zips, SHA256SUMS
 ```
-Also confirm the MinIO `staging/` tree updated (via the site or `mc ls`). Capture the run/release URL, then clean up the GitHub release (staging is overwritten by the next real release):
+Also confirm the artifacts are downloadable, e.g. `curl -fsI "$PULSE_API_ORIGIN/download/staging/debian/install.sh"`. Capture the run/release URL, then clean up the GitHub release (staging is overwritten by the next real release):
 
 ```bash
 gh release delete v0.0.1-pipeline-proof.1 --yes --cleanup-tag
@@ -763,5 +769,5 @@ git push origin main
 
 - **macOS cross-compile:** `dotnet publish -r linux-*` works from macOS, so `build.sh linux-all` runs locally; only `.deb` packaging needs `dpkg-deb` (Ubuntu has it; macOS needs `brew install dpkg`). Don't block on a full local `stage-linux.sh` run — CI is the real check.
 - **`shasum` portability:** used by `make-apt-repo.sh` and `stage-linux.sh`; present on both macOS and ubuntu-latest.
-- **Secrets:** Task 8 Step 4 fails without the four MinIO secrets. The enforcement proof (Step 2) does not need them (it never reaches upload).
+- **Secrets:** Task 8 Step 4 fails without `REPO_UPLOAD_TOKEN` + `PULSE_API_ORIGIN`. The enforcement proof (Step 2) does not need them (it never reaches upload).
 - **deploy-staging.sh:** the refactor changes only the APT-index block; the user should run it once locally after merge to confirm the manual full-platform flow still works (CI cannot exercise its macOS/upload path).
