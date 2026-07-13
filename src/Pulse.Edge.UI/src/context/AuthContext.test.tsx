@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { AuthProvider } from './AuthContext';
 import { useAuth } from './auth';
 import { jsonResponse } from '../test/http';
+import { testCredentials } from '../test/credentials';
 
 function Consumer() {
   const { loading, setupState, user, login, logout } = useAuth();
@@ -15,7 +16,7 @@ function Consumer() {
       <span data-testid="state">{setupState}</span>
       <span data-testid="user">{user?.username ?? 'none'}</span>
       <span data-testid="error">{String(error)}</span>
-      <button onClick={async () => setError(await login('admin', 'pw'))}>login</button>
+      <button onClick={async () => setError(await login(testCredentials.adminUsername, testCredentials.adminPassword))}>login</button>
       <button onClick={() => { void logout(); }}>logout</button>
     </div>
   );
@@ -45,13 +46,13 @@ describe('AuthProvider', () => {
   it('loads setup status on mount and exposes state', async () => {
     stubFetch({
       'GET /api/auth/setup-status': () =>
-        jsonResponse(200, { state: 'Operational', user: { id: '1', username: 'admin', role: 'Admin' } }),
+        jsonResponse(200, { state: 'Operational', user: { id: '1', username: testCredentials.adminUsername, role: 'Admin' } }),
     });
     renderProvider();
 
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
     expect(screen.getByTestId('state')).toHaveTextContent('Operational');
-    expect(screen.getByTestId('user')).toHaveTextContent('admin');
+    expect(screen.getByTestId('user')).toHaveTextContent(testCredentials.adminUsername);
   });
 
   it('returns the server error message and stays logged out on a failed login', async () => {
@@ -77,7 +78,7 @@ describe('AuthProvider', () => {
       'GET /api/auth/setup-status': () =>
         jsonResponse(200, {
           state: 'Operational',
-          user: loggedIn ? { id: '1', username: 'admin', role: 'Admin' } : null,
+          user: loggedIn ? { id: '1', username: testCredentials.adminUsername, role: 'Admin' } : null,
         }),
       'POST /api/auth/login': () => {
         loggedIn = true;
@@ -90,7 +91,7 @@ describe('AuthProvider', () => {
 
     await user.click(screen.getByRole('button', { name: 'login' }));
 
-    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('admin'));
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent(testCredentials.adminUsername));
     expect(screen.getByTestId('error')).toHaveTextContent('null');
   });
 
@@ -98,11 +99,11 @@ describe('AuthProvider', () => {
     const user = userEvent.setup();
     stubFetch({
       'GET /api/auth/setup-status': () =>
-        jsonResponse(200, { state: 'Operational', user: { id: '1', username: 'admin', role: 'Admin' } }),
+        jsonResponse(200, { state: 'Operational', user: { id: '1', username: testCredentials.adminUsername, role: 'Admin' } }),
       'POST /api/auth/logout': () => jsonResponse(200, {}),
     });
     renderProvider();
-    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('admin'));
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent(testCredentials.adminUsername));
 
     await user.click(screen.getByRole('button', { name: 'logout' }));
 

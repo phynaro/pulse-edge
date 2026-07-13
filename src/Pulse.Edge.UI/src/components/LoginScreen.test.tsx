@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import LoginScreen from './LoginScreen';
 import { AuthContext, type AuthContextValue } from '../context/auth';
+import { testCredentials } from '../test/credentials';
 
 function renderLogin(overrides: Partial<AuthContextValue> = {}) {
   const value: AuthContextValue = {
@@ -29,19 +30,19 @@ describe('LoginScreen', () => {
     const login = vi.fn(async () => null);
     renderLogin({ login });
 
-    await user.type(screen.getByLabelText('Username'), 'operator');
-    await user.type(screen.getByLabelText('Password'), 's3cret');
+    await user.type(screen.getByLabelText('Username'), testCredentials.operatorUsername);
+    await user.type(screen.getByLabelText('Password'), testCredentials.operatorPassword);
     await user.click(screen.getByRole('button', { name: /sign in/i }));
 
-    expect(login).toHaveBeenCalledWith('operator', 's3cret');
+    expect(login).toHaveBeenCalledWith(testCredentials.operatorUsername, testCredentials.operatorPassword);
   });
 
   it('shows the server error message when authentication fails', async () => {
     const user = userEvent.setup();
     renderLogin({ login: vi.fn(async () => 'Invalid credentials.') });
 
-    await user.type(screen.getByLabelText('Username'), 'operator');
-    await user.type(screen.getByLabelText('Password'), 'wrong');
+    await user.type(screen.getByLabelText('Username'), testCredentials.operatorUsername);
+    await user.type(screen.getByLabelText('Password'), testCredentials.operatorPassword);
     await user.click(screen.getByRole('button', { name: /sign in/i }));
 
     expect(await screen.findByText('Invalid credentials.')).toBeInTheDocument();
@@ -51,8 +52,8 @@ describe('LoginScreen', () => {
     const user = userEvent.setup();
     renderLogin({ login: vi.fn(async () => null) });
 
-    await user.type(screen.getByLabelText('Username'), 'operator');
-    await user.type(screen.getByLabelText('Password'), 'good');
+    await user.type(screen.getByLabelText('Username'), testCredentials.operatorUsername);
+    await user.type(screen.getByLabelText('Password'), testCredentials.operatorPassword);
     await user.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() =>
@@ -69,8 +70,8 @@ describe('LoginScreen', () => {
     );
     renderLogin({ login });
 
-    await user.type(screen.getByLabelText('Username'), 'operator');
-    await user.type(screen.getByLabelText('Password'), 'good');
+    await user.type(screen.getByLabelText('Username'), testCredentials.operatorUsername);
+    await user.type(screen.getByLabelText('Password'), testCredentials.operatorPassword);
     await user.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() =>
