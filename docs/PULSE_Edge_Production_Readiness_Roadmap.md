@@ -27,8 +27,8 @@ Update this table first. Keep exactly one phase marked `In progress` unless an u
 | Phase | Outcome | Status | Owner | Target | Gate | Next action |
 |---|---|---|---|---|---|---|
 | 0 | Pilot baseline | Blocked | Engineering + stakeholders | TBD | G0 | Windows validation deferred (R-006); close the Linux-target G0 items — support matrix, capacity thresholds, accepted limitations — and the load/outage fixture |
-| 1 | Engineering candidate | Gate review | Engineering | TBD | G1 | All G1 checks have evidence (auth/backup tests + gated tag-based release with enforcement + happy-path proofs); obtain the authorized G1 review |
-| 2 | Security candidate | Not started | TBD | TBD | G2 | Create threat model and security hardening backlog |
+| 1 | Engineering candidate | Passed | Engineering | 2026-07-13 | G1 | Gate passed 2026-07-13 by project-owner authorization (formal multi-reviewer panel waived). Phase closed. |
+| 2 | Security candidate | In progress | Engineering | TBD | G2 | Threat model + hardening backlog delivered ([PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md)); execute Slice 2A next, starting with the Critical finding B-01 (stop returning `PairingToken`/`ClaimSecret` in plaintext) |
 | 3 | Commissioning candidate | Not started | TBD | TBD | G3 | Design validate/apply/rollback configuration flow |
 | 4 | Reliability candidate | Not started | TBD | TBD | G4 | Define retention, queue limits, and disk thresholds |
 | 5 | Operations candidate | Not started | TBD | TBD | G5 | Define subsystem health and support bundle contract |
@@ -137,9 +137,9 @@ These observations were recorded during the initial product review and should be
 
 ### Work
 
-- [ ] Produce a threat model covering local UI, APIs, cloud communication, protocols, backups, and updates.
+- [x] Produce a threat model covering local UI, APIs, cloud communication, protocols, backups, and updates. Evidence: [PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md).
 - [ ] Enforce TLS for external communication and define certificate trust behavior.
-- [ ] Encrypt cloud keys and protocol credentials at rest.
+- [ ] Encrypt cloud keys at rest. *(Narrowed by R-008: protocol/device credentials are deliberately left plaintext and backup-recoverable; only cloud keys — `ApiKey`, `ClaimSecret`, `PairingToken` — are encrypted at rest.)*
 - [ ] Redact secrets from API responses, logs, exports, and support bundles.
 - [ ] Add password policy, login throttling, and temporary lockout.
 - [ ] Add session expiration and secure cookie settings.
@@ -154,7 +154,7 @@ These observations were recorded during the initial product review and should be
 - [ ] Anonymous clients cannot access protected endpoints.
 - [ ] Read-only users cannot mutate state through direct API calls.
 - [ ] Brute-force protection is verified automatically.
-- [ ] No plaintext secret appears in logs, exports, or diagnostic bundles.
+- [ ] No plaintext **cloud** secret appears in logs, exports, or diagnostic bundles. *(Per R-008, protocol/device credentials are excluded from this check by design.)*
 - [ ] Malformed, oversized, and tampered backup files are rejected safely.
 - [ ] Production TLS verification cannot be bypassed.
 - [ ] Dependency, static-analysis, and secret scans pass.
@@ -162,7 +162,7 @@ These observations were recorded during the initial product review and should be
 
 **Evidence:**
 
-- Threat model: TBD
+- Threat model: [PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md) — STRIDE-per-boundary register (23 threats), decomposed hardening backlog (16 items), and the Slice 2A–2D implementation sequence. One Critical finding (B-01) is open pending Slice 2A.
 - Endpoint authorization test report: TBD
 - Security scan: TBD
 - Backup abuse test report: TBD
@@ -443,6 +443,8 @@ Add one row for every gate review, including unsuccessful reviews.
 | 2026-07-12 | G0 | Blocked | The project owner chose to defer Windows deployment/certification (R-006) and target Linux for near-term gate work. No G0 check was waived; Windows validation remains required if Windows returns to the supported-platform scope. | Close the Linux-target G0 items (support matrix, capacity thresholds, accepted-limitations sign-off) and run the load/outage/recovery fixture; keep progressing G1 in parallel under the existing sequencing exception. |
 | 2026-07-12 | G1 | In progress | Added Testing Library + jsdom frontend infrastructure and component tests for the local authentication (LoginScreen, AuthProvider) and configuration backup/restore (ConfigurationBackupPanel) flows; the UI suite is 20 tests and lint/build/test pass locally. Browser/device-modal coverage deferred to the G8 end-to-end scope. | Push and attach the hosted CI run as evidence, then complete release-tag metadata and the release-creation enforcement item before requesting the authorized G1 review. |
 | 2026-07-13 | G1 | In progress | Tag-triggered `release.yml` gates a versioned Linux build/publish on the reusable Quality checks. Enforcement proof (run 29237934034): a failed check left `publish` skipped, no release. Happy path (run 29257973968): a passing tag produced a GitHub Release with the arm64 `.deb`, per-arch zips, and SHA256SUMS. All G1 gate checks now have evidence. MinIO staging upload is paused behind `ENABLE_STAGING_UPLOAD` pending a Cloudflare-bypass upload path. | Obtain the authorized G1 gate review to mark the phase Passed. |
+| 2026-07-13 | G1 | Passed | All seven G1 checks have durable evidence (clean CI build, backend+frontend pipelines pass, no unaccepted high/critical vuln, no compiler warnings, artifacts carry version/commit/build metadata, SBOM retained, and a failed required check structurally blocks release creation — proven by run 29237934034). The project owner authorized the pass and waived the formal multi-reviewer panel. | Proceed to Phase 2 (G2). MinIO staging upload remains paused (R-007); does not affect this gate. |
+| 2026-07-13 | G2 | In progress | Phase 2 opened. Threat model delivered ([PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md)): STRIDE per trust boundary, 23 threats, 16-item decomposed backlog, Slice 2A–2D sequence. One Critical finding (B-01: `PairingToken`/`ClaimSecret` returned plaintext by the anonymous `/api/dashboard`). Decision R-008 recorded (device creds stay plaintext + backup-recoverable; the "encrypt … protocol credentials" gate item is narrowed to cloud keys only). | Execute Slice 2A (B-01, B-02, B-04, B-05, B-06), starting with the Critical finding B-01. |
 
 ## Decision and risk log
 
@@ -457,6 +459,7 @@ Use this section for decisions or risks that materially change scope, sequence, 
 | R-005 | 2026-07-12 | Risk | A default macOS source archive emitted AppleDouble `._*` files that fail C# compilation on Linux. Clean-room packaging passes with `COPYFILE_DISABLE=1`; release packaging must exclude host metadata deterministically. | Engineering | TBD | Open |
 | R-006 | 2026-07-12 | Decision | Defer Windows deployment and certification for now; target Linux for near-term gate work. Narrows current supported-platform scope to Linux without waiving any gate check. Windows validation (G0 matrix + `PULSE_Edge_Windows_Deployment_Specification.md`) and G8 Windows installer/repair/uninstall tests must be reinstated before any Windows-supporting production release. | Engineering + stakeholders | TBD | Open |
 | R-007 | 2026-07-13 | Decision | Automated release upload to the MinIO/`pulse.trazor.cloud` staging repo is paused (gated behind repo variable `ENABLE_STAGING_UPLOAD`). Cause: self-contained artifacts (~90 MB zips, ~70 MB `.deb`) exceed Cloudflare's ~100s proxy timeout (524) when PUT through the API. Releases currently publish to GitHub Release only. Re-enable via a Cloudflare-bypass upload origin or presigned MinIO URLs (optionally drop the redundant Agent binary from SinglePort packages to shrink size). Does not affect G1 (release-creation enforcement is proven). | Engineering | TBD | Open |
+| R-008 | 2026-07-13 | Decision | Protocol/device credentials (`DriverAdapter.ConfigJson` — PLC/OPC UA/Modbus/MQTT passwords) are deliberately kept **plaintext and backup-recoverable**; they are not encrypted at rest and not redacted from configuration backups. Rationale: these local OT-device credentials are frequently the only copy maintenance staff hold, and encryption with a losable key would strand the entire configuration; the devices sit on the customer-controlled OT network (edge_security_pillars.md Pillar 4). This **narrows the G2 gate item** "Encrypt cloud keys and protocol credentials at rest" to **cloud keys only** and excludes device credentials from the "no plaintext secret in logs/exports/bundles" check. Accepted consequence: a leaked backup or stolen appliance exposes device credentials. Cloud credentials (`ApiKey`, `ClaimSecret`, `PairingToken`) remain in scope for at-rest encryption and response redaction. | Engineering + project owner | Accepted | Accepted |
 
 ## Review cadence
 
