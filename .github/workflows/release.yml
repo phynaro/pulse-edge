@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Validate tag and branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+      numeric_version: ${{ steps.derive.outputs.numeric_version }}
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Derive and validate version from tag
+        id: derive
+        run: ./scripts/release/derive-version.sh "$GITHUB_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Require tag commit to be on main
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "error: tagged commit $GITHUB_SHA is not reachable from main; refusing to release." >&2
+            exit 1
+          fi
+
+  validate:
+    name: Required checks
+    needs: guard
+    uses: ./.github/workflows/quality.yml
+    with:
+      version: ${{ needs.guard.outputs.version }}
+    secrets: inherit
+
+  publish:
+    name: Build, stage, and release
+    needs: [guard, validate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Build and assemble Linux staging tree
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: ./scripts/release/stage-linux.sh "$VERSION"
+
+      - name: Upload to MinIO staging
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+        run: |
+          set -euo pipefail
+          curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o "$RUNNER_TEMP/mc"
+          chmod +x "$RUNNER_TEMP/mc"
+          "$RUNNER_TEMP/mc" alias set pulse-minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" --api S3v4
+          "$RUNNER_TEMP/mc" mirror --overwrite dist/staging/ "pulse-minio/$MINIO_BUCKET/staging/"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "error: release v$VERSION already exists; versions are immutable." >&2
+            exit 1
+          fi
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes "Automated Linux staging release v$VERSION (also uploaded to MinIO staging)." \
+            $prerelease \
+            "dist/staging/debian/pulse-edge_${VERSION}_arm64.deb" \
+            "dist/staging/linux/pulse-edge-linux-x64.zip" \
+            "dist/staging/linux/pulse-edge-linux-arm.zip" \
+            "dist/staging/linux/pulse-edge-linux-arm64.zip" \
+            "dist/staging/SHA256SUMS"
