@@ -102,6 +102,9 @@ public sealed class AuthorizationMatrixTests(PulseEdgeAppFactory factory) : ICla
 
     // Route patterns that are infrastructure, not API surface (filled in only if the
     // enumeration surfaces them; each entry needs a comment saying what it is).
+    // Note: the test host runs MultiPort mode (PulseEdgeAppFactory), which maps the shared
+    // /api route table but not SinglePort's SPA fallback/static files — the guard therefore
+    // covers the security-relevant API surface; SinglePort adds no additional API endpoints.
     private static readonly string[] ExcludedPatterns = [];
 
     private List<(string Method, string Pattern)> LiveEndpoints()
@@ -182,7 +185,7 @@ public sealed class AuthorizationMatrixTests(PulseEdgeAppFactory factory) : ICla
 
             // Logout terminates the session it runs on — give it its own client.
             var client = access == Access.AuthenticatedAction
-                ? await factory.CreateClientLoggedInAsync("ReadOnly", "test-readonly-action", TestCredentials.Password)
+                ? await factory.CreateClientLoggedInAsync("ReadOnly", TestCredentials.ReadOnlyActionUsername, TestCredentials.Password)
                 : readOnly;
 
             using var request = new HttpRequestMessage(new HttpMethod(method), ProbeUrl(pattern));
