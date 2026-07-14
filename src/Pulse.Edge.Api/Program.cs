@@ -146,7 +146,13 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.Name = "pulse.edge.session";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        // Force the session cookie Secure in production (browser talks HTTPS directly to :5288).
+        // In Development the browser reaches the app over plaintext http://localhost:8080 (Vite
+        // dev proxy), where a Secure cookie is dropped by the browser — so it must not be Secure
+        // there. Production security is unchanged.
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.None
+            : CookieSecurePolicy.Always;
         options.SlidingExpiration = true;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = 401; return Task.CompletedTask; };

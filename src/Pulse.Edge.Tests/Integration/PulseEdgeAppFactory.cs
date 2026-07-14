@@ -44,6 +44,11 @@ public class PulseEdgeAppFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Run as Production so the integration tests simulate a real HTTPS deployment: the
+        // session cookie is forced Secure (matching the https:// client base address), which is
+        // what the Secure-cookie test asserts. In Development the app intentionally does not mark
+        // the cookie Secure (dev browser is on plaintext http://localhost:8080).
+        builder.UseEnvironment("Production");
         // MultiPort registers the endpoints but NOT the background services
         // (Worker, provisioning, config monitor), so tests don't spin up acquisition.
         builder.UseSetting("hostingMode", "MultiPort");
