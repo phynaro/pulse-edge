@@ -35,6 +35,8 @@ The solution builds on the current development workstation, but no clean second 
 
 The API defaults to `http://*:5288`, and the onboarding contract explicitly identifies TLS enforcement as pre-pilot hardening. Session-cookie security follows the request scheme, so an HTTP deployment does not produce a secure-only cookie.
 
+**Update (Slice 2B):** The local UI now defaults to HTTPS on `:5288` with a self-signed certificate generated on first boot, and the session cookie is forced `Secure`. The cloud uplink endpoint is enforced to HTTPS at both the settings API and the `CloudClient` chokepoint. The residual gap is the one-time self-signed browser warning (no trusted cert issued yet) and HSTS, which is intentionally withheld until a trusted certificate is configured. See `docs/PULSE_Edge_Network_Hardening.md` for deployment guidance (network placement, bind address, firewall, systemd sandboxing).
+
 **Pilot control:** Bind the management interface to a trusted network segment and terminate TLS at an approved reverse proxy. Do not expose the node directly to an untrusted network.  
 **Production disposition:** Phase 2 / G2.
 

@@ -10,7 +10,13 @@ public sealed class DiagnosticForwardingProvider : ILoggerProvider, ISupportExte
 {
     private readonly DiagnosticCaptureMonitor _captureMonitor;
     private readonly Channel<ForwardedDiagnostic> _queue = Channel.CreateBounded<ForwardedDiagnostic>(new BoundedChannelOptions(2_000) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
-    private readonly HttpClient _client = new() { BaseAddress = new Uri("http://127.0.0.1:5288"), Timeout = TimeSpan.FromSeconds(3) };
+    private static readonly HttpClientHandler LoopbackHandler = new()
+    {
+        // This client only ever talks to 127.0.0.1 (the local API's self-signed HTTPS cert).
+        // Traffic never leaves the machine, so accepting the loopback cert is safe.
+        ServerCertificateCustomValidationCallback = (_, _, _, _) => true,
+    };
+    private readonly HttpClient _client = new(LoopbackHandler) { BaseAddress = new Uri("https://127.0.0.1:5288"), Timeout = TimeSpan.FromSeconds(3) };
     private CancellationTokenSource? _stopping;
     private Task? _worker;
     private IExternalScopeProvider _scopeProvider = new LoggerExternalScopeProvider();

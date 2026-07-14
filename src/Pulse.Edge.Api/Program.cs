@@ -112,9 +112,14 @@ if (OperatingSystem.IsWindows())
     }
 }
 
-// Bind Kestrel port. Priority: Config override -> Default http://*:5288
-var serverUrl = builder.Configuration["serverUrl"] ?? "http://*:5288";
+// Bind Kestrel. Default HTTPS on :5288 with a local self-signed (or configured) certificate.
+var serverUrl = builder.Configuration["serverUrl"] ?? "https://*:5288";
 builder.WebHost.UseUrls(serverUrl);
+
+var certificateProvider = new Pulse.Edge.Api.Security.LocalCertificateProvider(builder.Configuration);
+var serverCertificate = certificateProvider.GetOrCreateCertificate();
+builder.WebHost.ConfigureKestrel(options =>
+    options.ConfigureHttpsDefaults(https => https.ServerCertificate = serverCertificate));
 
 // Enable running as a Windows Service
 builder.Host.UseWindowsService();
@@ -141,7 +146,13 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.Name = "pulse.edge.session";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        // Force the session cookie Secure in production (browser talks HTTPS directly to :5288).
+        // In Development the browser reaches the app over plaintext http://localhost:8080 (Vite
+        // dev proxy), where a Secure cookie is dropped by the browser — so it must not be Secure
+        // there. Production security is unchanged.
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.None
+            : CookieSecurePolicy.Always;
         options.SlidingExpiration = true;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = 401; return Task.CompletedTask; };
@@ -218,6 +229,11 @@ if (isSinglePort)
 }
 
 var app = builder.Build();
+
+if (Pulse.Edge.Api.Security.ForwardedHeadersConfig.IsEnabled(app.Configuration))
+{
+    app.UseForwardedHeaders(Pulse.Edge.Api.Security.ForwardedHeadersConfig.Build(app.Configuration));
+}
 
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseCors();

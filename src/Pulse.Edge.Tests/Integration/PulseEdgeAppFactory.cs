@@ -31,8 +31,24 @@ public class PulseEdgeAppFactory : WebApplicationFactory<Program>
     // rate-limiter state, so a throttled instance never affects the functional ones.
     protected virtual int LoginPermitLimit => 1000;
 
+    public PulseEdgeAppFactory()
+    {
+        // Forced-Secure cookies require the request to look like HTTPS. TestServer marks the
+        // request scheme from the client's base address URI — no real TLS is involved. Setting
+        // ClientOptions.BaseAddress here (rather than hiding CreateClient with `new`) is the
+        // idiomatic WebApplicationFactory approach: CreateClient() and CreateDefaultClient()
+        // both read from ClientOptions, so every call site gets the https:// base automatically
+        // without needing a base-typed reference to accidentally bypass an override.
+        ClientOptions.BaseAddress = new Uri("https://localhost");
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Run as Production so the integration tests simulate a real HTTPS deployment: the
+        // session cookie is forced Secure (matching the https:// client base address), which is
+        // what the Secure-cookie test asserts. In Development the app intentionally does not mark
+        // the cookie Secure (dev browser is on plaintext http://localhost:8080).
+        builder.UseEnvironment("Production");
         // MultiPort registers the endpoints but NOT the background services
         // (Worker, provisioning, config monitor), so tests don't spin up acquisition.
         builder.UseSetting("hostingMode", "MultiPort");

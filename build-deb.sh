@@ -94,6 +94,22 @@ User=pulse
 Group=pulse
 Environment=HOME=/var/lib/pulse-edge
 
+# --- Sandboxing (systemd) ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+CapabilityBoundingSet=
+# ProtectSystem=strict makes the filesystem read-only except these paths:
+ReadWritePaths=/var/lib/pulse-edge /opt/pulse-edge/logs
+# NOTE: do NOT add MemoryDenyWriteExecute=true — it breaks the .NET JIT.
+
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -134,6 +150,7 @@ chown -R pulse:pulse /var/lib/pulse-edge
 # Make binaries executable and set directory ownership
 chmod +x /opt/pulse-edge/Pulse.Edge
 chmod +x /opt/pulse-edge/Pulse.Edge.Agent
+mkdir -p /opt/pulse-edge/logs
 chown -R pulse:pulse /opt/pulse-edge
 
 # Reload systemd configuration
