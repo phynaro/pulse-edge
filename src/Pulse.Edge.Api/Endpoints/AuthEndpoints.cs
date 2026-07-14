@@ -65,7 +65,7 @@ public static class AuthEndpoints
             await db.SaveChangesAsync();
             await SignIn(context, user);
             return Results.Ok(ToUser(user));
-        });
+        }).RequireRateLimiting("login");
 
         routes.MapPost("/api/auth/logout", async (HttpContext context) =>
         {

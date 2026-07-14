@@ -43,8 +43,15 @@ public class QueueDbContext : DbContext
             return;
         }
 
+        // Default path resolution. An explicit PULSE_EDGE_DATA_DIR override wins (used by
+        // integration tests and by operators who relocate the data directory).
+        var overrideDir = Environment.GetEnvironmentVariable("PULSE_EDGE_DATA_DIR");
         string pulseFolder;
-        if (OperatingSystem.IsWindows())
+        if (!string.IsNullOrWhiteSpace(overrideDir))
+        {
+            pulseFolder = overrideDir;
+        }
+        else if (OperatingSystem.IsWindows())
         {
             var appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
             pulseFolder = Path.Combine(appDataFolder, "PULSE Edge");
@@ -54,10 +61,10 @@ public class QueueDbContext : DbContext
             var userFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             pulseFolder = Path.Combine(userFolder, ".pulse");
         }
-        
+
         Directory.CreateDirectory(pulseFolder); // Ensure the folder exists
         var dbPath = Path.Combine(pulseFolder, "edge.db");
-        
+
         optionsBuilder.UseSqlite($"Data Source={dbPath}");
     }
 }

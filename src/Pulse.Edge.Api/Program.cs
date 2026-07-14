@@ -29,6 +29,9 @@ using Pulse.Edge.Api.Security;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Pulse.Edge.Api.Diagnostics;
 using Pulse.Edge.Api.Services;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Configuration;
 
 
 // Configure Serilog daily rolling file and console logging
@@ -116,12 +119,16 @@ builder.WebHost.UseUrls(serverUrl);
 // Enable running as a Windows Service
 builder.Host.UseWindowsService();
 
-// Enable CORS so the development React UI running on port 8080 can poll the API on port 5244
+// Enable CORS so the development React UI running on port 8080 can poll the API on port 5244.
+// Allowed origins are configurable via "Cors:AllowedOrigins" (string array), falling back to
+// the localhost dev-server defaults when unset.
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? new[] { "http://localhost:8080", "http://127.0.0.1:8080" };
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:8080", "http://127.0.0.1:8080")
+        policy.WithOrigins(corsOrigins)
               .AllowCredentials()
               .AllowAnyMethod()
               .AllowAnyHeader();
@@ -141,6 +148,26 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Events.OnRedirectToAccessDenied = context => { context.Response.StatusCode = 403; return Task.CompletedTask; };
     });
 builder.Services.AddAuthorization();
+
+// IP-based login throttling (B-05). This is in addition to the existing per-account
+// 5-attempt / 15-minute lockout in AuthEndpoints — that guard is unchanged. This one
+// caps login attempts per source IP within a fixed window, independent of username.
+var loginPermitLimit = builder.Configuration.GetValue("RateLimiting:Login:PermitLimit", 10);
+var loginWindowSeconds = builder.Configuration.GetValue("RateLimiting:Login:WindowSeconds", 300);
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = loginPermitLimit,
+                Window = TimeSpan.FromSeconds(loginWindowSeconds),
+                QueueLimit = 0,
+            }));
+});
+
 builder.Services.AddSingleton<PasswordService>();
 builder.Services.AddSingleton(diagnosticLogs);
 builder.Services.AddSingleton<ConfigurationBackupService>();
@@ -192,10 +219,12 @@ if (isSinglePort)
 
 var app = builder.Build();
 
+app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseCors();
 app.UseAuthentication();
 app.UseMiddleware<CurrentUserValidationMiddleware>();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 if (isSinglePort)
 {
@@ -263,3 +292,6 @@ finally
 {
     Log.CloseAndFlush();
 }
+
+// Exposes the implicit top-level Program type to the test project for WebApplicationFactory<Program>.
+public partial class Program { }
