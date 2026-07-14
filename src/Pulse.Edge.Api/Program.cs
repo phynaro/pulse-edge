@@ -277,6 +277,10 @@ if (Pulse.Edge.Api.Security.ForwardedHeadersConfig.IsEnabled(app.Configuration))
 }
 
 app.UseMiddleware<SecurityHeadersMiddleware>();
+// Enforces the restore-body size cap before routing hands the request to Minimal API model
+// binding (see RestoreBodySizeLimitMiddleware for why the endpoint's own ContentLength check
+// alone isn't enough).
+app.UseMiddleware<RestoreBodySizeLimitMiddleware>();
 app.UseCors();
 app.UseAuthentication();
 app.UseMiddleware<CurrentUserValidationMiddleware>();

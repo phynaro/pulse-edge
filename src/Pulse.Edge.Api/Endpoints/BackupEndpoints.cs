@@ -7,9 +7,10 @@ namespace Pulse.Edge.Api.Endpoints;
 
 public static class BackupEndpoints
 {
-    // Restore bodies are small config documents; 5 MB is a generous ceiling that still bounds
-    // memory use against a malicious or corrupt oversized upload.
-    private const long MaxRestoreBodyBytes = 5 * 1024 * 1024;
+    // The restore body size cap (RestoreBodySizeLimitMiddleware.MaxRestoreBodyBytes) is enforced
+    // by middleware ahead of routing, before Minimal API model binding ever deserializes the
+    // request body -- see that class for why an in-handler ContentLength check alone isn't
+    // enough (it doesn't run early enough, and misses chunked requests with no Content-Length).
 
     public static void MapBackupEndpoints(this IEndpointRouteBuilder routes)
     {
@@ -25,7 +26,6 @@ public static class BackupEndpoints
 
         routes.MapPost("/api/restores/configuration/inspect", (ConfigurationBackupDocument document, ConfigurationBackupService backups, HttpContext context) =>
         {
-            if (context.Request.ContentLength is > MaxRestoreBodyBytes) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
             if (!context.User.IsInRole("Admin")) return Results.Forbid();
 
             var inspection = backups.Inspect(document);
@@ -34,7 +34,6 @@ public static class BackupEndpoints
 
         routes.MapPost("/api/restores/configuration/apply", async (ConfigurationBackupDocument document, ConfigurationBackupService backups, HttpContext context, CancellationToken cancellationToken) =>
         {
-            if (context.Request.ContentLength is > MaxRestoreBodyBytes) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
             if (!context.User.IsInRole("Admin")) return Results.Forbid();
 
             var inspection = backups.Inspect(document);
