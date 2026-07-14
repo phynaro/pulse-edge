@@ -16,17 +16,22 @@ public static class DashboardEndpoints
 {
     public static void MapDashboardEndpoints(this IEndpointRouteBuilder routes)
     {
-        routes.MapGet("/api/dashboard", async (QueueStorageService storageService) =>
+        routes.MapGet("/api/dashboard", async (QueueStorageService storageService, HttpContext context) =>
         {
             using var db = new QueueDbContext();
-            
+
             // Ensure database is created (just in case API is run before Agent)
             await db.Database.EnsureCreatedAsync();
-            
+
             var config = await db.DeviceConfigs.FirstOrDefaultAsync();
-            
+
             int pendingTelemetryCount = await db.QueueTelemetry.CountAsync();
             int pendingEventsCount = await db.QueueEvents.CountAsync();
+
+            // Pairing credentials are Admin-only once the device is commissioned. During initial
+            // setup (no users yet) they must be visible so the operator can pair the device.
+            bool hasUsers = await db.LocalUsers.AnyAsync();
+            bool showPairing = !hasUsers || context.User.IsInRole("Admin");
 
             return Results.Ok(new
             {
@@ -40,10 +45,10 @@ public static class DashboardEndpoints
                     DeviceId = config?.Id ?? "Not Registered",
                     CloudEdgeId = config?.CloudEdgeId ?? "Not Registered",
                     SerialNumber = config?.SerialNumber ?? "N/A",
-                    PairingToken = config?.PairingToken ?? "",
-                    PairingShortCode = config?.PairingShortCode ?? "",
-                    PairingExpiresAt = config != null && config.PairingExpiresAt.HasValue ? DateTime.SpecifyKind(config.PairingExpiresAt.Value, DateTimeKind.Utc) : (DateTime?)null,
-                    PairingBaseUrl = config?.PairingBaseUrl ?? "",
+                    PairingToken = showPairing ? (config?.PairingToken ?? "") : "",
+                    PairingShortCode = showPairing ? (config?.PairingShortCode ?? "") : "",
+                    PairingExpiresAt = showPairing && config != null && config.PairingExpiresAt.HasValue ? DateTime.SpecifyKind(config.PairingExpiresAt.Value, DateTimeKind.Utc) : (DateTime?)null,
+                    PairingBaseUrl = showPairing ? (config?.PairingBaseUrl ?? "") : "",
                     OrganizationId = config?.OrganizationId ?? "N/A",
                     OrganizationName = config?.OrganizationName ?? "N/A",
                     SiteId = config?.SiteId ?? "N/A",

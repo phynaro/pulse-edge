@@ -19,14 +19,18 @@ public static class BackupEndpoints
             return Results.File(backups.Serialize(document), "application/json", fileName);
         });
 
-        routes.MapPost("/api/restores/configuration/inspect", (ConfigurationBackupDocument document, ConfigurationBackupService backups) =>
+        routes.MapPost("/api/restores/configuration/inspect", (ConfigurationBackupDocument document, ConfigurationBackupService backups, HttpContext context) =>
         {
+            if (!context.User.IsInRole("Admin")) return Results.Forbid();
+
             var inspection = backups.Inspect(document);
             return inspection.IsValid ? Results.Ok(inspection) : Results.BadRequest(inspection);
         });
 
         routes.MapPost("/api/restores/configuration/apply", async (ConfigurationBackupDocument document, ConfigurationBackupService backups, HttpContext context, CancellationToken cancellationToken) =>
         {
+            if (!context.User.IsInRole("Admin")) return Results.Forbid();
+
             var inspection = backups.Inspect(document);
             if (!inspection.IsValid)
             {

@@ -29,8 +29,10 @@ public static class SettingsEndpoints
         });
 
         // POST /api/settings/toggle-sync - Toggles sync status flag in SQLite
-        routes.MapPost("/api/settings/toggle-sync", async () =>
+        routes.MapPost("/api/settings/toggle-sync", async (HttpContext context) =>
         {
+            if (!context.User.IsInRole("Admin")) return Results.Forbid();
+
             using var db = new QueueDbContext();
             var config = await db.DeviceConfigs.FirstOrDefaultAsync();
             if (config != null)
@@ -136,6 +138,8 @@ public static class SettingsEndpoints
         // POST /api/settings/factory-reset - Deletes all configurations and resets the edge agent to factory settings
         routes.MapPost("/api/settings/factory-reset", async (IEnumerable<IHostedService> hostedServices, HttpContext context) =>
         {
+            if (!context.User.IsInRole("Admin")) return Results.Forbid();
+
             using var db = new QueueDbContext();
             try
             {
@@ -168,8 +172,10 @@ public static class SettingsEndpoints
         });
 
         // POST /api/settings/soft-reset - Resets the cloud pairing credentials but preserves local configurations
-        routes.MapPost("/api/settings/soft-reset", async (IEnumerable<IHostedService> hostedServices) =>
+        routes.MapPost("/api/settings/soft-reset", async (IEnumerable<IHostedService> hostedServices, HttpContext context) =>
         {
+            if (!context.User.IsInRole("Admin")) return Results.Forbid();
+
             using var db = new QueueDbContext();
             try
             {
