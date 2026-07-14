@@ -132,6 +132,13 @@ The current `/health` response reports a static healthy state and does not prove
 **Pilot control:** Use the dashboard and diagnostic logs in addition to process monitoring.  
 **Production disposition:** Phase 5 / G5 structured health checks.
 
+## Accepted risks
+
+- **R-010 — Config integrity hash is unkeyed (Windows-only, accepted).** The `config.json.sha256`
+  integrity check detects accidental change but not authenticated tampering. It is Windows-only,
+  and Windows deployment is deferred (R-006), so this is accepted as a documented risk. Reinstate a
+  keyed MAC (e.g. HMAC keyed by the DataProtection key) when Windows returns to the supported scope.
+
 ## Pilot acceptance
 
 Acceptance means the pilot stakeholders understand the limitations and controls; it does not close the corresponding production work.
