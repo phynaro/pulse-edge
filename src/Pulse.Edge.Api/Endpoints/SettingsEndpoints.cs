@@ -62,6 +62,9 @@ public static class SettingsEndpoints
         // POST /api/settings - Saves updated DeviceConfig (Cloud Endpoint, Serial Number) to SQLite database
         routes.MapPost("/api/settings", async (UpdateSettingsRequest request, IEnumerable<IHostedService> hostedServices) =>
         {
+            if (!Pulse.Edge.Cloud.Services.CloudClient.IsAcceptableCloudEndpoint(request.CloudEndpoint))
+                return Results.BadRequest(new { error = "Cloud endpoint must use https:// (localhost may use http)." });
+
             using var db = new QueueDbContext();
             var config = await db.DeviceConfigs.FirstOrDefaultAsync();
             
@@ -232,9 +235,9 @@ public static class SettingsEndpoints
                 return Results.BadRequest(new { error = "Cloud target URL cannot be empty." });
             }
 
-            if (!request.CloudEndpoint.StartsWith("http://") && !request.CloudEndpoint.StartsWith("https://"))
+            if (!Pulse.Edge.Cloud.Services.CloudClient.IsAcceptableCloudEndpoint(request.CloudEndpoint))
             {
-                return Results.BadRequest(new { error = "Target URL must start with http:// or https://" });
+                return Results.BadRequest(new { error = "Cloud endpoint must use https:// (localhost may use http)." });
             }
 
             try

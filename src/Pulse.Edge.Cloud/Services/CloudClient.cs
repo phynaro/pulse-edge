@@ -104,7 +104,25 @@ public class CloudClient
         }
         baseUrl = baseUrl.TrimEnd('/');
         path = path.TrimStart('/');
-        return new Uri($"{baseUrl}/{path}");
+        var full = $"{baseUrl}/{path}";
+        if (!IsAcceptableCloudEndpoint(baseUrl))
+            throw new InvalidOperationException(
+                $"Refusing to contact PULSE Cloud over an insecure endpoint '{baseUrl}'. Use https:// (loopback may use http).");
+        return new Uri(full);
+    }
+
+    /// <summary>
+    /// True iff the endpoint is safe to use for a cloud connection: scheme is <c>https</c>,
+    /// or scheme is <c>http</c> and the host is loopback (localhost/127.0.0.1/::1), which keeps
+    /// local dev against a local cloud instance working without weakening the production check.
+    /// </summary>
+    public static bool IsAcceptableCloudEndpoint(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        if (uri.Scheme == Uri.UriSchemeHttps) return true;
+        if (uri.Scheme == Uri.UriSchemeHttp) return uri.IsLoopback;
+        return false;
     }
 
     private static string ComputeSha256Hash(string input)
