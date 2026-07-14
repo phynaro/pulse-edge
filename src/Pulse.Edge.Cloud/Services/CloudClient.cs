@@ -104,11 +104,10 @@ public class CloudClient
         }
         baseUrl = baseUrl.TrimEnd('/');
         path = path.TrimStart('/');
-        var full = $"{baseUrl}/{path}";
         if (!IsAcceptableCloudEndpoint(baseUrl))
             throw new InvalidOperationException(
                 $"Refusing to contact PULSE Cloud over an insecure endpoint '{baseUrl}'. Use https:// (loopback may use http).");
-        return new Uri(full);
+        return new Uri($"{baseUrl}/{path}");
     }
 
     /// <summary>

@@ -31,6 +31,17 @@ public class PulseEdgeAppFactory : WebApplicationFactory<Program>
     // rate-limiter state, so a throttled instance never affects the functional ones.
     protected virtual int LoginPermitLimit => 1000;
 
+    public PulseEdgeAppFactory()
+    {
+        // Forced-Secure cookies require the request to look like HTTPS. TestServer marks the
+        // request scheme from the client's base address URI — no real TLS is involved. Setting
+        // ClientOptions.BaseAddress here (rather than hiding CreateClient with `new`) is the
+        // idiomatic WebApplicationFactory approach: CreateClient() and CreateDefaultClient()
+        // both read from ClientOptions, so every call site gets the https:// base automatically
+        // without needing a base-typed reference to accidentally bypass an override.
+        ClientOptions.BaseAddress = new Uri("https://localhost");
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // MultiPort registers the endpoints but NOT the background services
@@ -38,18 +49,6 @@ public class PulseEdgeAppFactory : WebApplicationFactory<Program>
         builder.UseSetting("hostingMode", "MultiPort");
         builder.UseSetting("RateLimiting:Login:PermitLimit", LoginPermitLimit.ToString());
     }
-
-    // Forced-Secure cookies require the request to look like HTTPS. TestServer marks the
-    // request scheme from the client's base address URI — no real TLS is involved. Note:
-    // WebApplicationFactory.CreateDefaultClient(...) re-applies WebApplicationFactoryClientOptions.BaseAddress
-    // to the HttpClient *after* invoking ConfigureClient(), so overriding ConfigureClient alone
-    // is not sufficient to change the scheme — the options' BaseAddress must be overridden instead.
-    // CreateClient() is not virtual on the base class, so this intentionally hides it (`new`);
-    // every call site in this test project references the `PulseEdgeAppFactory` type directly
-    // (via primary-constructor parameters / IClassFixture<PulseEdgeAppFactory>), so the hiding
-    // member resolves correctly everywhere.
-    public new HttpClient CreateClient() =>
-        CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
 
     public async Task ResetDatabaseAsync()
     {

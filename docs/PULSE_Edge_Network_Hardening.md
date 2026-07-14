@@ -41,4 +41,7 @@ in-product controls delivered in Phase 2 (local HTTPS, enforced cloud HTTPS, aut
 ## Windows
 
 Windows deployment and service-account hardening are deferred (decision R-006) and must be
-reinstated before a Windows-supporting release.
+reinstated before a Windows-supporting release. When reinstated, the installer's health check
+(`PulseEdge.iss` `/health` probe) and Dashboard shortcuts must be switched from
+`http://localhost:<port>` to `https://` (with cert-error-ignore on the loopback health probe),
+since the API is now HTTPS by default.

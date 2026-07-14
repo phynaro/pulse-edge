@@ -134,7 +134,7 @@ wait_for_http() {
   local elapsed=0
 
   echo "⏳ Waiting for $label to be ready at $url..."
-  until curl -sf -o /dev/null "$url"; do
+  until curl -skf -o /dev/null "$url"; do
     if [ "$elapsed" -ge "$timeout" ]; then
       echo "❌ Timed out after ${timeout}s waiting for $label. Aborting."
       exit 1
@@ -170,7 +170,7 @@ fi
 
 if [ "$HOSTING_MODE" == "SinglePort" ]; then
   # 1. Start local Unified Edge Server (Hosts API & background Agent)
-  echo "🔌 Starting Unified Edge Server (on http://localhost:5288)..."
+  echo "🔌 Starting Unified Edge Server (on https://localhost:5288)..."
   dotnet run --no-build --project src/Pulse.Edge.Api/Pulse.Edge.Api.csproj &
   echo $! >> "$PID_FILE"
 else
@@ -180,13 +180,13 @@ else
   echo $! >> "$PID_FILE"
 
   # 2. Start separate local REST API
-  echo "🔌 Starting Edge API Server (on http://localhost:5288)..."
+  echo "🔌 Starting Edge API Server (on https://localhost:5288)..."
   dotnet run --no-build --project src/Pulse.Edge.Api/Pulse.Edge.Api.csproj &
   echo $! >> "$PID_FILE"
 fi
 
 # Wait for the API to be healthy before starting the UI
-wait_for_http "http://localhost:5288/health" "Edge API" 90
+wait_for_http "https://localhost:5288/health" "Edge API" 90
 
 # Start local React Web UI (only after API is up)
 echo "💻 Starting Vite Web UI Server (on http://localhost:8080)..."
