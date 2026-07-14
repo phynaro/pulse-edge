@@ -320,6 +320,9 @@ using (var scope = app.Services.CreateScope())
     try
     {
         await storage.InitializeAsync();
+        // One-time legacy-plaintext migration (B-07): re-encrypts any pre-2C cloud creds
+        // written before SecretProtection.Protector existed. No-op on subsequent boots.
+        await Pulse.Edge.Api.Security.CloudCredentialMigration.MigrateAsync();
     }
     catch (Exception ex)
     {
