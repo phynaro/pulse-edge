@@ -34,4 +34,8 @@
     <ProjectReference Include="..\Pulse.Edge.Agent\Pulse.Edge.Agent.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pulse.Edge.Tests" />
+  </ItemGroup>
+
 </Project>
