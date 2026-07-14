@@ -9,6 +9,11 @@ public static class CloudCredentialMigration
     // Re-writes legacy plaintext cloud creds as ciphertext. Idempotent: does nothing once all
     // three raw fields are already empty-or-protected. `dbPath` null => the default path.
     //
+    // Known ambiguity: ciphertext from a lost/replaced key ring is indistinguishable from
+    // legacy plaintext (both fail Unprotect), so after key loss this re-wraps the unreadable
+    // old ciphertext under the new key. Harmless — the value was already unrecoverable and
+    // the device must re-pair either way (see docs/PULSE_Edge_Credential_Rotation.md).
+    //
     // ApiKey alone isn't a reliable gate: a pre-upgrade device mid-pairing
     // (CloudStatus == "PendingApproval") has an empty ApiKey but real plaintext
     // ClaimSecret/PairingToken — CloudProvisioningService generates those two before the

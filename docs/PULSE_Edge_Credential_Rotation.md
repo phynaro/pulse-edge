@@ -7,9 +7,10 @@ How to rotate each secret the edge holds.
 These are the device's identity to PULSE Cloud. They are stored **encrypted at rest** (Slice 2C)
 and are re-issuable from the cloud, so rotation is a **re-pair**:
 
-1. In the local UI, run **Soft Reset** (Settings). This regenerates `ClaimSecret` and
-   `PairingToken`, clears `ApiKey`, and sets `CloudStatus = PendingApproval` — local adapter/tag
-   configuration is preserved.
+1. In the local UI, run **Soft Reset** (Settings). This regenerates the device identity
+   (`DeviceId`) along with `ClaimSecret` and `PairingToken`, clears `ApiKey`, and sets
+   `CloudStatus = PendingApproval` — local adapter/tag configuration is preserved, but the
+   cloud sees the re-paired device as a new edge node.
 2. Re-approve the device in PULSE Cloud (the normal pairing flow) to issue a fresh `ApiKey`.
 
 Use this if a cloud credential is suspected leaked, or when moving the device between
