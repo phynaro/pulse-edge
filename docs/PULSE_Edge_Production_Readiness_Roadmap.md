@@ -28,7 +28,7 @@ Update this table first. Keep exactly one phase marked `In progress` unless an u
 |---|---|---|---|---|---|---|
 | 0 | Pilot baseline | Blocked | Engineering + stakeholders | TBD | G0 | Windows validation deferred (R-006); close the Linux-target G0 items — support matrix, capacity thresholds, accepted limitations — and the load/outage fixture |
 | 1 | Engineering candidate | Passed | Engineering | 2026-07-13 | G1 | Gate passed 2026-07-13 by project-owner authorization (formal multi-reviewer panel waived). Phase closed. |
-| 2 | Security candidate | In progress | Engineering | TBD | G2 | Threat model + hardening backlog delivered ([PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md)); no Critical finding after verified review; execute Slice 2A next (B-02 explicit authz, B-01, B-04, B-05); B-06 setup-window accepted as risk R-009 |
+| 2 | Security candidate | In progress | Engineering | TBD | G2 | Slice 2A (response & authz hygiene: B-02/B-01/B-04/B-05) merged (PR #12). Slice 2B (transport security: B-03 local HTTPS, B-08 enforced cloud HTTPS, B-14 hardening, forwarded headers) in progress. Slices 2C/2D remain before the gate. |
 | 3 | Commissioning candidate | Not started | TBD | TBD | G3 | Design validate/apply/rollback configuration flow |
 | 4 | Reliability candidate | Not started | TBD | TBD | G4 | Define retention, queue limits, and disk thresholds |
 | 5 | Operations candidate | Not started | TBD | TBD | G5 | Define subsystem health and support bundle contract |
@@ -162,8 +162,10 @@ These observations were recorded during the initial product review and should be
 
 **Evidence:**
 
-- Threat model: [PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md) — STRIDE-per-boundary register (23 threats), decomposed hardening backlog (16 items), and the Slice 2A–2D implementation sequence. No Critical finding after verified review (an initial Critical on B-01 was corrected to Medium — see the threat-model correction note); highest open severity is High (B-06 setup-window hardening).
-- Endpoint authorization test report: TBD
+- Threat model: [PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md) — STRIDE-per-boundary register (23 threats), decomposed hardening backlog (16 items), and the Slice 2A–2D implementation sequence. No Critical finding after verified review; B-06 (setup-window) accepted as R-009, so the highest open (unaccepted) severity is High (B-03 HTTP-default cookie, addressed in Slice 2B).
+- Slice 2A (response & authorization hygiene): merged ([PR #12](https://github.com/phynaro/pulse-edge/pull/12)) — explicit Admin guards + authorization-matrix test (B-02), dashboard pairing fields restricted to Admin (B-01), security headers + configurable CORS (B-04), IP-based login throttling (B-05), on a new `WebApplicationFactory` integration-test harness. Five per-task reviews + a whole-branch review (clean); backend suite 65/65.
+- Slice 2B (transport security): designed + planned — [design spec](superpowers/specs/2026-07-14-slice-2b-transport-security-design.md), [implementation plan](superpowers/plans/2026-07-14-slice-2b-transport-security.md); implementation in progress (B-03 local self-signed HTTPS + forced-Secure cookie, B-08 enforced cloud HTTPS, B-14 systemd sandboxing + network-hardening doc, config-gated forwarded headers).
+- Endpoint authorization test report: `AuthorizationMatrixTests` (5 endpoints × anonymous→401 / ReadOnly→403), merged in PR #12.
 - Security scan: TBD
 - Backup abuse test report: TBD
 - Security exception register: TBD
@@ -447,6 +449,7 @@ Add one row for every gate review, including unsuccessful reviews.
 | 2026-07-13 | G2 | In progress | Phase 2 opened. Threat model delivered ([PULSE_Edge_Threat_Model.md](PULSE_Edge_Threat_Model.md)): STRIDE per trust boundary, 23 threats, 16-item decomposed backlog, Slice 2A–2D sequence. One Critical finding (B-01: `PairingToken`/`ClaimSecret` returned plaintext by the anonymous `/api/dashboard`). Decision R-008 recorded (device creds stay plaintext + backup-recoverable; the "encrypt … protocol credentials" gate item is narrowed to cloud keys only). | Execute Slice 2A (B-01, B-02, B-04, B-05, B-06), starting with the Critical finding B-01. |
 | 2026-07-13 | G2 | In progress | Threat-model finding reassessed against the code: the B-01 "Critical" (pairing secret readable anonymously) was overstated. `/api/dashboard` is auth-gated once the device is commissioned (`CurrentUserValidationMiddleware.cs:51-59`) and `ClaimSecret` is never returned to any client. B-01 corrected to Medium (restrict pairing fields to the Admin role); the residual anonymous exposure exists only during the pre-first-admin setup window and folds into B-06. **No Critical finding remains.** | Proceed with Slice 2A in corrected priority order: B-06, B-02, B-01, B-04, B-05. |
 | 2026-07-13 | G2 | In progress | Project owner accepted the setup-window risk (R-009); B-06 is dropped, no mechanism implemented. Slice 2A trimmed to four items: B-02 (explicit authz + matrix test), B-01 (restrict pairing fields to Admin), B-04 (security headers + configurable CORS), B-05 (IP login throttling). | Write and execute the Slice 2A implementation plan. |
+| 2026-07-14 | G2 | In progress | Slice 2A merged to `main` (PR #12): B-02/B-01/B-04/B-05 plus a `WebApplicationFactory` integration-test harness; five per-task reviews + a whole-branch review (Opus) clean; 65/65 backend tests. Slice 2B (transport security) designed, planned, and in execution. | Execute Slice 2B (B-03 local HTTPS + Secure cookie, B-08 enforced cloud HTTPS, forwarded headers, B-14 systemd/docs), then Slices 2C/2D. |
 
 ## Decision and risk log
 
