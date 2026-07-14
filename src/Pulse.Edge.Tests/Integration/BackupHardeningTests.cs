@@ -2,6 +2,9 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Pulse.Edge.Tests.Integration;
 
 namespace Pulse.Edge.Tests.Integration;
@@ -81,6 +84,23 @@ public sealed class BackupHardeningTests(PulseEdgeAppFactory factory) : IClassFi
         var response = await admin.PostAsync("/api/restores/configuration/apply", content);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/backups/configuration")]
+    [InlineData("/api/restores/configuration/inspect")]
+    [InlineData("/api/restores/configuration/apply")]
+    public void Backup_and_restore_endpoints_declare_authorization_metadata(string path)
+    {
+        // Defense in depth: CurrentUserValidationMiddleware already rejects anonymous /api calls,
+        // but these endpoints must also carry their own authorization requirement so a future
+        // change to the middleware's path handling cannot silently expose them.
+        var endpoint = factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(s => s.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Single(e => string.Equals("/" + (e.RoutePattern.RawText ?? "").TrimStart('/'), path, StringComparison.OrdinalIgnoreCase));
+
+        Assert.NotNull(endpoint.Metadata.GetMetadata<IAuthorizeData>());
     }
 
     private static HttpRequestMessage BuildChunkedOversizedRequest(string path)

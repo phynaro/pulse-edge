@@ -22,7 +22,7 @@ public static class BackupEndpoints
             var serial = SafeFilePart(document.SourceSerialNumber);
             var fileName = $"pulse-edge-{serial}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.pulsebackup.json";
             return Results.File(backups.Serialize(document), "application/json", fileName);
-        });
+        }).RequireAuthorization();
 
         routes.MapPost("/api/restores/configuration/inspect", (ConfigurationBackupDocument document, ConfigurationBackupService backups, HttpContext context) =>
         {
@@ -30,7 +30,7 @@ public static class BackupEndpoints
 
             var inspection = backups.Inspect(document);
             return inspection.IsValid ? Results.Ok(inspection) : Results.BadRequest(inspection);
-        });
+        }).RequireAuthorization();
 
         routes.MapPost("/api/restores/configuration/apply", async (ConfigurationBackupDocument document, ConfigurationBackupService backups, HttpContext context, CancellationToken cancellationToken) =>
         {
@@ -54,7 +54,7 @@ public static class BackupEndpoints
                 await AuditAsync(context, "ConfigurationRestore", false, cancellationToken);
                 throw;
             }
-        });
+        }).RequireAuthorization();
     }
 
     private static string SafeFilePart(string value)
