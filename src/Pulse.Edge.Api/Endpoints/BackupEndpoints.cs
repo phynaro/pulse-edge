@@ -7,6 +7,11 @@ namespace Pulse.Edge.Api.Endpoints;
 
 public static class BackupEndpoints
 {
+    // The restore body size cap (RestoreBodySizeLimitMiddleware.MaxRestoreBodyBytes) is enforced
+    // by middleware ahead of routing, before Minimal API model binding ever deserializes the
+    // request body -- see that class for why an in-handler ContentLength check alone isn't
+    // enough (it doesn't run early enough, and misses chunked requests with no Content-Length).
+
     public static void MapBackupEndpoints(this IEndpointRouteBuilder routes)
     {
         routes.MapGet("/api/backups/configuration", async (ConfigurationBackupService backups, HttpContext context, CancellationToken cancellationToken) =>

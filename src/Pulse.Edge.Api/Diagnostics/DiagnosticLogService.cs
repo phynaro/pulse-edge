@@ -154,7 +154,7 @@ public sealed class DiagnosticLogService : BackgroundService, ILogEventSink
     }
 
     private static string Property(LogEvent item, string name, string fallback) => item.Properties.TryGetValue(name, out var value) ? value.ToString().Trim('"') : fallback;
-    private static string Sanitize(string value, int max) { var safe = SensitiveValue.Replace(value, "$1=[REDACTED]"); return safe.Length <= max ? safe : safe[..max] + "…"; }
+    internal static string Sanitize(string value, int max) { var safe = SensitiveValue.Replace(value, "$1=[REDACTED]"); return safe.Length <= max ? safe : safe[..max] + "…"; }
     private static string LevelName(LogEventLevel level) => level switch { LogEventLevel.Fatal => "Critical", LogEventLevel.Error => "Error", LogEventLevel.Warning => "Warning", LogEventLevel.Debug => "Debug", _ => "Information" };
 }
 

@@ -32,6 +32,14 @@ in-product controls delivered in Phase 2 (local HTTPS, enforced cloud HTTPS, aut
 - HSTS is intentionally not sent while a self-signed certificate is in use (it would prevent the
   click-through). Enable it only after configuring a trusted certificate.
 
+## Data at rest
+
+The cloud credentials are encrypted in the local database (Slice 2C) with an on-disk key. This
+protects a **copied** database (support bundle, stray file, partial backup) but **not** theft of
+the whole powered device — the key lives on the same disk. For full-disk-theft protection, enable
+**LUKS full-disk encryption** (or a TPM-sealed key) on the host; this is a deployment control.
+Device/protocol credentials remain plaintext by design (recoverable via backup — decision R-008).
+
 ## Least-privilege service (Linux)
 
 - The `.deb` package runs the service as a dedicated non-root user (`pulse`) under a systemd

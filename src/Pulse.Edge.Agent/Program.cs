@@ -10,6 +10,32 @@ using Pulse.Edge.Protocols.RestApi;
 using Pulse.Edge.Protocols.Bacnet;
 using Pulse.Edge.Agent.Drivers;
 using Pulse.Edge.Agent.Services;
+using Pulse.Edge.Agent.Security;
+using Microsoft.AspNetCore.DataProtection;
+
+// MultiPort dev mode runs this Agent process alongside the separate Api process, both reading
+// and writing the same edge.db. Cloud credentials (DeviceConfig.ApiKey/ClaimSecret/PairingToken)
+// are encrypted at rest via SecretProtection.Protector (Slice 2C / B-07); without setting it
+// here, the Agent would fall back to the passthrough protector and (a) write those fields back
+// as plaintext, and (b) fail to decrypt ciphertext the Api process wrote. The key directory and
+// application name below MUST match the Api's DataProtection registration in
+// src/Pulse.Edge.Api/Program.cs exactly, or ciphertext produced by one process is unreadable by
+// the other.
+var edgeDataDir = Environment.GetEnvironmentVariable("PULSE_EDGE_DATA_DIR");
+if (string.IsNullOrWhiteSpace(edgeDataDir))
+{
+    edgeDataDir = OperatingSystem.IsWindows()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PULSE Edge")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".pulse");
+}
+var dpKeysDir = Path.Combine(edgeDataDir, "dp-keys");
+Directory.CreateDirectory(dpKeysDir);
+if (!OperatingSystem.IsWindows())
+{
+    File.SetUnixFileMode(dpKeysDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+}
+Pulse.Edge.Storage.Security.SecretProtection.Protector = new DataProtectionSecretProtector(
+    DataProtectionProvider.Create(new DirectoryInfo(dpKeysDir), b => b.SetApplicationName("pulse-edge")));
 
 var builder = Host.CreateApplicationBuilder(args);
 

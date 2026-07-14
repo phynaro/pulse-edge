@@ -32,6 +32,7 @@ using Pulse.Edge.Api.Services;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.DataProtection;
 
 
 // Configure Serilog daily rolling file and console logging
@@ -184,6 +185,36 @@ builder.Services.AddSingleton(diagnosticLogs);
 builder.Services.AddSingleton<ConfigurationBackupService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<DiagnosticLogService>());
 
+// DataProtection key ring for encrypting cloud credentials at rest (Slice 2C / B-07). The keys
+// live alongside edge.db under the same data directory so a relocated/override data dir keeps
+// its own key ring (matching QueueDbContext's path resolution below).
+var edgeDataDir = Environment.GetEnvironmentVariable("PULSE_EDGE_DATA_DIR");
+if (string.IsNullOrWhiteSpace(edgeDataDir))
+{
+    edgeDataDir = OperatingSystem.IsWindows()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PULSE Edge")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".pulse");
+}
+var dpKeysDir = Path.Combine(edgeDataDir, "dp-keys");
+Directory.CreateDirectory(dpKeysDir);
+if (!OperatingSystem.IsWindows())
+{
+    File.SetUnixFileMode(dpKeysDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+}
+// NOTE: this key ring is also the ambient key ring ASP.NET Core's cookie auth uses to protect
+// the session cookie's authentication ticket — that sharing is intentional (one key ring, one
+// set of keys persisted under the data dir, so both cookie auth and cloud-credential encryption
+// survive process restarts). Consequence, accepted by the project owner: the first boot after
+// this change redirects cookie auth onto these persisted keys instead of its previous in-memory
+// or default key ring, which invalidates any existing UI session cookies (one-time re-login;
+// nothing else is re-encrypted or migrated). Do not rename/move `dpKeysDir` or the application
+// name casually — besides invalidating sessions again, the Agent process (MultiPort mode) must
+// construct its DataProtection provider with this exact same key directory and application name
+// ("pulse-edge") for cloud-credential ciphertext to be readable across both processes.
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dpKeysDir))
+    .SetApplicationName("pulse-edge");
+
 // Register SQLite storage service and transient protocol drivers
 builder.Services.AddSingleton<QueueStorageService>();
 builder.Services.AddTransient<OpcUaDriver>();
@@ -230,12 +261,26 @@ if (isSinglePort)
 
 var app = builder.Build();
 
+// Publish the DataProtection-backed secret protector so every QueueDbContext value conversion
+// (Storage project has no DI/ASP.NET dependency) can reach it before any storage I/O happens.
+// DataProtectionSecretProtector lives in Pulse.Edge.Agent.Security (not Api) so the Agent
+// process — which has no ASP.NET shared framework of its own — can construct the exact same
+// wrapper class when it wires up its own DataProtection provider in MultiPort mode. Both
+// processes must use the same class, app name, and key directory for ciphertext to interoperate.
+Pulse.Edge.Storage.Security.SecretProtection.Protector =
+    new Pulse.Edge.Agent.Security.DataProtectionSecretProtector(
+        app.Services.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>());
+
 if (Pulse.Edge.Api.Security.ForwardedHeadersConfig.IsEnabled(app.Configuration))
 {
     app.UseForwardedHeaders(Pulse.Edge.Api.Security.ForwardedHeadersConfig.Build(app.Configuration));
 }
 
 app.UseMiddleware<SecurityHeadersMiddleware>();
+// Enforces the restore-body size cap before routing hands the request to Minimal API model
+// binding (see RestoreBodySizeLimitMiddleware for why the endpoint's own ContentLength check
+// alone isn't enough).
+app.UseMiddleware<RestoreBodySizeLimitMiddleware>();
 app.UseCors();
 app.UseAuthentication();
 app.UseMiddleware<CurrentUserValidationMiddleware>();
@@ -279,6 +324,9 @@ using (var scope = app.Services.CreateScope())
     try
     {
         await storage.InitializeAsync();
+        // One-time legacy-plaintext migration (B-07): re-encrypts any pre-2C cloud creds
+        // written before SecretProtection.Protector existed. No-op on subsequent boots.
+        await Pulse.Edge.Api.Security.CloudCredentialMigration.MigrateAsync();
     }
     catch (Exception ex)
     {
