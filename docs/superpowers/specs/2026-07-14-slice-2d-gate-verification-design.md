@@ -103,11 +103,9 @@ since G1 (NuGet audit, pnpm audit). Add the missing two; the repo is public so b
   `javascript-typescript`, triggers: pull request to `main`, push to `main`, weekly
   schedule. Default query suite. .NET build via the pinned SDK (`global.json`) so autobuild
   succeeds.
-- **gitleaks:** new job in `quality.yml` (or the CodeQL workflow) running gitleaks over the
-  full history (`fetch-depth: 0`). No custom allowlist entries for real-looking secrets;
-  test credentials already go through the `TestCredentials` helper convention. If historical
-  hits appear, they are triaged: real secret → rotate + register entry; false positive →
-  narrowest possible `.gitleaks.toml` allowlist rule with a comment.
+- **gitleaks:** already present — `quality.yml` has a `secrets` job running
+  `gitleaks/gitleaks-action@v2` over the full history (`fetch-depth: 0`) since G1. Slice 2D
+  verifies it is green and records it as gate evidence rather than adding it.
 - Branch protection: after both prove green on the slice PR, they are added to the required
   checks for `main` (recorded in the gate review).
 
