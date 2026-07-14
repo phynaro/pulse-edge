@@ -909,12 +909,14 @@ Result: ________
 
 ## 4. DataProtection key ring permissions (Slice 2C)
 
-On the staging box:
+On the staging box (Debian install; the service user's home is `/var/lib/pulse-edge`, and the app stores its data under `$HOME/.pulse`):
 
-    stat -c '%a %U %n' "$(dirname "$(readlink -f /var/lib/pulse-edge)" 2>/dev/null || echo /var/lib/pulse-edge)/dp-keys" 2>/dev/null || stat -c '%a %U %n' <data-dir>/dp-keys
+    sudo stat -c '%a %U %n' /var/lib/pulse-edge/.pulse/dp-keys
+    sudo ls /var/lib/pulse-edge/.pulse/dp-keys
 
-(Use the actual configured data directory if it differs.) Expected: mode `700`, owned by
-the service user; the directory contains at least one `key-*.xml`.
+If the data directory was customized via `PULSE_EDGE_DATA_DIR`, run the same two commands against `dp-keys` inside that directory instead.
+
+Expected: mode `700`, owned by the service user; the directory contains at least one `key-*.xml`.
 
 Result: ________
 
@@ -924,7 +926,8 @@ On a dev machine (or the staging box) with `hostingMode: MultiPort`:
 
 1. Start the API process, then the Agent process as separate `dotnet run` processes.
 2. Confirm in the Agent log that it decrypts the stored cloud credentials (no
-   `CryptographicException` / re-pairing prompt) — both processes share `<data dir>/dp-keys`.
+   `CryptographicException` / re-pairing prompt) — both processes share the same data
+   directory's `dp-keys` (see Check 4 for how that directory is resolved).
 3. Confirm Agent diagnostics appear in the API's diagnostic log UI (forwarding works over
    the self-signed local HTTPS with the loopback-scoped trust from Slice 2D).
 
