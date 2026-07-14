@@ -201,6 +201,16 @@ if (!OperatingSystem.IsWindows())
 {
     File.SetUnixFileMode(dpKeysDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
 }
+// NOTE: this key ring is also the ambient key ring ASP.NET Core's cookie auth uses to protect
+// the session cookie's authentication ticket — that sharing is intentional (one key ring, one
+// set of keys persisted under the data dir, so both cookie auth and cloud-credential encryption
+// survive process restarts). Consequence, accepted by the project owner: the first boot after
+// this change redirects cookie auth onto these persisted keys instead of its previous in-memory
+// or default key ring, which invalidates any existing UI session cookies (one-time re-login;
+// nothing else is re-encrypted or migrated). Do not rename/move `dpKeysDir` or the application
+// name casually — besides invalidating sessions again, the Agent process (MultiPort mode) must
+// construct its DataProtection provider with this exact same key directory and application name
+// ("pulse-edge") for cloud-credential ciphertext to be readable across both processes.
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(dpKeysDir))
     .SetApplicationName("pulse-edge");
@@ -253,8 +263,12 @@ var app = builder.Build();
 
 // Publish the DataProtection-backed secret protector so every QueueDbContext value conversion
 // (Storage project has no DI/ASP.NET dependency) can reach it before any storage I/O happens.
+// DataProtectionSecretProtector lives in Pulse.Edge.Agent.Security (not Api) so the Agent
+// process — which has no ASP.NET shared framework of its own — can construct the exact same
+// wrapper class when it wires up its own DataProtection provider in MultiPort mode. Both
+// processes must use the same class, app name, and key directory for ciphertext to interoperate.
 Pulse.Edge.Storage.Security.SecretProtection.Protector =
-    new Pulse.Edge.Api.Security.DataProtectionSecretProtector(
+    new Pulse.Edge.Agent.Security.DataProtectionSecretProtector(
         app.Services.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>());
 
 if (Pulse.Edge.Api.Security.ForwardedHeadersConfig.IsEnabled(app.Configuration))

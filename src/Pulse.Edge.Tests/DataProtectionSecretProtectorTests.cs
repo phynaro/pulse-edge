@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.DataProtection;
-using Pulse.Edge.Api.Security;
+using Pulse.Edge.Agent.Security;
 
 namespace Pulse.Edge.Tests;
 
@@ -34,5 +34,35 @@ public sealed class DataProtectionSecretProtectorTests
         var p = NewProtector();
         Assert.Equal("", p.Protect(""));
         Assert.Equal("", p.Unprotect(""));
+    }
+
+    [Fact]
+    public void Ciphertext_interops_across_separate_provider_instances_sharing_a_key_directory()
+    {
+        // Regression test for the shared-key-ring contract (B-07 fix wave 1): the Api process
+        // and the Agent process (MultiPort mode) each construct their own IDataProtectionProvider
+        // via DataProtectionProvider.Create(sameDirectory, b => b.SetApplicationName("pulse-edge")).
+        // They must be interchangeable — ciphertext written by one must be readable by the other —
+        // or cloud sync in MultiPort mode breaks the moment the Agent tries to reuse a credential
+        // the Api encrypted (or vice versa). Simulate that here with two independently-constructed
+        // providers over the same on-disk key directory, standing in for the two processes.
+        var keyDir = Directory.CreateTempSubdirectory("pulse-edge-dp-interop-test-");
+        try
+        {
+            var apiSideProtector = new DataProtectionSecretProtector(
+                DataProtectionProvider.Create(keyDir, b => b.SetApplicationName("pulse-edge")));
+            var agentSideProtector = new DataProtectionSecretProtector(
+                DataProtectionProvider.Create(keyDir, b => b.SetApplicationName("pulse-edge")));
+
+            var cipher = apiSideProtector.Protect("shared-key-ring-round-trip");
+
+            Assert.NotEqual("shared-key-ring-round-trip", cipher);
+            Assert.Equal("shared-key-ring-round-trip", agentSideProtector.Unprotect(cipher));
+            Assert.True(agentSideProtector.IsProtected(cipher));
+        }
+        finally
+        {
+            keyDir.Delete(recursive: true);
+        }
     }
 }

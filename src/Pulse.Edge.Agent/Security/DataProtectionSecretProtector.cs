@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.DataProtection;
 using Pulse.Edge.Storage.Security;
 
-namespace Pulse.Edge.Api.Security;
+namespace Pulse.Edge.Agent.Security;
 
 public sealed class DataProtectionSecretProtector : ISecretProtector
 {
