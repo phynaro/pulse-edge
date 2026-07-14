@@ -32,6 +32,7 @@ using Pulse.Edge.Api.Services;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.DataProtection;
 
 
 // Configure Serilog daily rolling file and console logging
@@ -184,6 +185,26 @@ builder.Services.AddSingleton(diagnosticLogs);
 builder.Services.AddSingleton<ConfigurationBackupService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<DiagnosticLogService>());
 
+// DataProtection key ring for encrypting cloud credentials at rest (Slice 2C / B-07). The keys
+// live alongside edge.db under the same data directory so a relocated/override data dir keeps
+// its own key ring (matching QueueDbContext's path resolution below).
+var edgeDataDir = Environment.GetEnvironmentVariable("PULSE_EDGE_DATA_DIR");
+if (string.IsNullOrWhiteSpace(edgeDataDir))
+{
+    edgeDataDir = OperatingSystem.IsWindows()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PULSE Edge")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".pulse");
+}
+var dpKeysDir = Path.Combine(edgeDataDir, "dp-keys");
+Directory.CreateDirectory(dpKeysDir);
+if (!OperatingSystem.IsWindows())
+{
+    File.SetUnixFileMode(dpKeysDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+}
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dpKeysDir))
+    .SetApplicationName("pulse-edge");
+
 // Register SQLite storage service and transient protocol drivers
 builder.Services.AddSingleton<QueueStorageService>();
 builder.Services.AddTransient<OpcUaDriver>();
@@ -229,6 +250,12 @@ if (isSinglePort)
 }
 
 var app = builder.Build();
+
+// Publish the DataProtection-backed secret protector so every QueueDbContext value conversion
+// (Storage project has no DI/ASP.NET dependency) can reach it before any storage I/O happens.
+Pulse.Edge.Storage.Security.SecretProtection.Protector =
+    new Pulse.Edge.Api.Security.DataProtectionSecretProtector(
+        app.Services.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>());
 
 if (Pulse.Edge.Api.Security.ForwardedHeadersConfig.IsEnabled(app.Configuration))
 {

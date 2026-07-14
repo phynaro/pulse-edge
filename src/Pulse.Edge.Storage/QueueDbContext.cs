@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pulse.Edge.Storage.Models;
+using Pulse.Edge.Storage.Security;
 
 namespace Pulse.Edge.Storage;
 
@@ -66,5 +67,22 @@ public class QueueDbContext : DbContext
         var dbPath = Path.Combine(pulseFolder, "edge.db");
 
         optionsBuilder.UseSqlite($"Data Source={dbPath}");
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        // Encrypt the cloud credentials at rest (Slice 2C / B-07). The DB stores ciphertext;
+        // every reader sees plaintext. The converter reads SecretProtection.Protector at call
+        // time, so it works regardless of when the protector is configured. Device/protocol
+        // credentials (DriverAdapter.ConfigJson) are intentionally NOT encrypted (R-008).
+        var secretConverter = new Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<string, string>(
+            plaintext => SecretProtection.Protector.Protect(plaintext),
+            stored => SecretProtection.Protector.Unprotect(stored));
+
+        modelBuilder.Entity<DeviceConfig>().Property(x => x.ApiKey).HasConversion(secretConverter);
+        modelBuilder.Entity<DeviceConfig>().Property(x => x.ClaimSecret).HasConversion(secretConverter);
+        modelBuilder.Entity<DeviceConfig>().Property(x => x.PairingToken).HasConversion(secretConverter);
     }
 }
