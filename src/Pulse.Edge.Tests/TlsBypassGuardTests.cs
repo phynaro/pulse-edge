@@ -12,6 +12,8 @@ public sealed class TlsBypassGuardTests
     [
         "ServerCertificateCustomValidationCallback",
         "DangerousAcceptAnyServerCertificateValidator",
+        "RemoteCertificateValidationCallback",
+        "ServerCertificateValidationCallback",
     ];
 
     [Fact]
