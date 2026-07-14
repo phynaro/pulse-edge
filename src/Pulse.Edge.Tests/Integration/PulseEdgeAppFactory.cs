@@ -39,6 +39,18 @@ public class PulseEdgeAppFactory : WebApplicationFactory<Program>
         builder.UseSetting("RateLimiting:Login:PermitLimit", LoginPermitLimit.ToString());
     }
 
+    // Forced-Secure cookies require the request to look like HTTPS. TestServer marks the
+    // request scheme from the client's base address URI — no real TLS is involved. Note:
+    // WebApplicationFactory.CreateDefaultClient(...) re-applies WebApplicationFactoryClientOptions.BaseAddress
+    // to the HttpClient *after* invoking ConfigureClient(), so overriding ConfigureClient alone
+    // is not sufficient to change the scheme — the options' BaseAddress must be overridden instead.
+    // CreateClient() is not virtual on the base class, so this intentionally hides it (`new`);
+    // every call site in this test project references the `PulseEdgeAppFactory` type directly
+    // (via primary-constructor parameters / IClassFixture<PulseEdgeAppFactory>), so the hiding
+    // member resolves correctly everywhere.
+    public new HttpClient CreateClient() =>
+        CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+
     public async Task ResetDatabaseAsync()
     {
         await using var db = new QueueDbContext(DbPath);

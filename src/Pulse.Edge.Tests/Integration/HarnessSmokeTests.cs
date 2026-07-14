@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Net;
+using System.Net.Http.Json;
 using Pulse.Edge.Tests.Integration;
 
 namespace Pulse.Edge.Tests.Integration;
@@ -60,5 +61,21 @@ public sealed class HarnessSmokeTests(PulseEdgeAppFactory factory) : IClassFixtu
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
         Assert.Equal("DENY", response.Headers.GetValues("X-Frame-Options").Single());
+    }
+
+    [Fact]
+    public async Task Login_issues_a_secure_session_cookie()
+    {
+        await factory.ResetDatabaseAsync();
+        // CreateClientLoggedInAsync seeds the user; log in again to inspect Set-Cookie.
+        _ = await factory.CreateClientLoggedInAsync("Admin", TestCredentials.AdminUsername, TestCredentials.Password);
+
+        var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/api/auth/login",
+            new { Username = TestCredentials.AdminUsername, Password = TestCredentials.Password });
+
+        Assert.True(response.Headers.TryGetValues("Set-Cookie", out var cookies));
+        Assert.Contains(cookies!, c =>
+            c.Contains("pulse.edge.session") && c.Contains("secure", StringComparison.OrdinalIgnoreCase));
     }
 }
