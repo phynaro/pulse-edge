@@ -224,6 +224,11 @@ if (isSinglePort)
 
 var app = builder.Build();
 
+if (Pulse.Edge.Api.Security.ForwardedHeadersConfig.IsEnabled(app.Configuration))
+{
+    app.UseForwardedHeaders(Pulse.Edge.Api.Security.ForwardedHeadersConfig.Build(app.Configuration));
+}
+
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseCors();
 app.UseAuthentication();
