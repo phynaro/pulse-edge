@@ -9,7 +9,10 @@ export default defineConfig({
     port: 8080,
     proxy: {
       '/api': {
-        target: 'http://localhost:5288',
+        // The edge API serves HTTPS by default (Slice 2B). `secure: false` accepts its
+        // self-signed dev certificate. This proxies both regular /api fetches and the
+        // /api/diagnostic-logs/stream Server-Sent Events connection.
+        target: 'https://localhost:5288',
         changeOrigin: true,
         secure: false
       }
