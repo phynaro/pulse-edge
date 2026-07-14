@@ -7,6 +7,10 @@ namespace Pulse.Edge.Api.Endpoints;
 
 public static class BackupEndpoints
 {
+    // Restore bodies are small config documents; 5 MB is a generous ceiling that still bounds
+    // memory use against a malicious or corrupt oversized upload.
+    private const long MaxRestoreBodyBytes = 5 * 1024 * 1024;
+
     public static void MapBackupEndpoints(this IEndpointRouteBuilder routes)
     {
         routes.MapGet("/api/backups/configuration", async (ConfigurationBackupService backups, HttpContext context, CancellationToken cancellationToken) =>
@@ -21,6 +25,7 @@ public static class BackupEndpoints
 
         routes.MapPost("/api/restores/configuration/inspect", (ConfigurationBackupDocument document, ConfigurationBackupService backups, HttpContext context) =>
         {
+            if (context.Request.ContentLength is > MaxRestoreBodyBytes) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
             if (!context.User.IsInRole("Admin")) return Results.Forbid();
 
             var inspection = backups.Inspect(document);
@@ -29,6 +34,7 @@ public static class BackupEndpoints
 
         routes.MapPost("/api/restores/configuration/apply", async (ConfigurationBackupDocument document, ConfigurationBackupService backups, HttpContext context, CancellationToken cancellationToken) =>
         {
+            if (context.Request.ContentLength is > MaxRestoreBodyBytes) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
             if (!context.User.IsInRole("Admin")) return Results.Forbid();
 
             var inspection = backups.Inspect(document);
