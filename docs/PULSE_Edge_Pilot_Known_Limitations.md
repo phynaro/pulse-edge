@@ -37,6 +37,8 @@ The API defaults to `http://*:5288`, and the onboarding contract explicitly iden
 
 **Update (Slice 2B):** The local UI now defaults to HTTPS on `:5288` with a self-signed certificate generated on first boot, and the session cookie is forced `Secure`. The cloud uplink endpoint is enforced to HTTPS at both the settings API and the `CloudClient` chokepoint. The residual gap is the one-time self-signed browser warning (no trusted cert issued yet) and HSTS, which is intentionally withheld until a trusted certificate is configured. See `docs/PULSE_Edge_Network_Hardening.md` for deployment guidance (network placement, bind address, firewall, systemd sandboxing).
 
+**Update (installer fix following Slice 2B):** The Windows installers (Inno `PulseEdge.iss`, WiX `PulseEdge.wxs`) predated Slice 2B and wrote `"serverUrl": "http://*:<port>"` into `config.json`, forcing a plain-HTTP binding that is incompatible with the forced-`Secure` cookie — every authenticated API call returned 401 on a fresh Windows install. Both installers now write `https://*:<port>`, point shortcuts and the post-install health check at `https://localhost:<port>`, and the health probe tolerates the self-signed certificate. Windows deployment overall remains deferred (R-006); an existing Windows install is repaired by re-running the installer (it rewrites `config.json` and its `.sha256`, preserving the chosen port).
+
 **Pilot control:** Bind the management interface to a trusted network segment and terminate TLS at an approved reverse proxy. Do not expose the node directly to an untrusted network.  
 **Production disposition:** Phase 2 / G2.
 

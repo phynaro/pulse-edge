@@ -40,11 +40,11 @@ Name: "{commonappdata}\PULSE Edge"; Permissions: networkservice-modify users-mod
 Name: "{commonappdata}\PULSE Edge\logs"; Permissions: networkservice-modify users-modify
 Name: "{commonappdata}\PULSE Edge\backups"; Permissions: networkservice-modify users-modify
 [Icons]
-Name: "{group}\{#AppName} Dashboard"; Filename: "http://localhost:{code:GetSelectedPort}"; IconFilename: "{app}\app.ico"
-Name: "{commondesktop}\{#AppName} Dashboard"; Filename: "http://localhost:{code:GetSelectedPort}"; Tasks: desktopicon; IconFilename: "{app}\app.ico"
+Name: "{group}\{#AppName} Dashboard"; Filename: "https://localhost:{code:GetSelectedPort}"; IconFilename: "{app}\app.ico"
+Name: "{commondesktop}\{#AppName} Dashboard"; Filename: "https://localhost:{code:GetSelectedPort}"; Tasks: desktopicon; IconFilename: "{app}\app.ico"
 
 [Run]
-Filename: "http://localhost:{code:GetSelectedPort}"; Description: "Open Configuration UI"; Flags: postinstall shellexec nowait
+Filename: "https://localhost:{code:GetSelectedPort}"; Description: "Open Configuration UI"; Flags: postinstall shellexec nowait
 
 
 [UninstallDelete]
@@ -656,7 +656,7 @@ begin
             '  Unified Port (Web UI, API, WebSockets):' + NewLine +
             '    ' + IntToStr(SelectedPort) + NewLine + NewLine +
             '  Web UI URL:' + NewLine +
-            '    http://localhost:' + IntToStr(SelectedPort) + NewLine + NewLine +
+            '    https://localhost:' + IntToStr(SelectedPort) + NewLine + NewLine +
             '  Store Database:' + NewLine +
             '    ' + ExpandConstant('{commonappdata}\PULSE Edge\edge.db') + NewLine + NewLine +
             '  Windows Service:' + NewLine +
@@ -699,7 +699,7 @@ begin
   // Write configuration with nested JSON structure
   JsonContent := 
     '{' + #13#10 +
-    '  "serverUrl": "http://*:' + IntToStr(SelectedPort) + '",' + #13#10 +
+    '  "serverUrl": "https://*:' + IntToStr(SelectedPort) + '",' + #13#10 +
     '  "hostingMode": "SinglePort"' + #13#10 +
     '}';
   SaveStringToFile(ConfigPath, JsonContent, False);
@@ -733,7 +733,7 @@ var
   HttpStatusVal: Integer;
 begin
   Result := False;
-  Url := 'http://localhost:' + IntToStr(SelectedPort) + '/health';
+  Url := 'https://localhost:' + IntToStr(SelectedPort) + '/health';
   Log('Performing post-install health check on ' + Url);
   
   for Retries := 1 to 5 do
@@ -754,7 +754,17 @@ begin
       except
         // Bypassed if timeouts are not supported by the OLE provider
       end;
-      
+
+      try
+        // The server presents a self-signed certificate on first boot; tell
+        // ServerXMLHTTP to ignore certificate errors for this localhost probe.
+        // Option 2 = SXH_OPTION_IGNORE_SERVER_SSL_CERT_ERROR_FLAGS, 13056 = ignore all.
+        Http.setOption(2, 13056);
+      except
+        // XMLHTTP fallback has no setOption; the probe then fails gracefully and
+        // the installer reports the health check as not confirmed.
+      end;
+
       Http.open('GET', Url, False);
       Http.send;
       
