@@ -180,7 +180,7 @@
       <Component Id="ApplicationShortcut" Guid="750DBC8B-27B4-4B78-831C-646A94F81710">
         <util:InternetShortcut Id="StartMenuShortcut"
                                Name="PULSE Edge Dashboard"
-                               Target="http://localhost:[PORT]"
+                               Target="https://localhost:[PORT]"
                                IconFile="[#AppIconFile]" />
 
         <RemoveFolder Id="CleanUpShortcuts" On="uninstall" />
@@ -198,7 +198,7 @@
         <Condition>CREATE_DESKTOP_SHORTCUT = "1"</Condition>
         <util:InternetShortcut Id="DesktopShortcut"
                                Name="PULSE Edge Dashboard"
-                               Target="http://localhost:[PORT]"
+                               Target="https://localhost:[PORT]"
                                IconFile="[#AppIconFile]" />
         <RegistryValue Root="HKCU"
                        Key="Software\IntegraInnovation\PulseEdge"
@@ -213,7 +213,7 @@
     <!-- Runs under System context to ensure permissions to write to CommonAppData -->
     <CustomAction Id="WriteConfigJson"
                   Directory="CommonAppDataPulseEdgeDir"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -Command &quot;&amp; { [System.IO.File]::WriteAllText('config.json', '{\`r\`n  \&quot;serverUrl\&quot;: \&quot;http://*:[PORT]\&quot;,\`r\`n  \&quot;hostingMode\&quot;: \&quot;SinglePort\&quot;\`r\`n}') }&quot;"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -Command &quot;&amp; { [System.IO.File]::WriteAllText('config.json', '{\`r\`n  \&quot;serverUrl\&quot;: \&quot;https://*:[PORT]\&quot;,\`r\`n  \&quot;hostingMode\&quot;: \&quot;SinglePort\&quot;\`r\`n}') }&quot;"
                   Execute="deferred"
                   Return="check"
                   Impersonate="no" />
