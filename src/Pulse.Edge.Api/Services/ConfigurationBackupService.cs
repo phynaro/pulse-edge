@@ -76,11 +76,11 @@ public sealed class ConfigurationBackupService
             document?.AgentVersion ?? "",
             document?.SourceSerialNumber ?? "",
             new ConfigurationBackupCounts(
-                payload?.Adapters.Count ?? 0,
-                payload?.DataSources.Count ?? 0,
-                payload?.DataPoints.Count ?? 0,
-                payload?.MqttDevices.Count ?? 0,
-                payload?.StreamTemplates.Count ?? 0));
+                payload?.Adapters?.Count ?? 0,
+                payload?.DataSources?.Count ?? 0,
+                payload?.DataPoints?.Count ?? 0,
+                payload?.MqttDevices?.Count ?? 0,
+                payload?.StreamTemplates?.Count ?? 0));
     }
 
     public async Task<ConfigurationBackupInspection> RestoreAsync(ConfigurationBackupDocument document, CancellationToken cancellationToken = default)

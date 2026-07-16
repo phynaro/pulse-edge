@@ -18,6 +18,9 @@ internal static class TestCredentials
     public const string AdminUsername = "test-admin";
     public const string ReadOnlyUsername = "test-readonly";
 
+    /// <summary>A second ReadOnly identity for probes that consume their session (e.g. logout).</summary>
+    public const string ReadOnlyActionUsername = "test-readonly-action";
+
     /// <summary>A username that is never seeded — used to exercise the unknown-user login path.</summary>
     public const string NonexistentUsername = "no-such-user";
 
