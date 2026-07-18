@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Gauge, Plus, Pencil, Trash2 } from 'lucide-react';
 import ModalShell from './ModalShell';
 import CustomSelect from './CustomSelect';
@@ -40,39 +40,42 @@ export default function OeeTab({ datapoints }: OeeTabProps) {
   const [form, setForm] = useState<ChannelForm>(emptyForm);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = async () => {
+  // Mounted flag guards against setting state from a fetch that resolves after
+  // the component (or an earlier poll tick) has gone away.
+  const mountedRef = useRef(true);
+
+  const refresh = useCallback(async () => {
     try {
       const [statusRes, channelsRes] = await Promise.all([
         fetch('/api/oee/status'),
         fetch('/api/oee/channels'),
       ]);
+      if (!mountedRef.current) return;
       if (statusRes.ok) setStatus(await statusRes.json());
       if (channelsRes.ok) setChannels(await channelsRes.json());
     } catch {
       // polling; next tick recovers
     }
-  };
+  }, []);
+
+  // Kept in a ref (rather than called directly) so the polling effect below
+  // doesn't statically resolve to a function that calls setState — see
+  // useBufferStatus.ts / useDatapointsList.ts for the same pattern.
+  const refreshRef = useRef(refresh);
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
 
   useEffect(() => {
-    let active = true;
-    const poll = async () => {
-      try {
-        const [statusRes, channelsRes] = await Promise.all([
-          fetch('/api/oee/status'),
-          fetch('/api/oee/channels'),
-        ]);
-        if (!active) return;
-        if (statusRes.ok) setStatus(await statusRes.json());
-        if (channelsRes.ok) setChannels(await channelsRes.json());
-      } catch {
-        // polling; next tick recovers
-      }
+    mountedRef.current = true;
+    const poll = () => {
+      void refreshRef.current();
     };
 
-    void poll();
+    poll();
     const interval = setInterval(poll, 3000);
     return () => {
-      active = false;
+      mountedRef.current = false;
       clearInterval(interval);
     };
   }, []);
