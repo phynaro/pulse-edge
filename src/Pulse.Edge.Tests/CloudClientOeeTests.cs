@@ -80,6 +80,22 @@ public class CloudClientOeeTests
         Assert.Equal(expected, result);
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, OeeSyncResult.EnvelopeError)]
+    [InlineData(HttpStatusCode.Unauthorized, OeeSyncResult.Unauthorized)]
+    [InlineData(HttpStatusCode.Conflict, OeeSyncResult.NotPaired)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, OeeSyncResult.TransientError)]
+    public async Task Events_MapsStatusCodes(HttpStatusCode status, OeeSyncResult expected)
+    {
+        var client = MakeClient(new ScriptedHandler(status));
+        var (result, response) = await client.SendOeeEventsBatchAsync(BaseUrl, "k", new List<CloudClient.OeeEventMessageDto>
+        {
+            new() { Type = "sync", Channel = "c", Seq = 0, Ts = "2026-07-18T00:00:00.000Z", State = "running" },
+        });
+        Assert.Equal(expected, result);
+        Assert.Null(response);
+    }
+
     [Fact]
     public async Task SendEvents_SerializesContract_OmitsNulls_ParsesPerMessageErrors()
     {

@@ -624,8 +624,10 @@ public class CloudClient
                     _logger.LogError("[OEE Sync] Event envelope rejected with 400: {Error}", await response.Content.ReadAsStringAsync());
                     return (OeeSyncResult.EnvelopeError, null);
                 case HttpStatusCode.Unauthorized:
+                    _logger.LogError("[OEE Sync] Event batch rejected with 401. API key may be revoked.");
                     return (OeeSyncResult.Unauthorized, null);
                 case HttpStatusCode.Conflict:
+                    _logger.LogError("[OEE Sync] Event batch rejected with 409. Device is not paired to a site.");
                     return (OeeSyncResult.NotPaired, null);
                 default:
                     _logger.LogWarning("[OEE Sync] Event batch failed with status {Status}.", response.StatusCode);
