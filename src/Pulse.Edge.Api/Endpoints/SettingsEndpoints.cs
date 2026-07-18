@@ -147,7 +147,7 @@ public static class SettingsEndpoints
             try
             {
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM DeviceConfigs;");
-                await db.Database.ExecuteSqlRawAsync("DELETE FROM QueueEvents;");
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM OeeOutboxMessages;");
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM QueueTelemetry;");
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM DriverAdapters;");
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM DataSources;");

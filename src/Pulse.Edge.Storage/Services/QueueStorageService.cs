@@ -100,19 +100,12 @@ public class QueueStorageService
         }
         catch {}
 
-        // Create QueueEvents table if missing
+        // The legacy event queue was removed (replaced by the OEE outbox — see
+        // docs/superpowers/specs/2026-07-18-edge-oee-ingestion-design.md §6). The table
+        // was provably always empty (no producer ever existed), so dropping it is safe.
         try
         {
-            await db.Database.ExecuteSqlRawAsync(@"
-                CREATE TABLE IF NOT EXISTS QueueEvents (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    EventType TEXT NOT NULL,
-                    PayloadJson TEXT NOT NULL,
-                    Timestamp TEXT NOT NULL,
-                    RetryCount INTEGER NOT NULL DEFAULT 0,
-                    IsSending INTEGER NOT NULL DEFAULT 0
-                );
-            ");
+            await db.Database.ExecuteSqlRawAsync("DROP TABLE IF EXISTS QueueEvents;");
         }
         catch {}
 
@@ -846,86 +839,15 @@ public class QueueStorageService
                 .SetProperty(x => x.IsSending, false));
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // STORE AND FORWARD EVENTS QUEUE
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // Add events (alarms, states) to local SQLite database queue
-    public async Task EnqueueEventAsync(string eventType, string payloadJson)
-    {
-        using var db = new QueueDbContext();
-        var item = new QueueEvent
-        {
-            EventType   = eventType,
-            PayloadJson = payloadJson,
-            Timestamp   = DateTime.UtcNow,
-            RetryCount  = 0,
-            IsSending   = false
-        };
-        db.QueueEvents.Add(item);
-        await db.SaveChangesAsync();
-    }
-
-    // Extract a batch of events for synchronization
-    public async Task<List<QueueEvent>> GetPendingEventsBatchAsync(int batchSize)
-    {
-        using var db = new QueueDbContext();
-        var items = await db.QueueEvents
-            .AsNoTracking()
-            .Where(x => !x.IsSending)
-            .OrderBy(x => x.Timestamp)
-            .Take(batchSize)
-            .ToListAsync();
-
-        if (items.Any())
-        {
-            var ids = items.Select(x => x.Id).ToList();
-            await db.QueueEvents
-                .Where(x => ids.Contains(x.Id))
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.IsSending, true));
-
-            foreach (var item in items)
-            {
-                item.IsSending = true;
-            }
-        }
-
-        return items;
-    }
-
-    // Deletes events after successful transmission
-    public async Task CompleteEventsBatchAsync(IEnumerable<int> ids)
-    {
-        using var db = new QueueDbContext();
-        await db.QueueEvents.Where(x => ids.Contains(x.Id)).ExecuteDeleteAsync();
-    }
-
-    // Handles event transmission failure
-    public async Task FailEventsBatchAsync(IEnumerable<int> ids)
-    {
-        using var db = new QueueDbContext();
-        await db.QueueEvents
-            .Where(x => ids.Contains(x.Id))
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
-                .SetProperty(x => x.IsSending, false));
-    }
-
     // Reset status on startup
     private async Task ResetSendingStatusAsync()
     {
         using var db = new QueueDbContext();
-        
+
         var stuckTelemetry = await db.QueueTelemetry.Where(x => x.IsSending).ToListAsync();
         foreach (var t in stuckTelemetry)
         {
             t.IsSending = false;
-        }
-
-        var stuckEvents = await db.QueueEvents.Where(x => x.IsSending).ToListAsync();
-        foreach (var e in stuckEvents)
-        {
-            e.IsSending = false;
         }
 
         var stuckOee = await db.OeeOutboxMessages.Where(x => x.IsSending).ToListAsync();
@@ -934,7 +856,7 @@ public class QueueStorageService
             m.IsSending = false;
         }
 
-        if (stuckTelemetry.Any() || stuckEvents.Any() || stuckOee.Any())
+        if (stuckTelemetry.Any() || stuckOee.Any())
         {
             await db.SaveChangesAsync();
         }

@@ -54,7 +54,7 @@ public sealed class ConfigurationBackupServiceTests : IDisposable
         Assert.Equal("preserved-after-export", (await verified.DeviceConfigs.SingleAsync()).ApiKey);
         Assert.Equal("admin", (await verified.LocalUsers.SingleAsync()).Username);
         Assert.Equal(1, await verified.QueueTelemetry.CountAsync());
-        Assert.Equal(1, await verified.QueueEvents.CountAsync());
+        Assert.Equal(1, await verified.OeeChannels.CountAsync());
     }
 
     [Fact]
@@ -134,11 +134,12 @@ public sealed class ConfigurationBackupServiceTests : IDisposable
             Timestamp = DateTime.UtcNow,
             MetricsJson = "{\"power_kw\":42.5}"
         });
-        db.QueueEvents.Add(new QueueEvent
+        db.OeeChannels.Add(new OeeChannel
         {
-            EventType = "PilotEvent",
-            Timestamp = DateTime.UtcNow,
-            PayloadJson = "{}"
+            ExternalId = "backup-nonconfig-probe",
+            Name = "Probe",
+            RunDataPointId = "dp-run",
+            UpdatedAt = DateTime.UtcNow,
         });
         await db.SaveChangesAsync();
     }

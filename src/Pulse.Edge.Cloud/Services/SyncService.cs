@@ -108,28 +108,6 @@ public class SyncService
                                 await Task.Delay(3000, stoppingToken);
                             }
                         }
-
-                        // 2. Process Alert Events batch
-                        var eventBatch = await _storageService.GetPendingEventsBatchAsync(batchSize: 100);
-                        if (eventBatch.Any())
-                        {
-                            processedAnyData = true;
-
-                            bool success = await _cloudClient.SendEventsBatchAsync(currentDeviceId, currentApiKey, eventBatch);
-                            var ids = eventBatch.Select(x => x.Id).ToList();
-
-                            if (success)
-                            {
-                                await _storageService.CompleteEventsBatchAsync(ids);
-                                _logger.LogInformation("[Sync] Successfully synced and cleared {Count} event records.", eventBatch.Count);
-                            }
-                            else
-                            {
-                                await _storageService.FailEventsBatchAsync(ids);
-                                _logger.LogWarning("[Sync] Events upload failed. Re-queued items.");
-                                await Task.Delay(3000, stoppingToken);
-                            }
-                        }
                     }
                 }
                 else

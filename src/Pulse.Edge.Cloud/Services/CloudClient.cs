@@ -501,24 +501,6 @@ public class CloudClient
         }
     }
 
-    /// <summary>
-    /// Simulates POST /api/events with a batch of event records.
-    /// Ingestion is not yet built on the cloud side, so we keep it mocked.
-    /// </summary>
-    public async Task<bool> SendEventsBatchAsync(string deviceId, string apiKey, System.Collections.Generic.List<Pulse.Edge.Storage.Models.QueueEvent> batch)
-    {
-        _logger.LogInformation("Syncing {Count} alert events to PULSE Cloud (POST /api/events - Simulated)...", batch.Count);
-
-        foreach (var e in batch)
-        {
-            _logger.LogInformation("  -> Event: Type {Type} | Payload: {Payload} | Time: {Time}",
-                e.EventType, e.PayloadJson, e.Timestamp.ToString("HH:mm:ss"));
-        }
-
-        await Task.Delay(800);
-        return true;
-    }
-
     // ── OEE ingestion (know-how/cloud_oee_ingestion.md) ──────────────────────
 
     public record OeeChannelDeclarationDto(string ExternalId, string Name, string[] Capabilities);

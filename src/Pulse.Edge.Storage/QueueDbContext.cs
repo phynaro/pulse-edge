@@ -21,7 +21,6 @@ public class QueueDbContext : DbContext
     }
 
     public DbSet<DeviceConfig> DeviceConfigs => Set<DeviceConfig>();
-    public DbSet<QueueEvent> QueueEvents => Set<QueueEvent>();
     public DbSet<QueueTelemetry> QueueTelemetry => Set<QueueTelemetry>();
     public DbSet<DriverAdapter> DriverAdapters => Set<DriverAdapter>();
     public DbSet<DataSource> DataSources => Set<DataSource>();

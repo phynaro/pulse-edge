@@ -73,7 +73,6 @@ public sealed class AuthorizationMatrixTests(PulseEdgeAppFactory factory) : ICla
 
         // --- Authenticated reads (ReadOnly allowed) ---
         ["GET /api/buffer/telemetry"] = Access.AuthenticatedRead,
-        ["GET /api/buffer/events"] = Access.AuthenticatedRead,
         ["GET /api/adapters"] = Access.AuthenticatedRead,
         ["GET /api/adapters/templates/modbus-power-meters"] = Access.AuthenticatedRead,
         ["GET /api/auth/me"] = Access.AuthenticatedRead,
