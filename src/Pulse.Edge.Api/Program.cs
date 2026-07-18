@@ -320,6 +320,7 @@ app.MapDataPointEndpoints();
 app.MapSettingsEndpoints();
 app.MapBufferEndpoints();
 app.MapBackupEndpoints();
+app.MapOeeEndpoints();
 
 // Run database initialization and setup before starting the web server
 using (var scope = app.Services.CreateScope())

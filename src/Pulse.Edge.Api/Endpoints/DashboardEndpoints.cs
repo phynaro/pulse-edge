@@ -26,6 +26,7 @@ public static class DashboardEndpoints
             var config = await db.DeviceConfigs.FirstOrDefaultAsync();
 
             int pendingTelemetryCount = await db.QueueTelemetry.CountAsync();
+            int pendingOeeCount = await db.OeeOutboxMessages.CountAsync();
 
             // Pairing credentials are Admin-only once the device is commissioned. During initial
             // setup (no users yet) they must be visible so the operator can pair the device.
@@ -36,7 +37,7 @@ public static class DashboardEndpoints
             {
                 ConnectionStatus = "Connected",
                 CloudStatus = config?.CloudStatus ?? "PendingApproval",
-                BufferStatus = pendingTelemetryCount > 0 ? "Buffering" : "Healthy",
+                BufferStatus = pendingTelemetryCount + pendingOeeCount > 0 ? "Buffering" : "Healthy",
                 Version = config?.Version ?? "1.0.0",
                 LastSync = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC", CultureInfo.InvariantCulture),
                 Device = new
@@ -57,7 +58,8 @@ public static class DashboardEndpoints
                 },
                 Queue = new
                 {
-                    PendingTelemetry = pendingTelemetryCount
+                    PendingTelemetry = pendingTelemetryCount,
+                    PendingOee = pendingOeeCount
                 }
             });
         });
