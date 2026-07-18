@@ -11,8 +11,15 @@ namespace Pulse.Edge.Storage.Services;
 /// <summary>
 /// Storage layer for the OEE data plane (know-how/cloud_oee_ingestion.md).
 /// Seq assignment and outbox insertion happen in ONE SQLite transaction so a
-/// sequence number can never be handed out twice, even across a crash —
-/// SQLite serializes writers, making assign-and-persist atomic.
+/// sequence number can never be handed out twice, even across a crash. The
+/// transaction alone is not enough, though: SQLite's default deferred BEGIN
+/// takes no write lock until the first write, so two concurrent callers can
+/// both read the same NextSeq before either writes. Atomicity of
+/// read-modify-write therefore also depends on <see cref="EnqueueLock"/>,
+/// an in-process semaphore that serializes the whole critical section.
+/// This is sufficient because OEE messages are produced only in-process —
+/// OeeStateEngine is the sole producer, running in the same acquisition
+/// process as this service.
 /// </summary>
 public class OeeStorageService
 {
@@ -21,6 +28,11 @@ public class OeeStorageService
     // cloud outage, and pruning is surfaced as an OEE_DATA_LOSS diagnostic.
     private const int MaxOutboxRows = 100_000;
     private static long _lastOutboxLossCriticalTicks;
+
+    // Serializes the enqueue read-modify-write critical section (read NextSeq,
+    // insert outbox row, persist) across concurrent callers within this process.
+    // See class doc comment for why a process-local lock is sufficient here.
+    private static readonly SemaphoreSlim EnqueueLock = new(1, 1);
 
     // ── Channels ─────────────────────────────────────────────────────────────
 
@@ -89,39 +101,47 @@ public class OeeStorageService
         int channelId, string type, DateTime tsUtc, string state,
         string? code, long? goodCount, long? rejectCount)
     {
-        using var db = new QueueDbContext();
-        await using var tx = await db.Database.BeginTransactionAsync();
-
-        var channel = await db.OeeChannels.FirstOrDefaultAsync(c => c.Id == channelId);
-        if (channel == null) return null;
-
-        var seq = channel.NextSeq;
-        channel.NextSeq = seq + 1;
-
-        if (channel.LastState != state)
+        await EnqueueLock.WaitAsync();
+        try
         {
-            channel.LastStateChangedAt = tsUtc;
+            using var db = new QueueDbContext();
+            await using var tx = await db.Database.BeginTransactionAsync();
+
+            var channel = await db.OeeChannels.FirstOrDefaultAsync(c => c.Id == channelId);
+            if (channel == null) return null;
+
+            var seq = channel.NextSeq;
+            channel.NextSeq = seq + 1;
+
+            if (channel.LastState != state)
+            {
+                channel.LastStateChangedAt = tsUtc;
+            }
+            channel.LastState = state;
+            channel.LastCode = code;
+
+            db.OeeOutboxMessages.Add(new OeeOutboxMessage
+            {
+                ChannelId = channelId,
+                Seq = seq,
+                Type = type,
+                Ts = tsUtc,
+                State = state,
+                Code = code,
+                GoodCount = goodCount,
+                RejectCount = rejectCount,
+                CreatedAt = DateTime.UtcNow,
+            });
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+            await EnforceOutboxCapAsync(db);
+            return seq;
         }
-        channel.LastState = state;
-        channel.LastCode = code;
-
-        db.OeeOutboxMessages.Add(new OeeOutboxMessage
+        finally
         {
-            ChannelId = channelId,
-            Seq = seq,
-            Type = type,
-            Ts = tsUtc,
-            State = state,
-            Code = code,
-            GoodCount = goodCount,
-            RejectCount = rejectCount,
-            CreatedAt = DateTime.UtcNow,
-        });
-
-        await db.SaveChangesAsync();
-        await tx.CommitAsync();
-        await EnforceOutboxCapAsync(db);
-        return seq;
+            EnqueueLock.Release();
+        }
     }
 
     private static async Task EnforceOutboxCapAsync(QueueDbContext db)

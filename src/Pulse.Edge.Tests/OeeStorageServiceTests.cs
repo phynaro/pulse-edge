@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -85,6 +86,38 @@ public class OeeStorageServiceTests : IAsyncLifetime
         await _oee.DeleteChannelAsync(doomed.Id);
         var seq = await _oee.EnqueueMessageAsync(doomed.Id, "sync", DateTime.UtcNow, "running", null, null, null);
         Assert.Null(seq);
+    }
+
+    [Fact]
+    public async Task Enqueue_ConcurrentCalls_AssignUniqueGaplessSeqs()
+    {
+        var concurrent = await _oee.CreateChannelAsync(new OeeChannel
+        {
+            ExternalId = "concurrent-" + Guid.NewGuid().ToString("N"),
+            Name = "Concurrent", RunDataPointId = "dp-run",
+        });
+        try
+        {
+            const int callCount = 10;
+            var tasks = new List<Task<long?>>();
+            for (int i = 0; i < callCount; i++)
+            {
+                tasks.Add(_oee.EnqueueMessageAsync(
+                    concurrent.Id, "sync", DateTime.UtcNow, "running", null, i, 0));
+            }
+            var results = await Task.WhenAll(tasks);
+
+            Assert.All(results, r => Assert.NotNull(r));
+            var seqs = results.Select(r => r!.Value).OrderBy(s => s).ToList();
+            Assert.Equal(Enumerable.Range(0, callCount).Select(i => (long)i).ToList(), seqs);
+
+            using var db = new QueueDbContext();
+            Assert.Equal(callCount, await db.OeeOutboxMessages.CountAsync(m => m.ChannelId == concurrent.Id));
+        }
+        finally
+        {
+            await _oee.DeleteChannelAsync(concurrent.Id);
+        }
     }
 
     [Fact]
