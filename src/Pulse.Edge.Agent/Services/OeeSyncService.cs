@@ -102,14 +102,22 @@ public class OeeSyncService : BackgroundService
 
         var baseUrl = config.CloudEndpoint ?? "http://localhost:3000";
         var channels = await _oeeStorage.GetChannelsAsync();
-        var enabled = channels.Where(c => c.Enabled).ToList();
-        if (enabled.Count == 0) return true;
+
+        // Declare enabled channels PLUS any channel that still holds undelivered outbox rows.
+        // A channel can be disabled while rows buffered during a cloud outage are still queued
+        // (e.g. operator disables it, then the device/cloud connection recovers). If we only
+        // declared enabled channels, those rows would be sent against an undeclared channel,
+        // rejected as "unknown channel", released, and re-sent every ~2 s forever — an infinite
+        // spin that only stops if the channel is re-enabled or deleted.
+        var pendingIds = await _oeeStorage.GetChannelIdsWithPendingMessagesAsync();
+        var declarable = channels.Where(c => c.Enabled || pendingIds.Contains(c.Id)).ToList();
+        if (declarable.Count == 0) return true;
 
         // ── Declaration before events (contract §2.2) ─────────────────────────
-        var latestUpdate = enabled.Max(c => c.UpdatedAt);
+        var latestUpdate = declarable.Max(c => c.UpdatedAt);
         if (!_hasDeclared || latestUpdate > _declaredThroughUtc)
         {
-            var declarations = enabled.Select(c => new CloudClient.OeeChannelDeclarationDto(
+            var declarations = declarable.Select(c => new CloudClient.OeeChannelDeclarationDto(
                 c.ExternalId,
                 c.Name,
                 string.IsNullOrEmpty(c.GoodDataPointId)

@@ -295,4 +295,32 @@ public class OeeEndToEndTests : IAsyncLifetime
 
         Assert.Equal(2, handler.Requests.Count(r => r.Path == "/edge/oee/channels"));
     }
+
+    [Fact]
+    public async Task DisabledChannelWithPendingRows_IsStillDeclaredAndDrained()
+    {
+        await ProduceMessagesAsync();
+        Assert.Equal(3, await PendingCountAsync());
+
+        // Realistic sequence: rows buffered during an outage, then the operator disables
+        // the channel before the device/cloud connection recovers. Declaration must still
+        // include it — see RunOnceAsync's `declarable` union — or these rows would be sent
+        // against an undeclared channel, rejected as "unknown channel", and re-spin forever.
+        var channel = await _oee.GetChannelAsync(_channelId);
+        Assert.NotNull(channel);
+        channel!.Enabled = false;
+        Assert.True(await _oee.UpdateChannelAsync(channel));
+
+        var handler = new FakeCloudHandler();
+        handler.Script.Enqueue(_ => FakeCloudHandler.Json(HttpStatusCode.Created, "[]"));            // declare
+        handler.Script.Enqueue(_ => FakeCloudHandler.Json(HttpStatusCode.Accepted,
+            "{\"accepted\":3,\"rejected\":0,\"duplicates\":0}"));                                    // events
+
+        var service = MakeService(handler);
+        Assert.True(await service.RunOnceAsync(CancellationToken.None));
+        Assert.Equal(0, await PendingCountAsync());
+
+        var declareBody = handler.Requests.Single(r => r.Path == "/edge/oee/channels").Body;
+        Assert.Contains(_externalId, declareBody);
+    }
 }

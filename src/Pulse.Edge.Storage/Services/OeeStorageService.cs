@@ -224,6 +224,14 @@ public class OeeStorageService
         return await db.OeeOutboxMessages.CountAsync();
     }
 
+    /// <summary>Channel ids that currently hold undelivered outbox rows, including disabled channels
+    /// (a channel disabled mid-outage must still be declared so its buffered rows can be replayed).</summary>
+    public async Task<List<int>> GetChannelIdsWithPendingMessagesAsync()
+    {
+        using var db = new QueueDbContext();
+        return await db.OeeOutboxMessages.Select(m => m.ChannelId).Distinct().ToListAsync();
+    }
+
     public async Task<List<OeeOutboxMessage>> GetRecentOutboxAsync(int take = 50)
     {
         using var db = new QueueDbContext();
