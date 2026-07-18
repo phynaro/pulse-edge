@@ -70,14 +70,16 @@ public class QueueDbContext : DbContext
         optionsBuilder.UseSqlite($"Data Source={dbPath};Default Timeout={BusyTimeoutSeconds}");
     }
 
-    // Maps to sqlite3_busy_timeout: how long a connection will block-and-retry (rather than
-    // throwing immediately) when it finds the database locked by another writer. SQLite only
-    // ever allows one writer at a time even in WAL mode, and this single file is shared by
-    // every QueueDbContext instance across the whole process (the acquisition pipeline, the
-    // API, sync, and — in the test suite — dozens of concurrently-running test classes all
-    // hitting it at once). Without an explicit value, transient lock contention under that
-    // load can surface as an unhandled "database is locked" exception instead of a short,
-    // harmless wait. 30s comfortably covers real contention without masking a genuine deadlock.
+    // Sets the "Default Timeout" connection-string option, which Microsoft.Data.Sqlite (the
+    // ADO.NET driver EF Core uses here) applies as its own client-side command-timeout: on
+    // SQLITE_BUSY it retries in a loop for up to this many seconds before giving up and
+    // throwing, rather than failing immediately. This is NOT sqlite3_busy_timeout (SQLite's own
+    // native busy-handler) — it's a driver-level retry loop layered on top. SQLite only ever
+    // allows one writer at a time even in WAL mode, and this single file is shared by every
+    // QueueDbContext instance across the whole process (the acquisition pipeline, the API,
+    // sync, and — in the test suite — dozens of concurrently-running test classes all hitting
+    // it at once), so contention here is expected. 30s is already Microsoft.Data.Sqlite's own
+    // default; it's set explicitly here to document that choice rather than to change it.
     private const int BusyTimeoutSeconds = 30;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

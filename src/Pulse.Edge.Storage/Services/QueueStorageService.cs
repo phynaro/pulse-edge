@@ -467,21 +467,54 @@ public class QueueStorageService
         }
         catch {}
 
-        // ── Telemetry Queue Migration ─────────────────────────────────────────
-        // Drop old single-metric schema and create the new merged-metrics schema.
-        // Old schema: (Id, DataSourceId, PayloadJson, Timestamp, RetryCount, IsSending)
-        // New schema: (Id, DataSourceId, Timestamp, MetricsJson, RetryCount, IsSending)
-        //             with UNIQUE (DataSourceId, Timestamp) for upsert merging.
-        //
-        // This must run this DROP at most ONCE per device, ever — only when the table is
-        // still on the OLD schema. InitializeAsync() runs on every process startup (real
-        // devices reboot; the test suite calls it from nearly every test class's setup), so an
-        // unconditional "DROP TABLE IF EXISTS QueueTelemetry" here would silently destroy the
-        // entire durable store-and-forward telemetry buffer on every single restart — the exact
-        // data this table exists to protect against a restart losing. Detect the new schema by
-        // checking for the MetricsJson column before considering the drop; once a device has
-        // migrated, this becomes a permanent no-op, same as the ALTER-TABLE-in-a-try/catch
-        // migrations elsewhere in this method.
+        await EnsureTelemetrySchemaAsync(db);
+
+        // Safety check: reset sending status for any items stuck in-flight due to an abrupt
+        // shutdown/crash. This must run at most ONCE per process lifetime, not once per
+        // InitializeAsync() call: it unconditionally clears every IsSending flag in both
+        // QueueTelemetry and OeeOutboxMessages, which is correct exactly once at real startup
+        // (nothing else in the process has touched either queue yet) but is WRONG if it runs
+        // again later, since by then it would clobber rows that are legitimately in-flight
+        // *right now* as part of an active, successful drain-lock cycle elsewhere in the same
+        // process. In production InitializeAsync() is only ever called once anyway (Worker
+        // startup, per docs/PULSE_Edge_Production_Readiness_Roadmap.md), so this guard changes
+        // nothing there. In the test suite, though, ~150 test classes each construct their own
+        // QueueStorageService and call InitializeAsync() from their own setup — without this
+        // guard, every one of those re-runs the "abrupt shutdown" recovery logic throughout the
+        // run, racing with and silently un-locking sibling tests' active drain-lock rows
+        // (GetPendingTelemetryBatchAsync / OeeStorageService.GetPendingBatchAsync mark rows
+        // IsSending=true to claim them; this reset would immediately hand them back out again).
+        if (Interlocked.Exchange(ref _resetSendingStatusDone, 1) == 0)
+        {
+            await ResetSendingStatusAsync();
+        }
+    }
+
+    private static int _resetSendingStatusDone;
+
+    // ── Telemetry Queue Migration ─────────────────────────────────────────────
+    // Drop old single-metric schema and create the new merged-metrics schema.
+    // Old schema: (Id, DataSourceId, PayloadJson, Timestamp, RetryCount, IsSending)
+    // New schema: (Id, DataSourceId, Timestamp, MetricsJson, RetryCount, IsSending)
+    //             with UNIQUE (DataSourceId, Timestamp) for upsert merging.
+    //
+    // This must run this DROP at most ONCE per device, ever — only when the table is
+    // still on the OLD schema. InitializeAsync() runs on every process startup (real
+    // devices reboot; the test suite calls it from nearly every test class's setup), so an
+    // unconditional "DROP TABLE IF EXISTS QueueTelemetry" here would silently destroy the
+    // entire durable store-and-forward telemetry buffer on every single restart — the exact
+    // data this table exists to protect against a restart losing. Detect the new schema by
+    // checking for the MetricsJson column before considering the drop; once a device has
+    // migrated, this becomes a permanent no-op, same as the ALTER-TABLE-in-a-try/catch
+    // migrations elsewhere in this method.
+    //
+    // Public and static (rather than a private instance method) so tests can exercise this
+    // schema-migration logic directly against an isolated temp-path QueueDbContext, without
+    // going through the full InitializeAsync() (which always targets the shared default-path
+    // database and process-wide locks/guards) — see QueueStorageServiceTests for the
+    // partial-schema (MetricsJson present, QualitiesJson missing) regression coverage.
+    public static async Task EnsureTelemetrySchemaAsync(QueueDbContext db)
+    {
         var hasMergedMetricsSchema = (await db.Database
             .SqlQueryRaw<long>("SELECT COUNT(*) AS Value FROM pragma_table_info('QueueTelemetry') WHERE name = 'MetricsJson'")
             .ToListAsync())
@@ -511,28 +544,14 @@ public class QueueStorageService
                 ON QueueTelemetry (IsSending, Timestamp);
         ");
 
-        // Safety check: reset sending status for any items stuck in-flight due to an abrupt
-        // shutdown/crash. This must run at most ONCE per process lifetime, not once per
-        // InitializeAsync() call: it unconditionally clears every IsSending flag in both
-        // QueueTelemetry and OeeOutboxMessages, which is correct exactly once at real startup
-        // (nothing else in the process has touched either queue yet) but is WRONG if it runs
-        // again later, since by then it would clobber rows that are legitimately in-flight
-        // *right now* as part of an active, successful drain-lock cycle elsewhere in the same
-        // process. In production InitializeAsync() is only ever called once anyway (Worker
-        // startup, per docs/PULSE_Edge_Production_Readiness_Roadmap.md), so this guard changes
-        // nothing there. In the test suite, though, ~150 test classes each construct their own
-        // QueueStorageService and call InitializeAsync() from their own setup — without this
-        // guard, every one of those re-runs the "abrupt shutdown" recovery logic throughout the
-        // run, racing with and silently un-locking sibling tests' active drain-lock rows
-        // (GetPendingTelemetryBatchAsync / OeeStorageService.GetPendingBatchAsync mark rows
-        // IsSending=true to claim them; this reset would immediately hand them back out again).
-        if (Interlocked.Exchange(ref _resetSendingStatusDone, 1) == 0)
+        // Guard against a partial merged schema (MetricsJson present, QualitiesJson not yet
+        // added): patch the missing column instead of dropping data. No-ops when present.
+        try
         {
-            await ResetSendingStatusAsync();
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE QueueTelemetry ADD COLUMN QualitiesJson TEXT NOT NULL DEFAULT '{{}}';");
         }
+        catch {}
     }
-
-    private static int _resetSendingStatusDone;
 
     // ─────────────────────────────────────────────────────────────────────────
     // CACHING UTILITIES
