@@ -407,6 +407,48 @@ public class QueueStorageService
         }
         catch {}
 
+        // ── OEE tables (durable — never dropped; see docs/superpowers/specs/2026-07-18-edge-oee-ingestion-design.md) ──
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS OeeChannels (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ExternalId TEXT NOT NULL UNIQUE,
+                    Name TEXT NOT NULL,
+                    Enabled INTEGER NOT NULL DEFAULT 1,
+                    RunDataPointId TEXT NOT NULL,
+                    FaultDataPointId TEXT,
+                    CodeDataPointId TEXT,
+                    GoodDataPointId TEXT,
+                    RejectDataPointId TEXT,
+                    DebounceSeconds INTEGER NOT NULL DEFAULT 2,
+                    NextSeq INTEGER NOT NULL DEFAULT 0,
+                    LastState TEXT,
+                    LastStateChangedAt TEXT,
+                    LastCode TEXT,
+                    UpdatedAt TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS OeeOutboxMessages (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ChannelId INTEGER NOT NULL,
+                    Seq INTEGER NOT NULL,
+                    Type TEXT NOT NULL,
+                    Ts TEXT NOT NULL,
+                    State TEXT NOT NULL,
+                    Code TEXT,
+                    GoodCount INTEGER,
+                    RejectCount INTEGER,
+                    IsSending INTEGER NOT NULL DEFAULT 0,
+                    RetryCount INTEGER NOT NULL DEFAULT 0,
+                    CreatedAt TEXT NOT NULL,
+                    UNIQUE (ChannelId, Seq)
+                );
+                CREATE INDEX IF NOT EXISTS idx_oee_outbox_pending
+                    ON OeeOutboxMessages (IsSending, Id);
+            ");
+        }
+        catch {}
+
         // ── Telemetry Queue Migration ─────────────────────────────────────────
         // Drop old single-metric schema and create the new merged-metrics schema.
         // Old schema: (Id, DataSourceId, PayloadJson, Timestamp, RetryCount, IsSending)
@@ -886,7 +928,13 @@ public class QueueStorageService
             e.IsSending = false;
         }
 
-        if (stuckTelemetry.Any() || stuckEvents.Any())
+        var stuckOee = await db.OeeOutboxMessages.Where(x => x.IsSending).ToListAsync();
+        foreach (var m in stuckOee)
+        {
+            m.IsSending = false;
+        }
+
+        if (stuckTelemetry.Any() || stuckEvents.Any() || stuckOee.Any())
         {
             await db.SaveChangesAsync();
         }

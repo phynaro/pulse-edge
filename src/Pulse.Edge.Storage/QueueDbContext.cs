@@ -32,6 +32,8 @@ public class QueueDbContext : DbContext
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<DiagnosticEvent> DiagnosticEvents => Set<DiagnosticEvent>();
     public DbSet<DiagnosticCaptureConfig> DiagnosticCaptureConfigs => Set<DiagnosticCaptureConfig>();
+    public DbSet<OeeChannel> OeeChannels => Set<OeeChannel>();
+    public DbSet<OeeOutboxMessage> OeeOutboxMessages => Set<OeeOutboxMessage>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -84,5 +86,8 @@ public class QueueDbContext : DbContext
         modelBuilder.Entity<DeviceConfig>().Property(x => x.ApiKey).HasConversion(secretConverter);
         modelBuilder.Entity<DeviceConfig>().Property(x => x.ClaimSecret).HasConversion(secretConverter);
         modelBuilder.Entity<DeviceConfig>().Property(x => x.PairingToken).HasConversion(secretConverter);
+
+        modelBuilder.Entity<OeeChannel>().HasIndex(x => x.ExternalId).IsUnique();
+        modelBuilder.Entity<OeeOutboxMessage>().HasIndex(x => new { x.ChannelId, x.Seq }).IsUnique();
     }
 }
