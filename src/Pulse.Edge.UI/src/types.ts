@@ -116,6 +116,41 @@ export interface OeeOutboxItem {
   createdAt: string;
 }
 
+export interface OeeChannel {
+  id: number;
+  externalId: string;
+  name: string;
+  enabled: boolean;
+  runDataPointId: string;
+  faultDataPointId: string | null;
+  codeDataPointId: string | null;
+  goodDataPointId: string | null;
+  rejectDataPointId: string | null;
+  debounceSeconds: number;
+  nextSeq: number;
+  lastState: string | null;
+  lastStateChangedAt: string | null;
+  lastCode: string | null;
+  updatedAt: string;
+}
+
+export interface OeeChannelStatus {
+  id: number;
+  externalId: string;
+  name: string;
+  enabled: boolean;
+  lastState: string | null;
+  lastCode: string | null;
+  lastStateChangedAt: string | null;
+  nextSeq: number;
+  pendingCount: number;
+}
+
+export interface OeeStatusResponse {
+  channels: OeeChannelStatus[];
+  outboxDepth: number;
+}
+
 export interface StreamTemplate {
   id: string;
   description: string;
