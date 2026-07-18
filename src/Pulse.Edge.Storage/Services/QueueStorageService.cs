@@ -19,8 +19,33 @@ public class QueueStorageService
     private static readonly TimeSpan MaxBufferAge = TimeSpan.FromDays(7);
     private static long _lastBufferLossCriticalTicks;
 
+    // Serializes InitializeAsync's schema work (CREATE/ALTER/DROP TABLE, PRAGMA) across
+    // concurrent callers within this process. On the real device this runs once at startup
+    // with no contention, but the test suite constructs a fresh QueueStorageService and calls
+    // InitializeAsync() from nearly every test class's setup — under default-parallel xunit
+    // execution, dozens of instances can run this against the SAME shared SQLite file at the
+    // same moment. Ordinary row-level lock contention is retried by SQLite's own busy_timeout,
+    // but concurrent schema-modifying statements (ALTER TABLE / CREATE TABLE / DROP TABLE)
+    // racing each other — or racing a query on another connection — can surface as an
+    // unhandled SQLite exception instead of a retried wait. Serializing the whole method
+    // in-process removes that surface; it's cheap since InitializeAsync is fast and idempotent.
+    private static readonly SemaphoreSlim InitializeLock = new(1, 1);
+
     // Initializes the SQLite database, creating it and its tables if they do not exist
     public async Task InitializeAsync()
+    {
+        await InitializeLock.WaitAsync();
+        try
+        {
+            await InitializeCoreAsync();
+        }
+        finally
+        {
+            InitializeLock.Release();
+        }
+    }
+
+    private async Task InitializeCoreAsync()
     {
         using var db = new QueueDbContext();
         await db.Database.EnsureCreatedAsync();
@@ -447,7 +472,25 @@ public class QueueStorageService
         // Old schema: (Id, DataSourceId, PayloadJson, Timestamp, RetryCount, IsSending)
         // New schema: (Id, DataSourceId, Timestamp, MetricsJson, RetryCount, IsSending)
         //             with UNIQUE (DataSourceId, Timestamp) for upsert merging.
-        await db.Database.ExecuteSqlRawAsync("DROP TABLE IF EXISTS QueueTelemetry;");
+        //
+        // This must run this DROP at most ONCE per device, ever — only when the table is
+        // still on the OLD schema. InitializeAsync() runs on every process startup (real
+        // devices reboot; the test suite calls it from nearly every test class's setup), so an
+        // unconditional "DROP TABLE IF EXISTS QueueTelemetry" here would silently destroy the
+        // entire durable store-and-forward telemetry buffer on every single restart — the exact
+        // data this table exists to protect against a restart losing. Detect the new schema by
+        // checking for the MetricsJson column before considering the drop; once a device has
+        // migrated, this becomes a permanent no-op, same as the ALTER-TABLE-in-a-try/catch
+        // migrations elsewhere in this method.
+        var hasMergedMetricsSchema = (await db.Database
+            .SqlQueryRaw<long>("SELECT COUNT(*) AS Value FROM pragma_table_info('QueueTelemetry') WHERE name = 'MetricsJson'")
+            .ToListAsync())
+            .FirstOrDefault() > 0;
+
+        if (!hasMergedMetricsSchema)
+        {
+            await db.Database.ExecuteSqlRawAsync("DROP TABLE IF EXISTS QueueTelemetry;");
+        }
 
         await db.Database.ExecuteSqlRawAsync(@"
             CREATE TABLE IF NOT EXISTS QueueTelemetry (
@@ -468,9 +511,28 @@ public class QueueStorageService
                 ON QueueTelemetry (IsSending, Timestamp);
         ");
 
-        // Safety check: reset sending status for any items stuck in-flight due to an abrupt shutdown/crash
-        await ResetSendingStatusAsync();
+        // Safety check: reset sending status for any items stuck in-flight due to an abrupt
+        // shutdown/crash. This must run at most ONCE per process lifetime, not once per
+        // InitializeAsync() call: it unconditionally clears every IsSending flag in both
+        // QueueTelemetry and OeeOutboxMessages, which is correct exactly once at real startup
+        // (nothing else in the process has touched either queue yet) but is WRONG if it runs
+        // again later, since by then it would clobber rows that are legitimately in-flight
+        // *right now* as part of an active, successful drain-lock cycle elsewhere in the same
+        // process. In production InitializeAsync() is only ever called once anyway (Worker
+        // startup, per docs/PULSE_Edge_Production_Readiness_Roadmap.md), so this guard changes
+        // nothing there. In the test suite, though, ~150 test classes each construct their own
+        // QueueStorageService and call InitializeAsync() from their own setup — without this
+        // guard, every one of those re-runs the "abrupt shutdown" recovery logic throughout the
+        // run, racing with and silently un-locking sibling tests' active drain-lock rows
+        // (GetPendingTelemetryBatchAsync / OeeStorageService.GetPendingBatchAsync mark rows
+        // IsSending=true to claim them; this reset would immediately hand them back out again).
+        if (Interlocked.Exchange(ref _resetSendingStatusDone, 1) == 0)
+        {
+            await ResetSendingStatusAsync();
+        }
     }
+
+    private static int _resetSendingStatusDone;
 
     // ─────────────────────────────────────────────────────────────────────────
     // CACHING UTILITIES
@@ -839,26 +901,34 @@ public class QueueStorageService
                 .SetProperty(x => x.IsSending, false));
     }
 
-    // Reset status on startup
-    private async Task ResetSendingStatusAsync()
+    // Reset status on startup. Unconditionally clears every IsSending flag in both
+    // QueueTelemetry and OeeOutboxMessages — correct as a crash-recovery sweep run once at real
+    // process startup (nothing else has touched either queue yet), but not safe to call while
+    // other in-flight work may be genuinely mid-drain. InitializeAsync() calls this automatically
+    // exactly once per process (see the guard there). Public so a test that wants to explicitly
+    // simulate "the device restarted and is sweeping up crash artifacts" can invoke the sweep
+    // directly, without relying on a second InitializeAsync() call re-triggering it as a side
+    // effect (that side effect is intentionally guarded away for every OTHER caller — see
+    // InitializeCoreAsync's comment).
+    public async Task ResetSendingStatusAsync()
     {
         using var db = new QueueDbContext();
 
-        var stuckTelemetry = await db.QueueTelemetry.Where(x => x.IsSending).ToListAsync();
-        foreach (var t in stuckTelemetry)
-        {
-            t.IsSending = false;
-        }
+        // Bulk ExecuteUpdateAsync, not fetch-then-foreach-then-SaveChangesAsync: the old
+        // fetch/track/SaveChanges pattern snapshots rows client-side, then expects that exact
+        // row count to still be affected at commit time — if ANY of those rows gets deleted or
+        // completed by other in-flight work between the read and the write (a real possibility
+        // any time this runs while something else is genuinely mid-drain), EF raises
+        // DbUpdateConcurrencyException and the WHOLE batch (including every other, unrelated
+        // row) fails to reset. A bulk UPDATE has no such stale-snapshot expectation — it simply
+        // updates whatever currently matches, atomically, so a row disappearing concurrently is
+        // a no-op for that row rather than an exception for everything.
+        await db.QueueTelemetry
+            .Where(x => x.IsSending)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.IsSending, false));
 
-        var stuckOee = await db.OeeOutboxMessages.Where(x => x.IsSending).ToListAsync();
-        foreach (var m in stuckOee)
-        {
-            m.IsSending = false;
-        }
-
-        if (stuckTelemetry.Any() || stuckOee.Any())
-        {
-            await db.SaveChangesAsync();
-        }
+        await db.OeeOutboxMessages
+            .Where(x => x.IsSending)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.IsSending, false));
     }
 }

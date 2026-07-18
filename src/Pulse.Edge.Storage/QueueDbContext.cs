@@ -41,7 +41,7 @@ public class QueueDbContext : DbContext
         if (_databasePath is not null)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_databasePath)!);
-            optionsBuilder.UseSqlite($"Data Source={_databasePath}");
+            optionsBuilder.UseSqlite($"Data Source={_databasePath};Default Timeout={BusyTimeoutSeconds}");
             return;
         }
 
@@ -67,8 +67,18 @@ public class QueueDbContext : DbContext
         Directory.CreateDirectory(pulseFolder); // Ensure the folder exists
         var dbPath = Path.Combine(pulseFolder, "edge.db");
 
-        optionsBuilder.UseSqlite($"Data Source={dbPath}");
+        optionsBuilder.UseSqlite($"Data Source={dbPath};Default Timeout={BusyTimeoutSeconds}");
     }
+
+    // Maps to sqlite3_busy_timeout: how long a connection will block-and-retry (rather than
+    // throwing immediately) when it finds the database locked by another writer. SQLite only
+    // ever allows one writer at a time even in WAL mode, and this single file is shared by
+    // every QueueDbContext instance across the whole process (the acquisition pipeline, the
+    // API, sync, and — in the test suite — dozens of concurrently-running test classes all
+    // hitting it at once). Without an explicit value, transient lock contention under that
+    // load can surface as an unhandled "database is locked" exception instead of a short,
+    // harmless wait. 30s comfortably covers real contention without masking a genuine deadlock.
+    private const int BusyTimeoutSeconds = 30;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

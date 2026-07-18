@@ -12,6 +12,12 @@ using Xunit;
 
 namespace Pulse.Edge.Tests;
 
+// Joins every other OEE-table-touching test class in the "EdgeApi" collection
+// (DisableParallelization=true) — see the comment on OeeStorageServiceTests for why. This
+// class's per-instance-unique DataPointIds already rule out OeeStateEngine cross-channel
+// LastState corruption, but serializing it here closes off any other GLOBAL-scan race between
+// it and OeeStorageServiceTests/OeeStorageSchemaTests/OeeEndToEndTests as well.
+[Collection("EdgeApi")]
 public class OeeStateEngineTests : IAsyncLifetime
 {
     private readonly QueueStorageService _queueStorage = new();
@@ -20,6 +26,22 @@ public class OeeStateEngineTests : IAsyncLifetime
     private int _channelId;
     private readonly DateTime _t0 = new(2026, 7, 18, 6, 0, 0, DateTimeKind.Utc);
 
+    // OeeStateEngine.EvaluateAsync loads and evaluates ALL enabled channels in the
+    // shared DB (GetChannelsAsync is unscoped) — that's correct production behavior
+    // (one poll tick, many channels), but it means any two test instances that bind
+    // their channel's RunDataPointId/etc to the SAME literal string (e.g. the old
+    // hardcoded "dp-run") can silently evaluate and overwrite EACH OTHER's channel's
+    // LastState/LastCode whenever they run concurrently (different test classes get
+    // no serialization by default). A per-instance GUID suffix makes every test's
+    // DataPointIds globally unique, so no other concurrently-running engine (in this
+    // class or in OeeEndToEndTests, the only other class that drives OeeStateEngine)
+    // can ever match and touch this instance's channel, and vice versa.
+    private readonly string _dpRun = "dp-run-" + Guid.NewGuid().ToString("N");
+    private readonly string _dpFault = "dp-fault-" + Guid.NewGuid().ToString("N");
+    private readonly string _dpCode = "dp-code-" + Guid.NewGuid().ToString("N");
+    private readonly string _dpGood = "dp-good-" + Guid.NewGuid().ToString("N");
+    private readonly string _dpReject = "dp-reject-" + Guid.NewGuid().ToString("N");
+
     public async Task InitializeAsync()
     {
         await _queueStorage.InitializeAsync();
@@ -27,11 +49,11 @@ public class OeeStateEngineTests : IAsyncLifetime
         {
             ExternalId = "engine-test-" + Guid.NewGuid().ToString("N"),
             Name = "Engine Test",
-            RunDataPointId = "dp-run",
-            FaultDataPointId = "dp-fault",
-            CodeDataPointId = "dp-code",
-            GoodDataPointId = "dp-good",
-            RejectDataPointId = "dp-reject",
+            RunDataPointId = _dpRun,
+            FaultDataPointId = _dpFault,
+            CodeDataPointId = _dpCode,
+            GoodDataPointId = _dpGood,
+            RejectDataPointId = _dpReject,
             DebounceSeconds = 2,
         });
         _channelId = channel.Id;
@@ -40,13 +62,13 @@ public class OeeStateEngineTests : IAsyncLifetime
 
     public async Task DisposeAsync() => await _oee.DeleteChannelAsync(_channelId);
 
-    private static List<DataPoint> Signals(double run, double fault, string code, double good, double reject) =>
+    private List<DataPoint> Signals(double run, double fault, string code, double good, double reject) =>
     [
-        new() { Id = "dp-run",    LastValue = run.ToString(),    LastUpdated = DateTime.UtcNow },
-        new() { Id = "dp-fault",  LastValue = fault.ToString(),  LastUpdated = DateTime.UtcNow },
-        new() { Id = "dp-code",   LastValue = code,              LastUpdated = DateTime.UtcNow },
-        new() { Id = "dp-good",   LastValue = good.ToString(),   LastUpdated = DateTime.UtcNow },
-        new() { Id = "dp-reject", LastValue = reject.ToString(), LastUpdated = DateTime.UtcNow },
+        new() { Id = _dpRun,    LastValue = run.ToString(),    LastUpdated = DateTime.UtcNow },
+        new() { Id = _dpFault,  LastValue = fault.ToString(),  LastUpdated = DateTime.UtcNow },
+        new() { Id = _dpCode,   LastValue = code,              LastUpdated = DateTime.UtcNow },
+        new() { Id = _dpGood,   LastValue = good.ToString(),   LastUpdated = DateTime.UtcNow },
+        new() { Id = _dpReject, LastValue = reject.ToString(), LastUpdated = DateTime.UtcNow },
     ];
 
     private async Task<List<OeeOutboxMessage>> Outbox()
@@ -137,15 +159,27 @@ public class OeeStateEngineTests : IAsyncLifetime
     [Fact]
     public async Task ChannelWithoutFaultBinding_NeverEmitsFault()
     {
+        // Deliberately its OWN unique run id (not _dpRun/_dpFault) — this channel has
+        // no FaultDataPointId, but if it shared _dpRun with the class's main channel,
+        // evaluating it would ALSO match and evaluate that main channel (same
+        // GetChannelsAsync scan), corrupting a test that isn't even running yet.
+        var noFaultRunId = "dp-run-" + Guid.NewGuid().ToString("N");
         var noFault = await _oee.CreateChannelAsync(new OeeChannel
         {
             ExternalId = "nofault-" + Guid.NewGuid().ToString("N"),
-            Name = "No Fault", RunDataPointId = "dp-run", DebounceSeconds = 0,
+            Name = "No Fault", RunDataPointId = noFaultRunId, DebounceSeconds = 0,
         });
         try
         {
             var engine = new OeeStateEngine(NullLogger<OeeStateEngine>.Instance, _oee);
-            await engine.EvaluateAsync(Signals(0, 3, "3", 0, 0), _t0); // fault signal present but unbound
+            var probe = new List<DataPoint>
+            {
+                new() { Id = noFaultRunId, LastValue = "0", LastUpdated = DateTime.UtcNow },
+                // Fault signal present in the polled set but not bound to this channel's
+                // FaultDataPointId (it has none) — must be ignored.
+                new() { Id = "dp-fault-unbound-probe-" + Guid.NewGuid().ToString("N"), LastValue = "3", LastUpdated = DateTime.UtcNow },
+            };
+            await engine.EvaluateAsync(probe, _t0);
 
             using var db = new QueueDbContext();
             var msg = await db.OeeOutboxMessages.AsNoTracking()

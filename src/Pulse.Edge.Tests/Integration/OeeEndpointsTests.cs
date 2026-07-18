@@ -51,8 +51,17 @@ public sealed class OeeEndpointsTests(PulseEdgeAppFactory factory) : IClassFixtu
         var externalId = "dup-" + Guid.NewGuid().ToString("N");
         var first = await client.PostAsJsonAsync("/api/oee/channels", new ChannelBody(externalId, "A", true, "dp-run"));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
-        var second = await client.PostAsJsonAsync("/api/oee/channels", new ChannelBody(externalId, "B", true, "dp-run"));
-        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+        try
+        {
+            var second = await client.PostAsJsonAsync("/api/oee/channels", new ChannelBody(externalId, "B", true, "dp-run"));
+            Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+        }
+        finally
+        {
+            using var firstDoc = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+            var firstId = firstDoc.RootElement.GetProperty("id").GetInt32();
+            await client.DeleteAsync($"/api/oee/channels/{firstId}");
+        }
     }
 
     [Fact]
@@ -64,13 +73,20 @@ public sealed class OeeEndpointsTests(PulseEdgeAppFactory factory) : IClassFixtu
         using var created = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
         var id = created.RootElement.GetProperty("id").GetInt32();
 
-        var renamedOk = await client.PutAsJsonAsync($"/api/oee/channels/{id}",
-            new ChannelBody(externalId, "Renamed", true, "dp-run"));
-        Assert.Equal(HttpStatusCode.OK, renamedOk.StatusCode);
+        try
+        {
+            var renamedOk = await client.PutAsJsonAsync($"/api/oee/channels/{id}",
+                new ChannelBody(externalId, "Renamed", true, "dp-run"));
+            Assert.Equal(HttpStatusCode.OK, renamedOk.StatusCode);
 
-        var mutated = await client.PutAsJsonAsync($"/api/oee/channels/{id}",
-            new ChannelBody("different-identity", "Renamed", true, "dp-run"));
-        Assert.Equal(HttpStatusCode.BadRequest, mutated.StatusCode);
+            var mutated = await client.PutAsJsonAsync($"/api/oee/channels/{id}",
+                new ChannelBody("different-identity", "Renamed", true, "dp-run"));
+            Assert.Equal(HttpStatusCode.BadRequest, mutated.StatusCode);
+        }
+        finally
+        {
+            await client.DeleteAsync($"/api/oee/channels/{id}");
+        }
     }
 
     [Fact]
@@ -80,6 +96,7 @@ public sealed class OeeEndpointsTests(PulseEdgeAppFactory factory) : IClassFixtu
         var res = await client.PostAsJsonAsync("/api/oee/channels",
             new ChannelBody("r-" + Guid.NewGuid().ToString("N"), "R", true, "dp-run", RejectDataPointId: "dp-reject"));
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        // Rejected at validation — no channel row was ever created; nothing to clean up.
     }
 
     [Fact]

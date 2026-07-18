@@ -8,6 +8,12 @@ using Xunit;
 
 namespace Pulse.Edge.Tests;
 
+// This class asserts on the IsSending flag of specific outbox rows after a reset sweep —
+// exactly the kind of assertion that OeeStorageServiceTests.GetPendingBatchAsync's GLOBAL
+// (unscoped-by-channel) scan can silently invalidate if both run concurrently. See the
+// [Collection("EdgeApi")] comment on OeeStorageServiceTests for the full explanation; sharing
+// that collection here serializes this class against every other OEE-table-touching test class.
+[Collection("EdgeApi")]
 public class OeeStorageSchemaTests
 {
     [Fact]
@@ -84,7 +90,12 @@ public class OeeStorageSchemaTests
 
         try
         {
-            await service.InitializeAsync(); // simulated restart
+            // Calling InitializeAsync() again would no longer re-trigger this sweep — it's
+            // guarded to run at most once per process now, so the ~150 other test classes that
+            // each call InitializeAsync() from their own setup don't repeatedly clobber sibling
+            // tests' legitimately-in-flight rows (see QueueStorageService.InitializeCoreAsync).
+            // Call the sweep directly to simulate "the device restarted."
+            await service.ResetSendingStatusAsync(); // simulated restart's crash-recovery sweep
 
             using var db3 = new QueueDbContext();
             var row = await db3.OeeOutboxMessages.SingleAsync(m => m.ChannelId == channelId);

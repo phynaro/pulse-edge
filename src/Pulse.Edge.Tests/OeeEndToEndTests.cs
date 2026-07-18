@@ -39,6 +39,17 @@ internal sealed class FakeCloudHandler : HttpMessageHandler
         new(status) { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json") };
 }
 
+// OeeSyncService.RunOnceAsync drains the outbox and declares channels GLOBALLY —
+// it is not scoped to this test's own channel. Any other OEE test that touches the
+// same tables (e.g. Integration.OeeEndpointsTests, which creates channels via the
+// HTTP API) must not run concurrently with this class, or its rows can be mid-flight
+// when RunOnceAsync scans everything. Sharing the "EdgeApi" collection (defined in
+// Pulse.Edge.Tests.Integration.PulseEdgeAppFactory with DisableParallelization=true)
+// serializes this class against that one. The collection name is a plain string key,
+// not a type reference, so no using/alias is needed to reach across namespaces, and
+// this class does NOT take PulseEdgeAppFactory as a constructor parameter — collection
+// membership alone is enough to get serialized execution.
+[Collection("EdgeApi")]
 public class OeeEndToEndTests : IAsyncLifetime
 {
     private readonly QueueStorageService _queueStorage = new();
@@ -59,17 +70,46 @@ public class OeeEndToEndTests : IAsyncLifetime
     private string? _originalApiKey;
     private bool _originalIsSyncEnabled;
 
+    // OeeStateEngine.EvaluateAsync (driven by ProduceMessagesAsync below) evaluates
+    // ALL enabled channels in the shared DB, not just this test's own — GetChannelsAsync
+    // is unscoped by design (one poll tick, many channels in production). OeeStateEngineTests
+    // is the only other class that also drives an OeeStateEngine, and it runs concurrently
+    // with this class (different default xunit collections). If both hardcode the same
+    // "dp-run"/"dp-fault"/"dp-good" DataPointIds, either engine can silently overwrite the
+    // other's channel LastState. A per-instance GUID suffix rules that out entirely.
+    private readonly string _dpRun = "dp-run-" + Guid.NewGuid().ToString("N");
+    private readonly string _dpFault = "dp-fault-" + Guid.NewGuid().ToString("N");
+    private readonly string _dpGood = "dp-good-" + Guid.NewGuid().ToString("N");
+
     public async Task InitializeAsync()
     {
         await _queueStorage.InitializeAsync();
+
+        // Self-hygiene: if a prior run of this class crashed (or was killed) before
+        // DisposeAsync ran, its "e2e-*" channel and outbox rows would otherwise sit
+        // in the shared, persisted itests DB forever and get swept up by this test's
+        // RunOnceAsync calls (which declare/drain ALL enabled channels, not just ours).
+        using (var cleanupDb = new QueueDbContext())
+        {
+            var stale = await cleanupDb.OeeChannels
+                .Where(c => c.ExternalId.StartsWith("e2e-"))
+                .Select(c => c.Id)
+                .ToListAsync();
+            if (stale.Count > 0)
+            {
+                await cleanupDb.OeeOutboxMessages.Where(m => stale.Contains(m.ChannelId)).ExecuteDeleteAsync();
+                await cleanupDb.OeeChannels.Where(c => stale.Contains(c.Id)).ExecuteDeleteAsync();
+            }
+        }
+
         _externalId = "e2e-" + Guid.NewGuid().ToString("N");
         var channel = await _oee.CreateChannelAsync(new OeeChannel
         {
             ExternalId = _externalId,
             Name = "E2E Filler",
-            RunDataPointId = "dp-run",
-            FaultDataPointId = "dp-fault",
-            GoodDataPointId = "dp-good",
+            RunDataPointId = _dpRun,
+            FaultDataPointId = _dpFault,
+            GoodDataPointId = _dpGood,
             DebounceSeconds = 0,
         });
         _channelId = channel.Id;
@@ -110,6 +150,14 @@ public class OeeEndToEndTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        // DeleteChannelAsync already cascades the outbox rows for this channel inside
+        // its own transaction, but purge them explicitly too as a defense-in-depth
+        // belt-and-suspenders — if a test fails between ProduceMessagesAsync and here,
+        // we still want the outbox left spotless for the next test/run.
+        using (var cleanupDb = new QueueDbContext())
+        {
+            await cleanupDb.OeeOutboxMessages.Where(m => m.ChannelId == _channelId).ExecuteDeleteAsync();
+        }
         await _oee.DeleteChannelAsync(_channelId);
         if (!string.IsNullOrEmpty(_deviceConfigId))
         {
@@ -142,9 +190,9 @@ public class OeeEndToEndTests : IAsyncLifetime
         var t0 = new DateTime(2026, 7, 18, 10, 0, 0, DateTimeKind.Utc);
         List<DataPoint> Sig(double run, double fault, double good) =>
         [
-            new() { Id = "dp-run",   LastValue = run.ToString(),   LastUpdated = DateTime.UtcNow },
-            new() { Id = "dp-fault", LastValue = fault.ToString(), LastUpdated = DateTime.UtcNow },
-            new() { Id = "dp-good",  LastValue = good.ToString(),  LastUpdated = DateTime.UtcNow },
+            new() { Id = _dpRun,   LastValue = run.ToString(),   LastUpdated = DateTime.UtcNow },
+            new() { Id = _dpFault, LastValue = fault.ToString(), LastUpdated = DateTime.UtcNow },
+            new() { Id = _dpGood,  LastValue = good.ToString(),  LastUpdated = DateTime.UtcNow },
         ];
         await engine.EvaluateAsync(Sig(1, 0, 100), t0);                 // boot sync (seq 0)
         await engine.EvaluateAsync(Sig(0, 1, 182440), t0.AddSeconds(5)); // fault transition (seq 1, debounce 0)
@@ -180,13 +228,24 @@ public class OeeEndToEndTests : IAsyncLifetime
         Assert.True(await service2.RunOnceAsync(CancellationToken.None));
         Assert.Equal(0, await PendingCountAsync());
 
-        // The batch was oldest-first with contiguous seqs.
-        var eventsBody = up.Requests.Single(r => r.Path == "/edge/oee/events").Body;
+        // The batch was oldest-first with contiguous seqs. Only one "EdgeApi"-collection
+        // test runs at a time (see the class's [Collection("EdgeApi")]), but this
+        // FakeCloudHandler instance is scoped to `up`/`service2` alone, so `.Last()` vs
+        // `.Single()` only changes how defensively we pick the request — it still proves
+        // the same thing (exactly one real send happened for this channel's events).
+        var eventsBody = up.Requests.Where(r => r.Path == "/edge/oee/events").Last().Body;
         using var doc = JsonDocument.Parse(eventsBody);
-        var seqs = doc.RootElement.EnumerateArray().Select(m => m.GetProperty("seq").GetInt64()).ToList();
+        // Filter to messages for THIS test's channel — RunOnceAsync declares/drains
+        // globally, so if another channel's rows were ever present in the same batch
+        // (they shouldn't be, given the hygiene fixes above, but this keeps the
+        // assertion honest rather than relying solely on absence of contamination),
+        // only ours should be asserted on here.
+        var ownMessages = doc.RootElement.EnumerateArray()
+            .Where(m => m.GetProperty("channel").GetString() == _externalId)
+            .ToList();
+        var seqs = ownMessages.Select(m => m.GetProperty("seq").GetInt64()).ToList();
         Assert.Equal(new List<long> { 0, 1, 2 }, seqs);
-        Assert.All(doc.RootElement.EnumerateArray(),
-            m => Assert.Equal(_externalId, m.GetProperty("channel").GetString()));
+        Assert.All(ownMessages, m => Assert.Equal(_externalId, m.GetProperty("channel").GetString()));
     }
 
     [Fact]

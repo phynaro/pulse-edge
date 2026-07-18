@@ -10,6 +10,15 @@ using Xunit;
 
 namespace Pulse.Edge.Tests;
 
+// GetPendingBatchAsync (below) and ResetSendingStatusAsync (in QueueStorageService) both scan
+// OeeOutboxMessages GLOBALLY — across every channel from every test, not just this class's own —
+// by design (that's the real production drain/recovery contract). Any other test class that
+// creates outbox rows and asserts on their IsSending flag (e.g. OeeStorageSchemaTests) is
+// vulnerable to this class's DrainLifecycle test marking/clobbering those same rows if both run
+// concurrently. Sharing the "EdgeApi" collection (DisableParallelization=true, defined in
+// Pulse.Edge.Tests.Integration.PulseEdgeAppFactory) serializes every OEE-table-touching test
+// class against every other one, closing that race for good.
+[Collection("EdgeApi")]
 public class OeeStorageServiceTests : IAsyncLifetime
 {
     private readonly QueueStorageService _queueStorage = new();
