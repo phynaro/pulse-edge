@@ -24,6 +24,7 @@ public class Worker : BackgroundService
     private readonly DriverPollerRegistry _pollerRegistry;
     private readonly EdgeConfigMonitor _configMonitor;
     private readonly CloudProvisioningService _provisioningService;
+    private readonly OeeStateEngine _oeeStateEngine;
 
     private DateTime _lastHeartbeat = DateTime.MinValue;
     private readonly Dictionary<string, (DateTime LastAttempt, int FailureCount)> _adapterConnectionStates = new();
@@ -35,7 +36,8 @@ public class Worker : BackgroundService
         SyncService syncService,
         DriverPollerRegistry pollerRegistry,
         EdgeConfigMonitor configMonitor,
-        CloudProvisioningService provisioningService)
+        CloudProvisioningService provisioningService,
+        OeeStateEngine oeeStateEngine)
     {
         _logger = logger;
         _storageService = storageService;
@@ -44,6 +46,7 @@ public class Worker : BackgroundService
         _pollerRegistry = pollerRegistry;
         _configMonitor = configMonitor;
         _provisioningService = provisioningService;
+        _oeeStateEngine = oeeStateEngine;
 
         _configMonitor.OnAdapterChanged += HandleAdapterChanged;
     }
@@ -282,6 +285,17 @@ public class Worker : BackgroundService
             });
 
             await Task.WhenAll(pollTasks);
+
+            // OEE reading tap: pollers mutated dp.LastValue on these fetched instances,
+            // so the engine sees scan-fresh values for every protocol from one call site.
+            try
+            {
+                await _oeeStateEngine.EvaluateAsync(datapoints, now);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "OEE state evaluation failed");
+            }
 
             // 3. Batch save diagnostic updates to avoid high disk write I/O
             if (dirtyDps.Any())

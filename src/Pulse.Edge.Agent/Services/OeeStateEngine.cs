@@ -180,6 +180,7 @@ public class OeeStateEngine
     /// <summary>
     /// Pollers format LastValue as "True"/"False" for booleans, "123" for integers,
     /// "85.30" for floats (see SimulatorDriverPoller.cs:100-114 — all pollers share the pattern).
+    /// Public (not internal) for test access — InternalsVisibleTo collides with the hosts' implicit Program types (CS0433).
     /// </summary>
     public static bool TryParseSignal(string? lastValue, out double value)
     {
