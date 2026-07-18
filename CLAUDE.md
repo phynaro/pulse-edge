@@ -90,15 +90,17 @@ In single-port publish, the UI lives *inside* the API assembly as an embedded re
 Device ──driver──> DriverPoller ──> QueueStorageService (SQLite) ──> SyncService/CloudClient ──> PULSE Cloud
 ```
 
+A parallel OEE data plane (OeeStateEngine → OeeOutboxMessages → OeeSyncService → POST /edge/oee/*) reports per-machine state transitions and counters with per-channel sequence numbers — contract: know-how/cloud_oee_ingestion.md; it deliberately bypasses /edge/telemetry.
+
 - **Protocol drivers** — one project per protocol: `Protocols.OpcUa`, `.Modbus`, `.MqttProtocol`, `.LibPlcTag` (EtherNet/IP), `.S7Net` (Siemens S7), `.RestApi`, `.Bacnet`, plus the built-in `SimulatorDriver`. The **Simulator is a shipped, first-class driver** (not just a test fixture) — it generates synthetic tag data for demos, commissioning without hardware, and pre-deployment validation; keep it in production builds. All drivers implement `IProtocolDriver` and are registered **Transient** so each adapter instance gets an isolated connection.
 - **DriverPollers** (`Agent/Drivers/*Poller.cs`) wrap each driver with polling/scheduling; `DriverPollerRegistry` (singleton) maps adapters to pollers. Polling semantics: `know-how/tag_polling_mechanism.md`.
-- **`QueueStorageService`** (`Pulse.Edge.Storage`) — the single SQLite store (EF Core, `QueueDbContext`). Holds queued telemetry/events, adapters, data sources, data points, stream templates, local users, audit + diagnostic events. `InitializeAsync()` runs at startup before hosted services to avoid races. This is the durability boundary — Roadmap Phase 4 hardens it (WAL, retention, disk thresholds).
+- **`QueueStorageService`** (`Pulse.Edge.Storage`) — the single SQLite store (EF Core, `QueueDbContext`). Holds queued telemetry, OEE channels + outbox, adapters, data sources, data points, stream templates, local users, audit + diagnostic events. `InitializeAsync()` runs at startup before hosted services to avoid races. This is the durability boundary — Roadmap Phase 4 hardens it (WAL, retention, disk thresholds).
 - **`SyncService` + `CloudClient`** (`Pulse.Edge.Cloud`) — store-and-forward delivery to cloud; `CloudProvisioningService` handles pairing/registration.
 - **`EdgeConfigMonitor`** — watches local config and reconciles the running adapter/poller set.
 
 ### API surface & UI
 
-Endpoints are grouped under `Pulse.Edge.Api/Endpoints/` (Minimal API extension classes): `Adapter`, `Auth`, `Backup`, `Buffer`, `Dashboard`, `DataPoint`, `DataSource`, `DiagnosticLog`, `Settings`. Auth is **local cookie auth** — `PasswordService` + `CurrentUserValidationMiddleware` in `Security/`, backed by the `LocalUser` model (spec: `docs/PULSE_Edge_Local_Authentication_Spec.md`). Logging is Serilog with daily rolling files (30-day / 10 MB retention) plus a `DiagnosticLogService` sink surfaced through the UI.
+Endpoints are grouped under `Pulse.Edge.Api/Endpoints/` (Minimal API extension classes): `Adapter`, `Auth`, `Backup`, `Buffer`, `Dashboard`, `DataPoint`, `DataSource`, `DiagnosticLog`, `Oee`, `Settings`. Auth is **local cookie auth** — `PasswordService` + `CurrentUserValidationMiddleware` in `Security/`, backed by the `LocalUser` model (spec: `docs/PULSE_Edge_Local_Authentication_Spec.md`). Logging is Serilog with daily rolling files (30-day / 10 MB retention) plus a `DiagnosticLogService` sink surfaced through the UI.
 
 The UI (`src/Pulse.Edge.UI`, React 19 + Vite + `@pulse/ui` from `packages/pulse-ui`) is the commissioning console: adapter setup, tag/stream binding wizards, dashboard, diagnostics. It uses the **PULSE design system** — invoke the `pulse` skill for any UI work.
 
