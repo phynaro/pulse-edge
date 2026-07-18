@@ -105,7 +105,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
     diagnostics,
     isSyncEnabled, setIsSyncEnabled,
     bufferTelemetry,
-    bufferEvents,
+    oeeOutbox,
     pollingInterval, setPollingInterval,
     maxLiveLogs, setMaxLiveLogs,
     telemetryWarningThreshold, setTelemetryWarningThreshold,
@@ -420,10 +420,10 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
           <button 
             className={`menu-item ${activeTab === 'buffer' ? 'active' : ''}`}
             onClick={() => setActiveTab('buffer')}
-            title={isSidebarCollapsed ? `Buffer Explorer (${bufferTelemetry.length + bufferEvents.length})` : undefined}
+            title={isSidebarCollapsed ? `Buffer Explorer (${bufferTelemetry.length + oeeOutbox.length})` : undefined}
           >
             <Layers size={18} />
-            {!isSidebarCollapsed && <span>Buffer Explorer ({bufferTelemetry.length + bufferEvents.length})</span>}
+            {!isSidebarCollapsed && <span>Buffer Explorer ({bufferTelemetry.length + oeeOutbox.length})</span>}
           </button>
           
           <button 
@@ -482,7 +482,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
                   handleToggleSync={handleToggleSync}
                   bufferTelemetry={bufferTelemetry}
                   telemetryWarningThreshold={telemetryWarningThreshold}
-                  bufferEvents={bufferEvents}
+                  oeeOutbox={oeeOutbox}
                   eventWarningThreshold={eventWarningThreshold}
                   diagnostics={diagnostics}
                   adapters={adapters}
@@ -541,7 +541,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
               {activeTab === 'buffer' && (
                 <BufferTab
                   bufferTelemetry={bufferTelemetry}
-                  bufferEvents={bufferEvents}
+                  oeeOutbox={oeeOutbox}
                 />
               )}
               {activeTab === 'logs' && <DiagnosticLogsTab />}

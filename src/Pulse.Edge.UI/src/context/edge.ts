@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 import type React from 'react';
 import type {
-  BufferEventItem,
+  OeeOutboxItem,
   BufferTelemetryItem,
   DashboardData,
   DataPoint,
@@ -32,8 +32,8 @@ export interface EdgeContextType {
   setIsSyncEnabled: (val: boolean) => void;
   bufferTelemetry: BufferTelemetryItem[];
   setBufferTelemetry: (val: BufferTelemetryItem[]) => void;
-  bufferEvents: BufferEventItem[];
-  setBufferEvents: (val: BufferEventItem[]) => void;
+  oeeOutbox: OeeOutboxItem[];
+  setOeeOutbox: (val: OeeOutboxItem[]) => void;
   pollingInterval: number;
   setPollingInterval: (val: number) => void;
   maxLiveLogs: number;
