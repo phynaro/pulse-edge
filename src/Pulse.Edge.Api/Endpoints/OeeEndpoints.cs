@@ -49,19 +49,28 @@ public static class OeeEndpoints
             if (existing.Any(c => c.ExternalId == req.ExternalId))
                 return Results.Conflict(new { error = $"A channel with externalId '{req.ExternalId}' already exists." });
 
-            var channel = await oee.CreateChannelAsync(new OeeChannel
+            try
             {
-                ExternalId = req.ExternalId.Trim(),
-                Name = req.Name.Trim(),
-                Enabled = req.Enabled,
-                RunDataPointId = req.RunDataPointId,
-                FaultDataPointId = NullIfEmpty(req.FaultDataPointId),
-                CodeDataPointId = NullIfEmpty(req.CodeDataPointId),
-                GoodDataPointId = NullIfEmpty(req.GoodDataPointId),
-                RejectDataPointId = NullIfEmpty(req.RejectDataPointId),
-                DebounceSeconds = req.DebounceSeconds,
-            });
-            return Results.Created($"/api/oee/channels/{channel.Id}", channel);
+                var channel = await oee.CreateChannelAsync(new OeeChannel
+                {
+                    ExternalId = req.ExternalId.Trim(),
+                    Name = req.Name.Trim(),
+                    Enabled = req.Enabled,
+                    RunDataPointId = req.RunDataPointId,
+                    FaultDataPointId = NullIfEmpty(req.FaultDataPointId),
+                    CodeDataPointId = NullIfEmpty(req.CodeDataPointId),
+                    GoodDataPointId = NullIfEmpty(req.GoodDataPointId),
+                    RejectDataPointId = NullIfEmpty(req.RejectDataPointId),
+                    DebounceSeconds = req.DebounceSeconds,
+                });
+                return Results.Created($"/api/oee/channels/{channel.Id}", channel);
+            }
+            catch (DbUpdateException)
+            {
+                // Handle concurrent create race: a concurrent request won the unique index on ExternalId.
+                // The pre-check above covers the common case; this catch is the authority when DB-level enforcement fires.
+                return Results.Conflict(new { error = $"A channel with externalId '{req.ExternalId}' already exists." });
+            }
         });
 
         routes.MapPut("/api/oee/channels/{id}", async (int id, OeeChannelRequest req, OeeStorageService oee) =>
