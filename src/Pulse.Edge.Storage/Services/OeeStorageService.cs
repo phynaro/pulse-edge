@@ -175,4 +175,62 @@ public class OeeStorageService
         }
         await db.SaveChangesAsync();
     }
+
+    // ── Outbox drain (called by OeeSyncService) ──────────────────────────────
+
+    public async Task<List<OeeOutboxMessage>> GetPendingBatchAsync(int batchSize = 1000)
+    {
+        using var db = new QueueDbContext();
+        var items = await db.OeeOutboxMessages
+            .AsNoTracking()
+            .Where(x => !x.IsSending)
+            .OrderBy(x => x.Id)
+            .Take(batchSize)
+            .ToListAsync();
+
+        if (items.Any())
+        {
+            var ids = items.Select(x => x.Id).ToList();
+            await db.OeeOutboxMessages
+                .Where(x => ids.Contains(x.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.IsSending, true));
+            foreach (var item in items)
+            {
+                item.IsSending = true;
+            }
+        }
+        return items;
+    }
+
+    public async Task CompleteBatchAsync(IEnumerable<int> ids)
+    {
+        using var db = new QueueDbContext();
+        await db.OeeOutboxMessages.Where(x => ids.Contains(x.Id)).ExecuteDeleteAsync();
+    }
+
+    public async Task ReleaseBatchAsync(IEnumerable<int> ids)
+    {
+        using var db = new QueueDbContext();
+        await db.OeeOutboxMessages
+            .Where(x => ids.Contains(x.Id))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
+                .SetProperty(x => x.IsSending, false));
+    }
+
+    public async Task<int> GetOutboxDepthAsync()
+    {
+        using var db = new QueueDbContext();
+        return await db.OeeOutboxMessages.CountAsync();
+    }
+
+    public async Task<List<OeeOutboxMessage>> GetRecentOutboxAsync(int take = 50)
+    {
+        using var db = new QueueDbContext();
+        return await db.OeeOutboxMessages
+            .AsNoTracking()
+            .OrderByDescending(x => x.Id)
+            .Take(take)
+            .ToListAsync();
+    }
 }

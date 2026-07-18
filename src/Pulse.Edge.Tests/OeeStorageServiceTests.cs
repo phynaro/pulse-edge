@@ -134,4 +134,34 @@ public class OeeStorageServiceTests : IAsyncLifetime
         using var db = new QueueDbContext();
         Assert.Equal(0, await db.OeeOutboxMessages.CountAsync(m => m.ChannelId == victim.Id));
     }
+
+    [Fact]
+    public async Task DrainLifecycle_LocksCompletesAndReleases()
+    {
+        await _oee.EnqueueMessageAsync(_channelId, "state", DateTime.UtcNow, "running", null, 1, null);
+        await _oee.EnqueueMessageAsync(_channelId, "sync", DateTime.UtcNow, "running", null, 2, null);
+
+        var batch = (await _oee.GetPendingBatchAsync(batchSize: 1000))
+            .Where(m => m.ChannelId == _channelId).ToList();
+        Assert.Equal(2, batch.Count);
+        Assert.True(batch.All(m => m.IsSending));
+        Assert.True(batch[0].Seq < batch[1].Seq); // oldest (lowest seq) first
+
+        // Locked rows must not be handed out again.
+        var second = (await _oee.GetPendingBatchAsync(batchSize: 1000))
+            .Where(m => m.ChannelId == _channelId).ToList();
+        Assert.Empty(second);
+
+        // Release → visible again with RetryCount bumped.
+        await _oee.ReleaseBatchAsync(batch.Select(m => m.Id));
+        var third = (await _oee.GetPendingBatchAsync(batchSize: 1000))
+            .Where(m => m.ChannelId == _channelId).ToList();
+        Assert.Equal(2, third.Count);
+        Assert.True(third.All(m => m.RetryCount == 1));
+
+        // Complete → gone.
+        await _oee.CompleteBatchAsync(third.Select(m => m.Id));
+        Assert.Equal(0, (await _oee.GetPendingBatchAsync(batchSize: 1000))
+            .Count(m => m.ChannelId == _channelId));
+    }
 }
