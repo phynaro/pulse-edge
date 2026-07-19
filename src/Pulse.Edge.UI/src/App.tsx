@@ -16,8 +16,9 @@ import {
 import { useToast } from './hooks/useToast';
 import ToastContainer from './components/ToastContainer';
 
-import type { 
-  DataSource, 
+import type {
+  DataSource,
+  OeeStatusResponse,
 } from './types';
 
 import DashboardTab from './components/DashboardTab';
@@ -131,6 +132,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
 
   const [operationalRefreshedAt, setOperationalRefreshedAt] = useState<Date | null>(null);
   const [operationalDataStale, setOperationalDataStale] = useState(false);
+  const [oeeStatus, setOeeStatus] = useState<OeeStatusResponse | null>(null);
 
   useEffect(() => {
     if (activeTab !== 'dashboard') return;
@@ -153,6 +155,14 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
       } catch (error) {
         if (active) setOperationalDataStale(true);
         console.error('Failed to refresh dashboard operational data:', error);
+      }
+
+      // OEE status rides the same cadence but fails independently (null = unavailable).
+      try {
+        const oeeRes = await fetch('/api/oee/status');
+        if (active) setOeeStatus(oeeRes.ok ? await oeeRes.json() : null);
+      } catch {
+        if (active) setOeeStatus(null);
       }
     };
     void refreshOperationalData();
@@ -511,6 +521,8 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
                   setTelemetryFilterType={setTelemetryFilterType}
                   maxLiveLogs={maxLiveLogs}
                   setMaxLiveLogs={setMaxLiveLogs}
+                  oeeStatus={oeeStatus}
+                  onOpenOee={() => setActiveTab('oee')}
                 />
               )}
  

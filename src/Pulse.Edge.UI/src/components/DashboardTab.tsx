@@ -9,7 +9,8 @@ import type {
   OeeOutboxItem,
   DriverAdapter,
   DataPoint,
-  DataSource
+  DataSource,
+  OeeStatusResponse
 } from '../types';
 
 interface DashboardTabProps {
@@ -35,6 +36,8 @@ interface DashboardTabProps {
   setTelemetryFilterType: (val: string) => void;
   maxLiveLogs: number;
   setMaxLiveLogs: (val: number) => void;
+  oeeStatus: OeeStatusResponse | null;
+  onOpenOee: () => void;
 }
 
 export default function DashboardTab({
@@ -59,7 +62,9 @@ export default function DashboardTab({
   telemetryFilterType,
   setTelemetryFilterType,
   maxLiveLogs,
-  setMaxLiveLogs
+  setMaxLiveLogs,
+  oeeStatus,
+  onOpenOee
 }: DashboardTabProps) {
   const [drilldown, setDrilldown] = useState<DashboardDrilldown | null>(null);
 
@@ -209,7 +214,7 @@ export default function DashboardTab({
         <span className={`ops-refresh-state ${operationalDataStale ? 'is-stale' : ''}`}>{operationalDataStale ? 'Stale data · last success ' : 'Updated '}{operationalRefreshedAt ? operationalRefreshedAt.toLocaleTimeString() : '—'}</span>
       </div>
 
-      <OperationalOverview adapters={adapters} datapoints={datapoints} datasources={datasources} onSelect={setDrilldown}/>
+      <OperationalOverview adapters={adapters} datapoints={datapoints} datasources={datasources} onSelect={setDrilldown} oeeStatus={oeeStatus} onOpenOee={onOpenOee}/>
 
       {(telemetryDanger || eventsDanger) && <div className="ops-queue-alert"><strong>Queue threshold exceeded.</strong> Telemetry: {bufferTelemetry.length}/{telemetryWarningThreshold} · OEE: {oeeOutbox.length}/{eventWarningThreshold}</div>}
 

@@ -1,12 +1,13 @@
 import { Network, Shuffle, Tag } from 'lucide-react';
-import type { DataPoint, DataSource, DriverAdapter } from '../../types';
+import type { DataPoint, DataSource, DriverAdapter, OeeStatusResponse } from '../../types';
 import { getAdapterHealth, getTagHealth } from './health';
 import type { DashboardDrilldown } from './DashboardDetailModal';
+import OeeOverviewPanel from './OeeOverviewPanel';
 
-interface Props { adapters: DriverAdapter[]; datapoints: DataPoint[]; datasources: DataSource[]; onSelect: (value: DashboardDrilldown) => void; }
+interface Props { adapters: DriverAdapter[]; datapoints: DataPoint[]; datasources: DataSource[]; onSelect: (value: DashboardDrilldown) => void; oeeStatus: OeeStatusResponse | null; onOpenOee: () => void; }
 const pct = (value: number, total: number) => total ? `${(value / total) * 100}%` : '0%';
 
-export default function OperationalOverview({ adapters, datapoints, datasources, onSelect }: Props) {
+export default function OperationalOverview({ adapters, datapoints, datasources, onSelect, oeeStatus, onOpenOee }: Props) {
   const ac = { good: 0, offline: 0, disabled: 0 };
   adapters.forEach(a => ac[getAdapterHealth(a)]++);
   const protocols = Array.from(new Set(adapters.map(a => a.protocol))).map(protocol => {
@@ -48,5 +49,7 @@ export default function OperationalOverview({ adapters, datapoints, datasources,
       <div className="ops-stream-totals"><button onClick={click({domain:'streams',filter:'enabled',label:'Enabled streams'})}><strong>{enabledStreams}</strong><span>Enabled</span></button><button onClick={click({domain:'streams',filter:'disabled',label:'Disabled streams'})}><strong>{datasources.length-enabledStreams}</strong><span>Disabled</span></button></div>
       <div className="ops-category-list">{categories.map(c=><button key={c.name} onClick={click({domain:'streams',filter:'category',category:c.name,label:`${c.name} streams`})}><span className="ops-category-name">{c.name}</span><span className="ops-category-bar"><i style={{width:pct(c.enabled,c.enabled+c.disabled)}}/></span><b>{c.enabled+c.disabled}</b><small>{c.enabled} on · {c.disabled} off</small></button>)}</div>
     </section>
+
+    <OeeOverviewPanel oeeStatus={oeeStatus} onOpenOee={onOpenOee}/>
   </div>;
 }
