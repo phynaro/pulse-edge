@@ -130,6 +130,110 @@ public sealed class ConfigurationBackupServiceTests : IDisposable
         Assert.False(service.Inspect(v2 with { FormatVersion = 3 }).IsValid);
     }
 
+    [Fact]
+    public async Task Restore_ExistingChannel_KeepsLocalSeqIdAndOutbox_ButAppliesBackupConfig()
+    {
+        await InitializeDatabase();
+        var service = new ConfigurationBackupService(() => new QueueDbContext(DatabasePath));
+        var backup = await service.CreateAsync(); // carries line1.filler with NextSeq 42, Name "Line 1 — Filler"
+
+        int localId;
+        await using (var db = new QueueDbContext(DatabasePath))
+        {
+            var local = await db.OeeChannels.SingleAsync();
+            localId = local.Id;
+            local.NextSeq = 500;                  // device kept producing after the backup
+            local.Name = "Renamed Since Backup";  // config drift the restore must undo
+            db.OeeOutboxMessages.Add(new OeeOutboxMessage
+            {
+                ChannelId = localId, Seq = 499, Type = "sync", Ts = DateTime.UtcNow,
+                State = "running", CreatedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var restored = await service.RestoreAsync(backup);
+
+        Assert.True(restored.IsValid, string.Join("; ", restored.Errors));
+        await using var verified = new QueueDbContext(DatabasePath);
+        var channel = await verified.OeeChannels.SingleAsync();
+        Assert.Equal(localId, channel.Id);                     // row identity kept
+        Assert.Equal(500, channel.NextSeq);                    // local counter wins — never rewound to 42
+        Assert.Equal("Line 1 — Filler", channel.Name);         // config restored from backup
+        Assert.Equal(1, await verified.OeeOutboxMessages.CountAsync(m => m.ChannelId == localId)); // in-flight data kept
+    }
+
+    [Fact]
+    public async Task Restore_MissingChannel_InsertsWithJumpedSeq()
+    {
+        await InitializeDatabase();
+        var service = new ConfigurationBackupService(() => new QueueDbContext(DatabasePath));
+        var backup = await service.CreateAsync(); // NextSeq 42 in the backup
+
+        await using (var db = new QueueDbContext(DatabasePath))
+        {
+            await db.OeeOutboxMessages.ExecuteDeleteAsync();
+            await db.OeeChannels.ExecuteDeleteAsync();          // channel deleted since the backup
+        }
+
+        var restored = await service.RestoreAsync(backup);
+
+        Assert.True(restored.IsValid, string.Join("; ", restored.Errors));
+        await using var verified = new QueueDbContext(DatabasePath);
+        var channel = await verified.OeeChannels.SingleAsync();
+        Assert.Equal("line1.filler", channel.ExternalId);
+        Assert.Equal(42 + ConfigurationBackupService.SeqRestoreJump, channel.NextSeq); // leap over unknown cloud history
+    }
+
+    [Fact]
+    public async Task Restore_ChannelAbsentFromBackup_IsDeletedWithOutboxPurged()
+    {
+        await InitializeDatabase();
+        var service = new ConfigurationBackupService(() => new QueueDbContext(DatabasePath));
+        var backup = await service.CreateAsync(); // contains only line1.filler
+
+        int strayId;
+        await using (var db = new QueueDbContext(DatabasePath))
+        {
+            var stray = new OeeChannel
+            {
+                ExternalId = "commissioned.after.backup", Name = "Stray",
+                RunDataPointId = "point-1", UpdatedAt = DateTime.UtcNow,
+            };
+            db.OeeChannels.Add(stray);
+            await db.SaveChangesAsync();
+            strayId = stray.Id;
+            db.OeeOutboxMessages.Add(new OeeOutboxMessage
+            {
+                ChannelId = strayId, Seq = 0, Type = "sync", Ts = DateTime.UtcNow,
+                State = "stopped", CreatedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var restored = await service.RestoreAsync(backup);
+
+        Assert.True(restored.IsValid, string.Join("; ", restored.Errors));
+        await using var verified = new QueueDbContext(DatabasePath);
+        Assert.Equal("line1.filler", (await verified.OeeChannels.SingleAsync()).ExternalId);
+        Assert.Equal(0, await verified.OeeOutboxMessages.CountAsync(m => m.ChannelId == strayId));
+    }
+
+    [Fact]
+    public async Task Restore_AdvancesUpdatedAt_SoChannelsAreRedeclared()
+    {
+        await InitializeDatabase();
+        var service = new ConfigurationBackupService(() => new QueueDbContext(DatabasePath));
+        var backup = await service.CreateAsync();
+        var before = DateTime.UtcNow;
+
+        var restored = await service.RestoreAsync(backup);
+
+        Assert.True(restored.IsValid, string.Join("; ", restored.Errors));
+        await using var verified = new QueueDbContext(DatabasePath);
+        Assert.True((await verified.OeeChannels.SingleAsync()).UpdatedAt >= before); // watermark moved → OeeSyncService re-declares
+    }
+
     private async Task InitializeDatabase()
     {
         Directory.CreateDirectory(_directory);
