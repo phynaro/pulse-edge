@@ -123,6 +123,58 @@ public sealed class ConfigurationBackupService
             db.MqttDevices.AddRange(payload.MqttDevices);
             db.DataPoints.AddRange(payload.DataPoints);
             db.StreamTemplates.AddRange(payload.StreamTemplates);
+
+            // OEE channels: match by ExternalId, never by row Id — outbox rows reference
+            // row Ids, and NextSeq must never rewind (the cloud dedups on (channel, seq);
+            // a rewound counter means messages silently dropped as duplicates).
+            var backupChannels = payload.OeeChannels ?? new List<OeeChannel>();
+            var backupExternalIds = backupChannels.Select(c => c.ExternalId).ToHashSet(StringComparer.Ordinal);
+            var localChannels = await db.OeeChannels.ToListAsync(cancellationToken);
+            var now = DateTime.UtcNow;
+
+            foreach (var local in localChannels.Where(l => !backupExternalIds.Contains(l.ExternalId)))
+            {
+                // Absent from the backup: wholesale semantics — remove it and its queued messages.
+                await db.OeeOutboxMessages.Where(m => m.ChannelId == local.Id).ExecuteDeleteAsync(cancellationToken);
+                db.OeeChannels.Remove(local);
+            }
+
+            var localByExternalId = localChannels.ToDictionary(c => c.ExternalId, StringComparer.Ordinal);
+            foreach (var incoming in backupChannels)
+            {
+                if (localByExternalId.TryGetValue(incoming.ExternalId, out var existing))
+                {
+                    // Exists locally: apply config, keep row Id + local NextSeq (always ≥ cloud) + outbox rows.
+                    existing.Name = incoming.Name;
+                    existing.Enabled = incoming.Enabled;
+                    existing.RunDataPointId = incoming.RunDataPointId;
+                    existing.FaultDataPointId = incoming.FaultDataPointId;
+                    existing.CodeDataPointId = incoming.CodeDataPointId;
+                    existing.GoodDataPointId = incoming.GoodDataPointId;
+                    existing.RejectDataPointId = incoming.RejectDataPointId;
+                    existing.DebounceSeconds = incoming.DebounceSeconds;
+                    existing.UpdatedAt = now; // advances the declaration watermark → re-declared next sync
+                }
+                else
+                {
+                    // Missing locally: fresh row; jump the counter past any post-backup cloud history.
+                    db.OeeChannels.Add(new OeeChannel
+                    {
+                        ExternalId = incoming.ExternalId,
+                        Name = incoming.Name,
+                        Enabled = incoming.Enabled,
+                        RunDataPointId = incoming.RunDataPointId,
+                        FaultDataPointId = incoming.FaultDataPointId,
+                        CodeDataPointId = incoming.CodeDataPointId,
+                        GoodDataPointId = incoming.GoodDataPointId,
+                        RejectDataPointId = incoming.RejectDataPointId,
+                        DebounceSeconds = incoming.DebounceSeconds,
+                        NextSeq = incoming.NextSeq + SeqRestoreJump,
+                        UpdatedAt = now,
+                    });
+                }
+            }
+
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return inspection;
