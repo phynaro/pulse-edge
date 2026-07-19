@@ -35,7 +35,7 @@ const validInspection = {
   errors: [],
   agentVersion: '1.2.3',
   sourceSerialNumber: 'SN-1',
-  counts: { adapters: 2, dataSources: 3, dataPoints: 40, mqttDevices: 1, streamTemplates: 5 },
+  counts: { adapters: 2, dataSources: 3, dataPoints: 40, mqttDevices: 1, streamTemplates: 5, oeeChannels: 4 },
 };
 
 beforeEach(() => {
@@ -133,6 +133,8 @@ describe('ConfigurationBackupPanel inspect and restore', () => {
 
     expect(await screen.findByText(/ready to restore/i)).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument(); // adapter count
+    expect(screen.getByText('4')).toBeInTheDocument(); // OEE channel count
+    expect(screen.getByText('OEE Channels')).toBeInTheDocument(); // exact label — the panel description also mentions "OEE channels"
   });
 
   it('does not apply a restore when the confirmation is declined', async () => {
