@@ -14,6 +14,7 @@ interface Inspection {
     dataPoints: number;
     mqttDevices: number;
     streamTemplates: number;
+    oeeChannels: number;
   };
 }
 
@@ -98,7 +99,7 @@ export default function ConfigurationBackupPanel({ onRestoreComplete }: Props) {
     if (!document || !inspection?.isValid) return;
     const accepted = await confirm({
       title: 'Replace local configuration?',
-      message: `This will replace ${inspection.counts.adapters} adapters, ${inspection.counts.dataPoints} tags, and ${inspection.counts.dataSources} streams. Device identity, cloud pairing, users, and buffered telemetry will be preserved.`,
+      message: `This will replace ${inspection.counts.adapters} adapters, ${inspection.counts.dataPoints} tags, ${inspection.counts.dataSources} streams, and ${inspection.counts.oeeChannels} OEE channels. Device identity, cloud pairing, users, and buffered telemetry will be preserved.`,
       confirmText: 'Replace Configuration',
       cancelText: 'Cancel',
       variant: 'warning'
@@ -138,7 +139,7 @@ export default function ConfigurationBackupPanel({ onRestoreComplete }: Props) {
       </div>
 
       <p className="text-secondary backup-description">
-        Export or replace adapters, tags, MQTT devices, streams, and templates. Device identity, cloud pairing, users, queues, and history stay on this node.
+        Export or replace adapters, tags, MQTT devices, streams, templates, and OEE channels. Device identity, cloud pairing, users, queues, and history stay on this node.
       </p>
 
       <div className="backup-actions">
@@ -161,6 +162,7 @@ export default function ConfigurationBackupPanel({ onRestoreComplete }: Props) {
             <span><strong>{inspection.counts.dataPoints}</strong> Tags</span>
             <span><strong>{inspection.counts.dataSources}</strong> Streams</span>
             <span><strong>{inspection.counts.mqttDevices}</strong> MQTT Devices</span>
+            <span><strong>{inspection.counts.oeeChannels}</strong> OEE Channels</span>
           </div>
           <div className="backup-meta">Source {inspection.sourceSerialNumber || 'unregistered'} · Agent {inspection.agentVersion}</div>
           <button type="button" className="btn-primary w-full" onClick={restore} disabled={isBusy}>Replace Local Configuration</button>
