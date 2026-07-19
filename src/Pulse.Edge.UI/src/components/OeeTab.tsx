@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Gauge, Plus, Pencil, Trash2 } from 'lucide-react';
 import ModalShell from './ModalShell';
-import CustomSelect from './CustomSelect';
-import type { DataPoint, OeeChannel, OeeStatusResponse } from '../types';
+import OeeTagBrowserModal from './OeeTab/OeeTagBrowserModal';
+import type { DataPoint, DriverAdapter, OeeChannel, OeeStatusResponse } from '../types';
 
 const STATE_BADGE: Record<string, string> = {
   running: 'success',
@@ -12,6 +12,7 @@ const STATE_BADGE: Record<string, string> = {
 
 interface OeeTabProps {
   datapoints: DataPoint[];
+  adapters: DriverAdapter[];
 }
 
 interface ChannelForm {
@@ -32,13 +33,31 @@ const emptyForm: ChannelForm = {
   rejectDataPointId: '', debounceSeconds: 2,
 };
 
-export default function OeeTab({ datapoints }: OeeTabProps) {
+type TagRole = 'run' | 'fault' | 'code' | 'good' | 'reject';
+
+const ROLE_META: Record<TagRole, {
+  label: string;
+  hint: string;
+  field: 'runDataPointId' | 'faultDataPointId' | 'codeDataPointId' | 'goodDataPointId' | 'rejectDataPointId';
+  required: boolean;
+}> = {
+  run:    { label: 'Run signal',            hint: 'nonzero = running',                                    field: 'runDataPointId',    required: true },
+  fault:  { label: 'Fault signal',          hint: 'nonzero = fault; leave unwired if the PLC has none',   field: 'faultDataPointId',  required: false },
+  code:   { label: 'Fault/reason code tag', hint: 'passed through verbatim',                              field: 'codeDataPointId',   required: false },
+  good:   { label: 'Good counter',          hint: 'cumulative totalizer',                                 field: 'goodDataPointId',   required: false },
+  reject: { label: 'Reject counter',        hint: 'cumulative totalizer',                                 field: 'rejectDataPointId', required: false },
+};
+
+const ROLE_ORDER: TagRole[] = ['run', 'fault', 'code', 'good', 'reject'];
+
+export default function OeeTab({ datapoints, adapters }: OeeTabProps) {
   const [status, setStatus] = useState<OeeStatusResponse>({ channels: [], outboxDepth: 0 });
   const [channels, setChannels] = useState<OeeChannel[]>([]);
   const [editing, setEditing] = useState<OeeChannel | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<ChannelForm>(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const [activeBrowseRole, setActiveBrowseRole] = useState<TagRole | null>(null);
 
   // Mounted flag guards against setting state from a fetch that resolves after
   // the component (or an earlier poll tick) has gone away.
@@ -136,20 +155,34 @@ export default function OeeTab({ datapoints }: OeeTabProps) {
     void refresh();
   };
 
-  const tagSelect = (label: string, value: string, onChange: (v: string) => void, required = false) => (
-    <div className="form-group form-group-flush">
-      <label className="form-label form-label-bold">{label}</label>
-      <CustomSelect
-        value={value}
-        onChange={onChange}
-        placeholder={required ? 'Select a tag…' : '— not wired —'}
-        options={datapoints.map(dp => ({
-          value: dp.id,
-          label: `${dp.address}${dp.description ? ` — ${dp.description}` : ''}`,
-        }))}
-      />
-    </div>
-  );
+  const tagField = (role: TagRole) => {
+    const meta = ROLE_META[role];
+    const value = form[meta.field];
+    const dp = value ? datapoints.find(d => d.id === value) : undefined;
+    return (
+      <div className="form-group form-group-flush" key={role}>
+        <label className="form-label form-label-bold">{meta.label}{meta.required ? ' *' : ''}</label>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <div className="form-input" style={{ flex: 1, display: 'flex', alignItems: 'center', minHeight: '2.25rem', cursor: 'default' }}>
+            {dp ? (
+              <span>
+                {dp.description?.trim() ? `${dp.description.trim()} (${dp.address})` : dp.address}
+                <span className="text-secondary"> · {dp.dataType}</span>
+              </span>
+            ) : value ? (
+              <span className="text-secondary">Unknown tag ({value})</span>
+            ) : (
+              <span className="text-secondary">not wired</span>
+            )}
+          </div>
+          <button type="button" className="btn-secondary btn-compact" onClick={() => setActiveBrowseRole(role)}>
+            Browse…
+          </button>
+        </div>
+        <span className="form-note">{meta.hint}</span>
+      </div>
+    );
+  };
 
   return (
     <div className="tab-stack">
@@ -231,71 +264,84 @@ export default function OeeTab({ datapoints }: OeeTabProps) {
       </div>
 
       {showModal && (
-        <ModalShell
-          title={editing ? `Edit Channel — ${editing.name}` : 'Add OEE Channel'}
-          subtitle="Bind PLC tags to machine-state roles. The edge reports what these signals say — classification happens in the cloud."
-          onClose={() => setShowModal(false)}
-          size="md"
-        >
-          <form onSubmit={save} className="modal-form">
-            {error && <div className="alert-box-danger">{error}</div>}
+        <>
+          <ModalShell
+            title={editing ? `Edit Channel — ${editing.name}` : 'Add OEE Channel'}
+            subtitle="Bind PLC tags to machine-state roles. The edge reports what these signals say — classification happens in the cloud."
+            onClose={() => setShowModal(false)}
+            size="md"
+          >
+            <form onSubmit={save} className="modal-form">
+              {error && <div className="alert-box-danger">{error}</div>}
 
-            <div className="form-group form-group-flush">
-              <label className="form-label form-label-bold">External ID</label>
-              <input
-                className="form-input text-mono"
-                value={form.externalId}
-                disabled={!!editing}
-                placeholder="line1.filler"
-                onChange={e => setForm({ ...form, externalId: e.target.value })}
-              />
-              {editing && <span className="form-note">The external ID is the channel's permanent cloud identity and cannot be changed.</span>}
-            </div>
+              <div className="form-group form-group-flush">
+                <label className="form-label form-label-bold">External ID</label>
+                <input
+                  className="form-input text-mono"
+                  value={form.externalId}
+                  disabled={!!editing}
+                  placeholder="line1.filler"
+                  onChange={e => setForm({ ...form, externalId: e.target.value })}
+                />
+                {editing && <span className="form-note">The external ID is the channel's permanent cloud identity and cannot be changed.</span>}
+              </div>
 
-            <div className="form-group form-group-flush">
-              <label className="form-label form-label-bold">Name</label>
-              <input
-                className="form-input"
-                value={form.name}
-                placeholder="Line 1 — Filler"
-                onChange={e => setForm({ ...form, name: e.target.value })}
-              />
-            </div>
+              <div className="form-group form-group-flush">
+                <label className="form-label form-label-bold">Name</label>
+                <input
+                  className="form-input"
+                  value={form.name}
+                  placeholder="Line 1 — Filler"
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                />
+              </div>
 
-            {tagSelect('Run signal (nonzero = running)', form.runDataPointId, v => setForm({ ...form, runDataPointId: v }), true)}
-            {tagSelect('Fault signal (nonzero = fault; leave unwired if the PLC has none)', form.faultDataPointId, v => setForm({ ...form, faultDataPointId: v }))}
-            {tagSelect('Fault/reason code tag (passed through verbatim)', form.codeDataPointId, v => setForm({ ...form, codeDataPointId: v }))}
-            {tagSelect('Good counter (cumulative totalizer)', form.goodDataPointId, v => setForm({ ...form, goodDataPointId: v }))}
-            {tagSelect('Reject counter (cumulative totalizer)', form.rejectDataPointId, v => setForm({ ...form, rejectDataPointId: v }))}
+              {ROLE_ORDER.map(role => tagField(role))}
 
-            <div className="form-group form-group-flush">
-              <label className="form-label form-label-bold">Debounce (seconds)</label>
-              <input
-                className="form-input"
-                type="number"
-                min={0}
-                max={60}
-                value={form.debounceSeconds}
-                onChange={e => setForm({ ...form, debounceSeconds: Number(e.target.value) })}
-              />
-            </div>
+              <div className="form-group form-group-flush">
+                <label className="form-label form-label-bold">Debounce (seconds)</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  min={0}
+                  max={60}
+                  value={form.debounceSeconds}
+                  onChange={e => setForm({ ...form, debounceSeconds: Number(e.target.value) })}
+                />
+              </div>
 
-            <div className="checkbox-inline">
-              <input
-                type="checkbox"
-                id="oeeChannelEnabled"
-                checked={form.enabled}
-                onChange={e => setForm({ ...form, enabled: e.target.checked })}
-              />
-              <label htmlFor="oeeChannelEnabled">Enabled</label>
-            </div>
+              <div className="checkbox-inline">
+                <input
+                  type="checkbox"
+                  id="oeeChannelEnabled"
+                  checked={form.enabled}
+                  onChange={e => setForm({ ...form, enabled: e.target.checked })}
+                />
+                <label htmlFor="oeeChannelEnabled">Enabled</label>
+              </div>
 
-            <div className="modal-footer">
-              <button type="submit" className="btn-primary btn-compact btn-flex-2">{editing ? 'Save Changes' : 'Create Channel'}</button>
-              <button type="button" onClick={() => setShowModal(false)} className="btn-secondary btn-compact btn-flex-1">Cancel</button>
-            </div>
-          </form>
-        </ModalShell>
+              <div className="modal-footer">
+                <button type="submit" className="btn-primary btn-compact btn-flex-2">{editing ? 'Save Changes' : 'Create Channel'}</button>
+                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary btn-compact btn-flex-1">Cancel</button>
+              </div>
+            </form>
+          </ModalShell>
+          {activeBrowseRole && (
+            <OeeTagBrowserModal
+              roleLabel={ROLE_META[activeBrowseRole].label}
+              roleHint={ROLE_META[activeBrowseRole].hint}
+              currentTagId={form[ROLE_META[activeBrowseRole].field] || null}
+              allowClear={!ROLE_META[activeBrowseRole].required}
+              datapoints={datapoints}
+              adapters={adapters}
+              onSelect={tagId => {
+                const field = ROLE_META[activeBrowseRole].field;
+                setForm(f => ({ ...f, [field]: tagId ?? '' }));
+              }}
+              onClose={() => setActiveBrowseRole(null)}
+            />
+          )}
+        </>
       )}
     </div>
   );
