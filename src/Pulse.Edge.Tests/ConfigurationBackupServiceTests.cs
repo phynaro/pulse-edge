@@ -70,6 +70,66 @@ public sealed class ConfigurationBackupServiceTests : IDisposable
         Assert.Contains(inspection.Errors, error => error.Contains("checksum", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task Create_ProducesV2_WithSanitizedChannels()
+    {
+        await InitializeDatabase();
+        var service = new ConfigurationBackupService(() => new QueueDbContext(DatabasePath));
+
+        var backup = await service.CreateAsync();
+
+        Assert.Equal(2, backup.FormatVersion);
+        var channel = Assert.Single(backup.Configuration.OeeChannels!);
+        Assert.Equal("line1.filler", channel.ExternalId);
+        Assert.Equal(42, channel.NextSeq);
+        Assert.Equal(3, channel.DebounceSeconds);
+        Assert.Null(channel.LastState);          // runtime state sanitized out
+        Assert.Null(channel.LastCode);
+        Assert.Null(channel.LastStateChangedAt);
+    }
+
+    [Fact]
+    public async Task Serialize_OmitsNullOeeChannels_ForChecksumStability()
+    {
+        await InitializeDatabase();
+        var service = new ConfigurationBackupService(() => new QueueDbContext(DatabasePath));
+        var backup = await service.CreateAsync();
+
+        var v1Style = backup with { Configuration = backup.Configuration with { OeeChannels = null } };
+        var json = System.Text.Encoding.UTF8.GetString(service.Serialize(v1Style));
+
+        Assert.DoesNotContain("oeeChannels", json); // null member must vanish, or every v1 checksum breaks
+        Assert.Contains("oeeChannels", System.Text.Encoding.UTF8.GetString(service.Serialize(backup)));
+    }
+
+    [Fact]
+    public async Task Inspect_AcceptsV1Document_AndRejectsV1CarryingChannels()
+    {
+        await InitializeDatabase();
+        var service = new ConfigurationBackupService(() => new QueueDbContext(DatabasePath));
+        var v2 = await service.CreateAsync();
+
+        // A faithful v1 fixture: channel-less payload, checksum recomputed the way the
+        // service does it (Web defaults + indented). The JsonIgnore annotation makes this
+        // serialization byte-identical to what a real v1 build produced.
+        var v1Payload = v2.Configuration with { OeeChannels = null };
+        var options = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web) { WriteIndented = true };
+        var checksum = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(v1Payload, options))).ToLowerInvariant();
+        var v1Doc = v2 with { FormatVersion = 1, Configuration = v1Payload, ChecksumSha256 = checksum };
+
+        Assert.True(service.Inspect(v1Doc).IsValid, string.Join("; ", service.Inspect(v1Doc).Errors));
+
+        // v1 must not carry channels.
+        var tampered = v1Doc with { Configuration = v2.Configuration, ChecksumSha256 = v2.ChecksumSha256 };
+        var inspection = service.Inspect(tampered);
+        Assert.False(inspection.IsValid);
+        Assert.Contains(inspection.Errors, e => e.Contains("v1", StringComparison.OrdinalIgnoreCase));
+
+        // Unknown version still rejected.
+        Assert.False(service.Inspect(v2 with { FormatVersion = 3 }).IsValid);
+    }
+
     private async Task InitializeDatabase()
     {
         Directory.CreateDirectory(_directory);
@@ -136,9 +196,16 @@ public sealed class ConfigurationBackupServiceTests : IDisposable
         });
         db.OeeChannels.Add(new OeeChannel
         {
-            ExternalId = "backup-nonconfig-probe",
-            Name = "Probe",
-            RunDataPointId = "dp-run",
+            ExternalId = "line1.filler",
+            Name = "Line 1 — Filler",
+            Enabled = true,
+            RunDataPointId = "point-1",
+            GoodDataPointId = "point-1",
+            DebounceSeconds = 3,
+            NextSeq = 42,
+            LastState = "running",           // runtime state — must NOT appear in the backup
+            LastCode = "E0",
+            LastStateChangedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
         });
         await db.SaveChangesAsync();
