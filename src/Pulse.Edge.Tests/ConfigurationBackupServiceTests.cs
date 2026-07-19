@@ -234,6 +234,77 @@ public sealed class ConfigurationBackupServiceTests : IDisposable
         Assert.True((await verified.OeeChannels.SingleAsync()).UpdatedAt >= before); // watermark moved → OeeSyncService re-declares
     }
 
+    private static ConfigurationBackupDocument Rechecksum(ConfigurationBackupService service, ConfigurationBackupDocument doc)
+    {
+        // Re-sign a hand-mutated payload so validation reaches the semantic rules
+        // instead of stopping at the checksum. Mirrors the service's own options.
+        var options = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web) { WriteIndented = true };
+        var checksum = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(doc.Configuration, options))).ToLowerInvariant();
+        return doc with { ChecksumSha256 = checksum };
+    }
+
+    [Fact]
+    public async Task Inspect_CountsOeeChannels_AndZeroForV1()
+    {
+        await InitializeDatabase();
+        var service = new ConfigurationBackupService(() => new QueueDbContext(DatabasePath));
+        var v2 = await service.CreateAsync();
+
+        Assert.Equal(1, service.Inspect(v2).Counts.OeeChannels);
+
+        var v1 = Rechecksum(service, v2 with { FormatVersion = 1, Configuration = v2.Configuration with { OeeChannels = null } });
+        Assert.Equal(0, service.Inspect(v1).Counts.OeeChannels);
+    }
+
+    [Theory]
+    [InlineData("dup")]        // duplicate ExternalId
+    [InlineData("run")]        // run tag missing from payload
+    [InlineData("role")]       // optional role tag missing from payload
+    [InlineData("reject")]     // reject without good
+    [InlineData("debounce")]   // out of range
+    [InlineData("seq")]        // negative NextSeq
+    public async Task Inspect_RejectsInvalidChannelPayloads(string kind)
+    {
+        await InitializeDatabase();
+        var service = new ConfigurationBackupService(() => new QueueDbContext(DatabasePath));
+        var v2 = await service.CreateAsync();
+        var good = v2.Configuration.OeeChannels!.Single();
+
+        List<OeeChannel> channels = kind == "dup"
+            ? [good, Clone(good)]            // two channels sharing an ExternalId
+            : [Mutate(good, kind)];
+
+        var doc = Rechecksum(service, v2 with { Configuration = v2.Configuration with { OeeChannels = channels } });
+        var inspection = service.Inspect(doc);
+
+        Assert.False(inspection.IsValid);
+        Assert.Contains(inspection.Errors, e => e.Contains("OEE channel", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static OeeChannel Clone(OeeChannel c) => new()
+    {
+        ExternalId = c.ExternalId, Name = c.Name, Enabled = c.Enabled,
+        RunDataPointId = c.RunDataPointId, FaultDataPointId = c.FaultDataPointId,
+        CodeDataPointId = c.CodeDataPointId, GoodDataPointId = c.GoodDataPointId,
+        RejectDataPointId = c.RejectDataPointId, DebounceSeconds = c.DebounceSeconds,
+        NextSeq = c.NextSeq, UpdatedAt = c.UpdatedAt,
+    };
+
+    private static OeeChannel Mutate(OeeChannel good, string kind)
+    {
+        var c = Clone(good);
+        switch (kind)
+        {
+            case "run": c.RunDataPointId = "no-such-tag"; break;
+            case "role": c.FaultDataPointId = "no-such-tag"; break;
+            case "reject": c.GoodDataPointId = null; c.RejectDataPointId = "point-1"; break;
+            case "debounce": c.DebounceSeconds = 61; break;
+            case "seq": c.NextSeq = -1; break;
+        }
+        return c;
+    }
+
     private async Task InitializeDatabase()
     {
         Directory.CreateDirectory(_directory);

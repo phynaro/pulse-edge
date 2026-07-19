@@ -99,7 +99,8 @@ public sealed class ConfigurationBackupService
                 payload?.DataSources?.Count ?? 0,
                 payload?.DataPoints?.Count ?? 0,
                 payload?.MqttDevices?.Count ?? 0,
-                payload?.StreamTemplates?.Count ?? 0));
+                payload?.StreamTemplates?.Count ?? 0,
+                payload?.OeeChannels?.Count ?? 0));
     }
 
     public async Task<ConfigurationBackupInspection> RestoreAsync(ConfigurationBackupDocument document, CancellationToken cancellationToken = default)
@@ -220,6 +221,32 @@ public sealed class ConfigurationBackupService
             if (!string.IsNullOrWhiteSpace(point.DataSourceId) && !sourceIds.Contains(point.DataSourceId)) errors.Add($"Tag '{point.Id}' references missing stream '{point.DataSourceId}'.");
             if (!string.IsNullOrWhiteSpace(point.MqttDeviceId) && !mqttIds.Contains(point.MqttDeviceId)) errors.Add($"Tag '{point.Id}' references missing MQTT device '{point.MqttDeviceId}'.");
         }
+
+        if (document.Configuration.OeeChannels is { } oeeChannels)
+        {
+            CheckUnique(oeeChannels.Select(x => x.ExternalId), "OEE channel", errors);
+            var pointIds = document.Configuration.DataPoints.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+            foreach (var channel in oeeChannels)
+            {
+                if (string.IsNullOrWhiteSpace(channel.RunDataPointId) || !pointIds.Contains(channel.RunDataPointId))
+                    errors.Add($"OEE channel '{channel.ExternalId}' references missing run tag '{channel.RunDataPointId}'.");
+                foreach (var (role, id) in new[]
+                {
+                    ("fault", channel.FaultDataPointId), ("code", channel.CodeDataPointId),
+                    ("good", channel.GoodDataPointId), ("reject", channel.RejectDataPointId),
+                })
+                {
+                    if (!string.IsNullOrWhiteSpace(id) && !pointIds.Contains(id!))
+                        errors.Add($"OEE channel '{channel.ExternalId}' references missing {role} tag '{id}'.");
+                }
+                if (!string.IsNullOrWhiteSpace(channel.RejectDataPointId) && string.IsNullOrWhiteSpace(channel.GoodDataPointId))
+                    errors.Add($"OEE channel '{channel.ExternalId}' has a reject counter but no good counter.");
+                if (channel.DebounceSeconds is < 0 or > 60)
+                    errors.Add($"OEE channel '{channel.ExternalId}' has an invalid debounce ({channel.DebounceSeconds}s).");
+                if (channel.NextSeq < 0)
+                    errors.Add($"OEE channel '{channel.ExternalId}' has a negative sequence counter.");
+            }
+        }
         return errors;
     }
 
@@ -264,5 +291,5 @@ public sealed record ConfigurationBackupPayload(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     List<OeeChannel>? OeeChannels = null);
 
-public sealed record ConfigurationBackupCounts(int Adapters, int DataSources, int DataPoints, int MqttDevices, int StreamTemplates);
+public sealed record ConfigurationBackupCounts(int Adapters, int DataSources, int DataPoints, int MqttDevices, int StreamTemplates, int OeeChannels = 0);
 public sealed record ConfigurationBackupInspection(bool IsValid, List<string> Errors, int FormatVersion, DateTime? CreatedAtUtc, string AgentVersion, string SourceSerialNumber, ConfigurationBackupCounts Counts);
