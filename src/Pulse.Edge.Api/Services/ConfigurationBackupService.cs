@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Pulse.Edge.Storage;
 using Pulse.Edge.Storage.Models;
@@ -9,7 +10,15 @@ namespace Pulse.Edge.Api.Services;
 
 public sealed class ConfigurationBackupService
 {
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
+
+    /// <summary>
+    /// Added to a restored channel's backed-up NextSeq when the channel no longer exists
+    /// locally: the jump leaps over any history the cloud recorded after the backup was
+    /// taken, so a sequence number can never be reused (the cloud silently drops
+    /// duplicates on (channel, seq) — a rewound counter means silent data loss).
+    /// </summary>
+    public const long SeqRestoreJump = 10_000;
     private readonly Func<QueueDbContext> _createDbContext;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -51,7 +60,17 @@ public sealed class ConfigurationBackupService
                 LwtOnlinePayload = x.LwtOnlinePayload, LwtOfflinePayload = x.LwtOfflinePayload,
                 Status = "Disconnected"
             }).ToListAsync(cancellationToken),
-            await db.StreamTemplates.AsNoTracking().OrderBy(x => x.Id).ToListAsync(cancellationToken));
+            await db.StreamTemplates.AsNoTracking().OrderBy(x => x.Id).ToListAsync(cancellationToken),
+            await db.OeeChannels.AsNoTracking().OrderBy(x => x.ExternalId).Select(x => new OeeChannel
+            {
+                Id = x.Id, ExternalId = x.ExternalId, Name = x.Name, Enabled = x.Enabled,
+                RunDataPointId = x.RunDataPointId, FaultDataPointId = x.FaultDataPointId,
+                CodeDataPointId = x.CodeDataPointId, GoodDataPointId = x.GoodDataPointId,
+                RejectDataPointId = x.RejectDataPointId, DebounceSeconds = x.DebounceSeconds,
+                NextSeq = x.NextSeq, UpdatedAt = x.UpdatedAt
+                // LastState/LastCode/LastStateChangedAt intentionally omitted — runtime state,
+                // like adapters backed up with Status = "Disconnected".
+            }).ToListAsync(cancellationToken));
 
         var config = await db.DeviceConfigs.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
         return new ConfigurationBackupDocument(
@@ -122,12 +141,14 @@ public sealed class ConfigurationBackupService
         var errors = new List<string>();
         if (document is null) return ["The backup file is empty or malformed."];
         if (document.Format != "pulse-edge-configuration") errors.Add("This is not a PULSE Edge configuration backup.");
-        if (document.FormatVersion != CurrentFormatVersion) errors.Add($"Unsupported backup format version {document.FormatVersion}.");
+        if (document.FormatVersion is not (1 or 2)) errors.Add($"Unsupported backup format version {document.FormatVersion}.");
         if (document.Configuration is null) return [.. errors, "The configuration payload is missing."];
         if (document.Configuration.Adapters is null || document.Configuration.DataSources is null ||
             document.Configuration.DataPoints is null || document.Configuration.MqttDevices is null ||
             document.Configuration.StreamTemplates is null)
             return [.. errors, "One or more required configuration collections are missing."];
+        if (document.FormatVersion == 1 && document.Configuration.OeeChannels is not null)
+            errors.Add("Format v1 backups must not contain OEE channels.");
         if (!FixedTimeEquals(document.ChecksumSha256 ?? "", ComputeChecksum(document.Configuration))) errors.Add("The backup checksum does not match. The file may be corrupt or modified.");
 
         CheckUnique(document.Configuration.Adapters.Select(x => x.Id), "adapter", errors);
@@ -184,7 +205,12 @@ public sealed record ConfigurationBackupPayload(
     List<DataSource> DataSources,
     List<DataPoint> DataPoints,
     List<MqttDevice> MqttDevices,
-    List<StreamTemplate> StreamTemplates);
+    List<StreamTemplate> StreamTemplates,
+    // Null (and omitted from JSON) in format v1 documents; always a real list in v2 backups.
+    // The WhenWritingNull annotation is load-bearing: it makes a v1 payload re-serialize
+    // byte-identically to what v1 originally hashed, so old checksums keep validating.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    List<OeeChannel>? OeeChannels = null);
 
 public sealed record ConfigurationBackupCounts(int Adapters, int DataSources, int DataPoints, int MqttDevices, int StreamTemplates);
 public sealed record ConfigurationBackupInspection(bool IsValid, List<string> Errors, int FormatVersion, DateTime? CreatedAtUtc, string AgentVersion, string SourceSerialNumber, ConfigurationBackupCounts Counts);
