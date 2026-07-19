@@ -557,7 +557,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
               )}
 
               {activeTab === 'oee' && (
-                <OeeTab datapoints={datapoints} />
+                <OeeTab datapoints={datapoints} adapters={adapters} />
               )}
               {activeTab === 'logs' && <DiagnosticLogsTab />}
  
