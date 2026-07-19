@@ -44,7 +44,7 @@ Anatomy (mirrors the sibling panels' classes):
 ## 3. Data flow
 
 - `App.tsx`'s existing dashboard-tab effect (the one fetching `/api/adapters`, `/api/datapoints`, `/api/datasources` on the dashboard polling cadence) additionally fetches `/api/oee/status`; failures leave the value `null` without breaking the other fetches.
-- New context field `oeeStatus: OeeStatusResponse | null` (+ setter) in `context/edge.ts` / `EdgeContext.tsx`, default `null`.
+- New context field `oeeStatus: OeeStatusResponse | null` (+ setter) in `context/edge.ts` / `EdgeContext.tsx`, default `null`. **Superseded at implementation:** `oeeStatus` is App-local `useState` (dashboard-only data, following the `operationalRefreshedAt` precedent) — see the plan's Global Constraints.
 - `DashboardTab` reads `oeeStatus` from context and passes it to `OperationalOverview`, which gains `oeeStatus` and `onOpenOee` props and renders `<OeeOverviewPanel …/>` as the fourth section.
 - `App.tsx` passes `onOpenOee={() => setActiveTab('oee')}` down through `DashboardTab`.
 

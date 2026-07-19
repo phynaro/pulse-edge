@@ -63,7 +63,7 @@ export default function OeeOverviewPanel({ oeeStatus, onOpenOee }: Props) {
             key={k}
             className={`is-${k}`}
             style={{ width: pct(counts[k], channels.length) }}
-            title={`${counts[k]} ${STATE_LABELS[k]} machines`}
+            title={`${counts[k]} ${STATE_LABELS[k]} machine${counts[k] === 1 ? '' : 's'}`}
             onClick={onOpenOee}
           />
         ))}
