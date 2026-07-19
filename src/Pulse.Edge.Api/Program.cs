@@ -217,6 +217,7 @@ builder.Services.AddDataProtection()
 
 // Register SQLite storage service and transient protocol drivers
 builder.Services.AddSingleton<QueueStorageService>();
+builder.Services.AddSingleton<OeeStorageService>();
 builder.Services.AddTransient<OpcUaDriver>();
 builder.Services.AddTransient<LibPlcTagDriver>();
 builder.Services.AddTransient<S7NetDriver>();
@@ -257,6 +258,9 @@ if (isSinglePort)
 
     // Register background Worker process
     builder.Services.AddHostedService<Worker>();
+
+    builder.Services.AddSingleton<OeeStateEngine>();
+    builder.Services.AddHostedService<OeeSyncService>();
 }
 
 var app = builder.Build();
@@ -316,6 +320,7 @@ app.MapDataPointEndpoints();
 app.MapSettingsEndpoints();
 app.MapBufferEndpoints();
 app.MapBackupEndpoints();
+app.MapOeeEndpoints();
 
 // Run database initialization and setup before starting the web server
 using (var scope = app.Services.CreateScope())

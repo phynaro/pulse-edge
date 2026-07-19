@@ -11,10 +11,10 @@ const formatToLocalTimeString = (dateStr: string | null | undefined) => {
 };
 
 export function useBufferStatus(intervalMs: number = 2000) {
-  const { 
-    setBufferTelemetry, 
-    setBufferEvents, 
-    setIsConnected, 
+  const {
+    setBufferTelemetry,
+    setOeeOutbox,
+    setIsConnected,
     setLiveFeed,
     isConnected
   } = useEdge();
@@ -23,16 +23,16 @@ export function useBufferStatus(intervalMs: number = 2000) {
     let active = true;
     const fetchBuffer = async () => {
       try {
-        const [teleRes, eventRes] = await Promise.all([
+        const [teleRes, oeeRes] = await Promise.all([
           fetch('/api/buffer/telemetry'),
-          fetch('/api/buffer/events')
+          fetch('/api/oee/outbox')
         ]);
         if (!active) return;
-        if (teleRes.ok && eventRes.ok) {
+        if (teleRes.ok && oeeRes.ok) {
           const teleData = await teleRes.json();
-          const eventData = await eventRes.json();
+          const oeeData = await oeeRes.json();
           setBufferTelemetry(teleData);
-          setBufferEvents(eventData);
+          setOeeOutbox(oeeData);
           setIsConnected(true);
 
           if (teleData.length > 0 && isConnected) {
@@ -63,5 +63,5 @@ export function useBufferStatus(intervalMs: number = 2000) {
       active = false;
       clearInterval(interval);
     };
-  }, [intervalMs, setBufferTelemetry, setBufferEvents, setIsConnected, setLiveFeed, isConnected]);
+  }, [intervalMs, setBufferTelemetry, setOeeOutbox, setIsConnected, setLiveFeed, isConnected]);
 }

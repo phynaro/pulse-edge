@@ -21,7 +21,6 @@ public class QueueDbContext : DbContext
     }
 
     public DbSet<DeviceConfig> DeviceConfigs => Set<DeviceConfig>();
-    public DbSet<QueueEvent> QueueEvents => Set<QueueEvent>();
     public DbSet<QueueTelemetry> QueueTelemetry => Set<QueueTelemetry>();
     public DbSet<DriverAdapter> DriverAdapters => Set<DriverAdapter>();
     public DbSet<DataSource> DataSources => Set<DataSource>();
@@ -32,6 +31,8 @@ public class QueueDbContext : DbContext
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<DiagnosticEvent> DiagnosticEvents => Set<DiagnosticEvent>();
     public DbSet<DiagnosticCaptureConfig> DiagnosticCaptureConfigs => Set<DiagnosticCaptureConfig>();
+    public DbSet<OeeChannel> OeeChannels => Set<OeeChannel>();
+    public DbSet<OeeOutboxMessage> OeeOutboxMessages => Set<OeeOutboxMessage>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -40,7 +41,7 @@ public class QueueDbContext : DbContext
         if (_databasePath is not null)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_databasePath)!);
-            optionsBuilder.UseSqlite($"Data Source={_databasePath}");
+            optionsBuilder.UseSqlite($"Data Source={_databasePath};Default Timeout={BusyTimeoutSeconds}");
             return;
         }
 
@@ -66,8 +67,20 @@ public class QueueDbContext : DbContext
         Directory.CreateDirectory(pulseFolder); // Ensure the folder exists
         var dbPath = Path.Combine(pulseFolder, "edge.db");
 
-        optionsBuilder.UseSqlite($"Data Source={dbPath}");
+        optionsBuilder.UseSqlite($"Data Source={dbPath};Default Timeout={BusyTimeoutSeconds}");
     }
+
+    // Sets the "Default Timeout" connection-string option, which Microsoft.Data.Sqlite (the
+    // ADO.NET driver EF Core uses here) applies as its own client-side command-timeout: on
+    // SQLITE_BUSY it retries in a loop for up to this many seconds before giving up and
+    // throwing, rather than failing immediately. This is NOT sqlite3_busy_timeout (SQLite's own
+    // native busy-handler) — it's a driver-level retry loop layered on top. SQLite only ever
+    // allows one writer at a time even in WAL mode, and this single file is shared by every
+    // QueueDbContext instance across the whole process (the acquisition pipeline, the API,
+    // sync, and — in the test suite — dozens of concurrently-running test classes all hitting
+    // it at once), so contention here is expected. 30s is already Microsoft.Data.Sqlite's own
+    // default; it's set explicitly here to document that choice rather than to change it.
+    private const int BusyTimeoutSeconds = 30;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -84,5 +97,8 @@ public class QueueDbContext : DbContext
         modelBuilder.Entity<DeviceConfig>().Property(x => x.ApiKey).HasConversion(secretConverter);
         modelBuilder.Entity<DeviceConfig>().Property(x => x.ClaimSecret).HasConversion(secretConverter);
         modelBuilder.Entity<DeviceConfig>().Property(x => x.PairingToken).HasConversion(secretConverter);
+
+        modelBuilder.Entity<OeeChannel>().HasIndex(x => x.ExternalId).IsUnique();
+        modelBuilder.Entity<OeeOutboxMessage>().HasIndex(x => new { x.ChannelId, x.Seq }).IsUnique();
     }
 }

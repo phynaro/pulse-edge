@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { 
-  Activity, 
+import {
+  Activity,
   Shuffle,
-  Network, 
-  RefreshCw, 
+  Network,
+  RefreshCw,
   Layers,
+  Gauge,
   AlertTriangle,
   Tag,
   Settings as SettingsIcon,
@@ -24,6 +25,7 @@ import DataSourcesTab from './components/DataSourcesTab';
 import TagsTab from './components/TagsTab';
 import ProtocolsTab from './components/ProtocolsTab';
 import BufferTab from './components/BufferTab';
+import OeeTab from './components/OeeTab';
 import SettingsTab from './components/SettingsTab';
 import DiagnosticLogsTab from './components/DiagnosticLogsTab';
 import CriticalAlertBanner from './components/CriticalAlertBanner';
@@ -56,8 +58,8 @@ const getCloudStatusInfo = (status: string | undefined) => {
   }
 };
 
-type Route = 'dashboard' | 'datasources' | 'tags' | 'protocols' | 'buffer' | 'logs' | 'settings';
-const validRoutes: Route[] = ['dashboard', 'datasources', 'tags', 'protocols', 'buffer', 'logs', 'settings'];
+type Route = 'dashboard' | 'datasources' | 'tags' | 'protocols' | 'buffer' | 'oee' | 'logs' | 'settings';
+const validRoutes: Route[] = ['dashboard', 'datasources', 'tags', 'protocols', 'buffer', 'oee', 'logs', 'settings'];
 
 function getRouteFromPath(defaultRoute: Route): Route {
   const segment = window.location.pathname.split('/').filter(Boolean)[0] as Route;
@@ -105,7 +107,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
     diagnostics,
     isSyncEnabled, setIsSyncEnabled,
     bufferTelemetry,
-    bufferEvents,
+    oeeOutbox,
     pollingInterval, setPollingInterval,
     maxLiveLogs, setMaxLiveLogs,
     telemetryWarningThreshold, setTelemetryWarningThreshold,
@@ -125,7 +127,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
   useDashboardData(pollingInterval); // Polls dashboard and diagnostics
   useBufferStatus(2000);             // Polls buffer status and updates live logs
   useAdaptersList(activeTab === 'protocols', 3000); // Polls adapters only when tab is active
-  useDatapointsList(activeTab === 'tags' || activeTab === 'datasources', pollingInterval); // Polls tags when active
+  useDatapointsList(activeTab === 'tags' || activeTab === 'datasources' || activeTab === 'oee', pollingInterval); // Polls tags when active
 
   const [operationalRefreshedAt, setOperationalRefreshedAt] = useState<Date | null>(null);
   const [operationalDataStale, setOperationalDataStale] = useState(false);
@@ -420,13 +422,22 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
           <button 
             className={`menu-item ${activeTab === 'buffer' ? 'active' : ''}`}
             onClick={() => setActiveTab('buffer')}
-            title={isSidebarCollapsed ? `Buffer Explorer (${bufferTelemetry.length + bufferEvents.length})` : undefined}
+            title={isSidebarCollapsed ? `Buffer Explorer (${bufferTelemetry.length + oeeOutbox.length})` : undefined}
           >
             <Layers size={18} />
-            {!isSidebarCollapsed && <span>Buffer Explorer ({bufferTelemetry.length + bufferEvents.length})</span>}
+            {!isSidebarCollapsed && <span>Buffer Explorer ({bufferTelemetry.length + oeeOutbox.length})</span>}
           </button>
-          
-          <button 
+
+          <button
+            className={`menu-item ${activeTab === 'oee' ? 'active' : ''}`}
+            onClick={() => setActiveTab('oee')}
+            title={isSidebarCollapsed ? "OEE" : undefined}
+          >
+            <Gauge size={18} />
+            {!isSidebarCollapsed && <span>OEE</span>}
+          </button>
+
+          <button
             className={`menu-item ${activeTab === 'logs' ? 'active' : ''}`}
             onClick={() => setActiveTab('logs')}
             title={isSidebarCollapsed ? "Diagnostic Logs" : undefined}
@@ -482,7 +493,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
                   handleToggleSync={handleToggleSync}
                   bufferTelemetry={bufferTelemetry}
                   telemetryWarningThreshold={telemetryWarningThreshold}
-                  bufferEvents={bufferEvents}
+                  oeeOutbox={oeeOutbox}
                   eventWarningThreshold={eventWarningThreshold}
                   diagnostics={diagnostics}
                   adapters={adapters}
@@ -541,8 +552,12 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
               {activeTab === 'buffer' && (
                 <BufferTab
                   bufferTelemetry={bufferTelemetry}
-                  bufferEvents={bufferEvents}
+                  oeeOutbox={oeeOutbox}
                 />
+              )}
+
+              {activeTab === 'oee' && (
+                <OeeTab datapoints={datapoints} />
               )}
               {activeTab === 'logs' && <DiagnosticLogsTab />}
  

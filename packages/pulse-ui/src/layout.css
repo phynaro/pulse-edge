@@ -402,6 +402,11 @@
   color: #744210;
 }
 
+.badge.danger {
+  background-color: #fed7d7;
+  color: #c53030;
+}
+
 .badge.info {
   background-color: rgba(66, 153, 225, 0.12);
   color: #2b6cb0;

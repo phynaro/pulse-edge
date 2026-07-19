@@ -20,6 +20,7 @@ public class SimulatorState
     public bool Faulted { get; set; } = false;
     public double Speed { get; set; } = 50.0; // pcs/min
     public double AccumulatedCount { get; set; } = 10000.0;
+    public double AccumulatedReject { get; set; } = 200.0;
     public int FaultCode { get; set; } = 0;
 
     public DateTime LastUpdate { get; set; } = DateTime.MinValue;
@@ -97,6 +98,7 @@ public class SimulatorDriver
                     double speedVar = 50.0 + 5.0 * Math.Sin(t * (2 * Math.PI / 30.0)) + (hash % 10 - 5);
                     state.Speed = speedVar < 10.0 ? 10.0 : speedVar;
                     state.AccumulatedCount += (state.Speed / 60.0) * seconds;
+                    state.AccumulatedReject += (state.Speed / 60.0) * seconds * 0.02;
                     state.FaultCode = 0;
                 }
                 else
@@ -127,6 +129,7 @@ public class SimulatorDriver
         // Production Addresses
         if (addr == "running" || addr == "state" || addr == "status") return state.Running ? 1.0 : 0.0;
         if (addr == "total_count" || addr == "count" || addr == "totalcount") return Math.Floor(state.AccumulatedCount);
+        if (addr == "reject_count" || addr == "rejects" || addr == "rejectcount") return Math.Floor(state.AccumulatedReject);
         if (addr == "speed" || addr == "rate" || addr == "speed_rate") return state.Speed;
         if (addr == "fault_code" || addr == "fault" || addr == "faultcode") return state.FaultCode;
 

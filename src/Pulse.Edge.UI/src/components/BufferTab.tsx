@@ -1,5 +1,5 @@
 import { Layers } from 'lucide-react';
-import type { BufferTelemetryItem, BufferEventItem } from '../types';
+import type { BufferTelemetryItem, OeeOutboxItem } from '../types';
 
 const formatToLocalTime = (dateStr: string | null | undefined) => {
   if (!dateStr) return '';
@@ -41,10 +41,10 @@ function fmtVal(v: number): string {
 
 interface BufferTabProps {
   bufferTelemetry: BufferTelemetryItem[];
-  bufferEvents: BufferEventItem[];
+  oeeOutbox: OeeOutboxItem[];
 }
 
-export default function BufferTab({ bufferTelemetry, bufferEvents }: BufferTabProps) {
+export default function BufferTab({ bufferTelemetry, oeeOutbox }: BufferTabProps) {
   return (
     <div className="tab-stack">
       <div className="page-header">
@@ -54,7 +54,7 @@ export default function BufferTab({ bufferTelemetry, bufferEvents }: BufferTabPr
             SQLite Queue Buffer Explorer
           </h2>
           <p className="page-header-desc">
-            Inspect the store-and-forward SQLite database queues for pending telemetry frames and system state events.
+            Inspect the store-and-forward SQLite queues for pending telemetry frames and OEE machine-state messages.
           </p>
         </div>
       </div>
@@ -141,36 +141,46 @@ export default function BufferTab({ bufferTelemetry, bufferEvents }: BufferTabPr
       <div className="panel">
         <div className="panel-header">
           <div className="panel-header-col">
-            <h2 className="panel-title">Pending Events Queue — <code>QueueEvents</code></h2>
+            <h2 className="panel-title">OEE Outbox — <code>OeeOutboxMessages</code></h2>
             <span className="panel-subtitle">
-              Alarms, machine state changes, and operational events
+              Machine state transitions and syncs awaiting cloud acknowledgment (dedup key: channel + seq)
             </span>
           </div>
-          <span className="badge info">{bufferEvents.length} event{bufferEvents.length !== 1 ? 's' : ''}</span>
+          <span className="badge info">{oeeOutbox.length} message{oeeOutbox.length !== 1 ? 's' : ''}</span>
         </div>
 
         <div className="table-scroll-sm">
-          {bufferEvents.length === 0 ? (
-            <div className="table-empty">No pending events.</div>
+          {oeeOutbox.length === 0 ? (
+            <div className="table-empty">Outbox is empty — all OEE events acknowledged by the cloud.</div>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
-                  <th className="col-id">ID</th>
-                  <th className="col-event">Event Type</th>
-                  <th>Payload</th>
-                  <th className="col-time">Buffered At</th>
+                  <th className="col-id">Seq</th>
+                  <th>Type</th>
+                  <th>State</th>
+                  <th>Counters</th>
+                  <th className="col-time">Observed At</th>
                   <th className="col-retries">Retries</th>
                   <th className="col-status">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {bufferEvents.map((item) => (
+                {oeeOutbox.map((item) => (
                   <tr key={item.id}>
-                    <td className="cell-mono-secondary">#{item.id}</td>
-                    <td><span className="event-badge">{item.eventType}</span></td>
-                    <td className="cell-mono-code">{item.payloadJson}</td>
-                    <td className="cell-mono-nowrap">{formatToLocalTime(item.timestamp)}</td>
+                    <td className="cell-mono-secondary">#{item.seq}</td>
+                    <td><span className="event-badge">{item.type}</span></td>
+                    <td>
+                      <span className={`badge ${item.state === 'running' ? 'info' : 'warning'}`}>
+                        {item.state}{item.code ? ` (${item.code})` : ''}
+                      </span>
+                    </td>
+                    <td className="cell-mono-code">
+                      {item.goodCount !== null
+                        ? `good ${item.goodCount}${item.rejectCount !== null ? ` / reject ${item.rejectCount}` : ''}`
+                        : '—'}
+                    </td>
+                    <td className="cell-mono-nowrap">{formatToLocalTime(item.ts)}</td>
                     <td className="cell-center">
                       {item.retryCount > 0 ? (
                         <span className="badge warning">{item.retryCount}</span>

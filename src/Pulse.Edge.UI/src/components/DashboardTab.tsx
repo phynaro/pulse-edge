@@ -6,7 +6,7 @@ import DashboardDetailModal, { type DashboardDrilldown } from './Dashboard/Dashb
 import type {
   DiagnosticData,
   BufferTelemetryItem,
-  BufferEventItem,
+  OeeOutboxItem,
   DriverAdapter,
   DataPoint,
   DataSource
@@ -17,7 +17,7 @@ interface DashboardTabProps {
   handleToggleSync: () => void;
   bufferTelemetry: BufferTelemetryItem[];
   telemetryWarningThreshold: number;
-  bufferEvents: BufferEventItem[];
+  oeeOutbox: OeeOutboxItem[];
   eventWarningThreshold: number;
   diagnostics: DiagnosticData | null;
   adapters: DriverAdapter[];
@@ -42,7 +42,7 @@ export default function DashboardTab({
   handleToggleSync,
   bufferTelemetry,
   telemetryWarningThreshold,
-  bufferEvents,
+  oeeOutbox,
   eventWarningThreshold,
   diagnostics,
   adapters,
@@ -168,8 +168,8 @@ export default function DashboardTab({
   };
 
   const telemetryDanger = bufferTelemetry.length >= telemetryWarningThreshold;
-  const eventsDanger = bufferEvents.length >= eventWarningThreshold;
-  const totalBuffered = bufferTelemetry.length + bufferEvents.length;
+  const eventsDanger = oeeOutbox.length >= eventWarningThreshold;
+  const totalBuffered = bufferTelemetry.length + oeeOutbox.length;
   const bufferStateClass = telemetryDanger || eventsDanger
     ? 'is-danger'
     : totalBuffered > 0
@@ -205,13 +205,13 @@ export default function DashboardTab({
         <button className={`ops-status-item ${isSyncEnabled ? 'is-good' : 'is-warn'}`} onClick={handleToggleSync} title="Toggle cloud synchronization">{isSyncEnabled ? <Pause size={12}/> : <Play size={12}/>}Cloud sync <b>{isSyncEnabled ? 'Online' : 'Paused'}</b></button>
         <span className={`ops-status-item ${bufferStateClass}`}><i />Buffer <b>{bufferStateText}</b></span>
         <span className="ops-status-item">Telemetry queue <b>{bufferTelemetry.length}</b></span>
-        <span className="ops-status-item">Events queue <b>{bufferEvents.length}</b></span>
+        <span className="ops-status-item">OEE queue <b>{oeeOutbox.length}</b></span>
         <span className={`ops-refresh-state ${operationalDataStale ? 'is-stale' : ''}`}>{operationalDataStale ? 'Stale data · last success ' : 'Updated '}{operationalRefreshedAt ? operationalRefreshedAt.toLocaleTimeString() : '—'}</span>
       </div>
 
       <OperationalOverview adapters={adapters} datapoints={datapoints} datasources={datasources} onSelect={setDrilldown}/>
 
-      {(telemetryDanger || eventsDanger) && <div className="ops-queue-alert"><strong>Queue threshold exceeded.</strong> Telemetry: {bufferTelemetry.length}/{telemetryWarningThreshold} · Events: {bufferEvents.length}/{eventWarningThreshold}</div>}
+      {(telemetryDanger || eventsDanger) && <div className="ops-queue-alert"><strong>Queue threshold exceeded.</strong> Telemetry: {bufferTelemetry.length}/{telemetryWarningThreshold} · OEE: {oeeOutbox.length}/{eventWarningThreshold}</div>}
 
       {!showLiveFeedPanel && !showDiagnosticsPanel ? (
         <div className="panel panel-empty-centered">

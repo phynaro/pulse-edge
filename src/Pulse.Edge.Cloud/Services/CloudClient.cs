@@ -19,6 +19,15 @@ public enum TelemetrySyncResult
     Unauthorized
 }
 
+public enum OeeSyncResult
+{
+    Success,
+    TransientError,   // 503 / network / timeout / unexpected status → keep batch, backoff, re-send
+    EnvelopeError,    // 400 on the envelope → edge bug; never retry unchanged
+    Unauthorized,     // 401 → key revoked; re-enter claim flow
+    NotPaired         // 409 → device not paired to a site; re-enter pairing
+}
+
 public class CloudClient
 {
     private readonly ILogger<CloudClient> _logger;
@@ -89,6 +98,13 @@ public class CloudClient
     {
         _logger = logger;
         _httpClient = new HttpClient();
+    }
+
+    /// <summary>Test seam: inject a scripted HttpMessageHandler. Production uses the default ctor.</summary>
+    public CloudClient(ILogger<CloudClient> logger, HttpMessageHandler handler)
+    {
+        _logger = logger;
+        _httpClient = new HttpClient(handler);
     }
 
     private Uri GetUri(string baseUrl, string path)
@@ -485,21 +501,125 @@ public class CloudClient
         }
     }
 
-    /// <summary>
-    /// Simulates POST /api/events with a batch of event records.
-    /// Ingestion is not yet built on the cloud side, so we keep it mocked.
-    /// </summary>
-    public async Task<bool> SendEventsBatchAsync(string deviceId, string apiKey, System.Collections.Generic.List<Pulse.Edge.Storage.Models.QueueEvent> batch)
-    {
-        _logger.LogInformation("Syncing {Count} alert events to PULSE Cloud (POST /api/events - Simulated)...", batch.Count);
-        
-        foreach (var e in batch)
-        {
-            _logger.LogInformation("  -> Event: Type {Type} | Payload: {Payload} | Time: {Time}", 
-                e.EventType, e.PayloadJson, e.Timestamp.ToString("HH:mm:ss"));
-        }
+    // ── OEE ingestion (know-how/cloud_oee_ingestion.md) ──────────────────────
 
-        await Task.Delay(800);
-        return true;
+    public record OeeChannelDeclarationDto(string ExternalId, string Name, string[] Capabilities);
+
+    public class OeeCountersDto
+    {
+        public long Good { get; set; }
+        public long? Reject { get; set; }
+    }
+
+    public class OeeEventMessageDto
+    {
+        public string Type { get; set; } = string.Empty;     // "state" | "sync"
+        public string Channel { get; set; } = string.Empty;  // declared externalId
+        public long Seq { get; set; }
+        public string? Ts { get; set; }                      // ISO-8601 UTC with ms
+        public string State { get; set; } = string.Empty;    // "running" | "stopped" | "fault"
+        public string? Code { get; set; }
+        public OeeCountersDto? Counters { get; set; }
+    }
+
+    public class OeeEventsResponseError
+    {
+        public int Index { get; set; }
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    public class OeeEventsResponse
+    {
+        public int Accepted { get; set; }
+        public int Rejected { get; set; }
+        public int Duplicates { get; set; }
+        public List<OeeEventsResponseError>? Errors { get; set; }
+    }
+
+    /// <summary>
+    /// Declares OEE channels (POST /edge/oee/channels). Idempotent on the cloud;
+    /// 201 = success. Whole-batch validation: any invalid item fails the entire call with 400.
+    /// </summary>
+    public async Task<OeeSyncResult> DeclareOeeChannelsAsync(
+        string baseUrl, string apiKey, List<OeeChannelDeclarationDto> channels)
+    {
+        _logger.LogInformation("[OEE Sync] Declaring {Count} OEE channel(s) (POST /edge/oee/channels)...", channels.Count);
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, GetUri(baseUrl, "/edge/oee/channels"))
+            {
+                Content = JsonContent.Create(channels, options: JsonOptions)
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+            var response = await _httpClient.SendAsync(request);
+            switch (response.StatusCode)
+            {
+                case HttpStatusCode.Created:
+                    return OeeSyncResult.Success;
+                case HttpStatusCode.BadRequest:
+                    _logger.LogError("[OEE Sync] Channel declaration rejected with 400: {Error}", await response.Content.ReadAsStringAsync());
+                    return OeeSyncResult.EnvelopeError;
+                case HttpStatusCode.Unauthorized:
+                    _logger.LogError("[OEE Sync] Channel declaration rejected with 401. API key may be revoked.");
+                    return OeeSyncResult.Unauthorized;
+                case HttpStatusCode.Conflict:
+                    _logger.LogError("[OEE Sync] Channel declaration rejected with 409. Device is not paired to a site.");
+                    return OeeSyncResult.NotPaired;
+                default:
+                    _logger.LogWarning("[OEE Sync] Channel declaration failed with status {Status}.", response.StatusCode);
+                    return OeeSyncResult.TransientError;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception during OEE channel declaration to {BaseUrl}", baseUrl);
+            return OeeSyncResult.TransientError;
+        }
+    }
+
+    /// <summary>
+    /// Uploads an OEE event batch (POST /edge/oee/events). 202 = per-message result in the
+    /// response body; duplicates are acknowledged like any accepted message (dedup on (channel, seq)).
+    /// </summary>
+    public async Task<(OeeSyncResult Result, OeeEventsResponse? Response)> SendOeeEventsBatchAsync(
+        string baseUrl, string apiKey, List<OeeEventMessageDto> messages)
+    {
+        _logger.LogInformation("[OEE Sync] Uploading {Count} OEE event(s) (POST /edge/oee/events)...", messages.Count);
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, GetUri(baseUrl, "/edge/oee/events"))
+            {
+                Content = JsonContent.Create(messages, options: JsonOptions)
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+            var response = await _httpClient.SendAsync(request);
+            switch (response.StatusCode)
+            {
+                case HttpStatusCode.Accepted:
+                    var body = await response.Content.ReadFromJsonAsync<OeeEventsResponse>(JsonOptions);
+                    _logger.LogInformation("[OEE Sync] Batch processed. Accepted: {A}, Rejected: {R}, Duplicates: {D}",
+                        body?.Accepted, body?.Rejected, body?.Duplicates);
+                    return (OeeSyncResult.Success, body);
+                case HttpStatusCode.BadRequest:
+                    _logger.LogError("[OEE Sync] Event envelope rejected with 400: {Error}", await response.Content.ReadAsStringAsync());
+                    return (OeeSyncResult.EnvelopeError, null);
+                case HttpStatusCode.Unauthorized:
+                    _logger.LogError("[OEE Sync] Event batch rejected with 401. API key may be revoked.");
+                    return (OeeSyncResult.Unauthorized, null);
+                case HttpStatusCode.Conflict:
+                    _logger.LogError("[OEE Sync] Event batch rejected with 409. Device is not paired to a site.");
+                    return (OeeSyncResult.NotPaired, null);
+                default:
+                    _logger.LogWarning("[OEE Sync] Event batch failed with status {Status}.", response.StatusCode);
+                    return (OeeSyncResult.TransientError, null);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception during OEE event transmission to {BaseUrl}", baseUrl);
+            return (OeeSyncResult.TransientError, null);
+        }
     }
 }

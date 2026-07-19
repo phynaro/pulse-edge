@@ -22,16 +22,5 @@ public static class BufferEndpoints
                 .ToListAsync();
             return Results.Ok(list);
         });
-
-        // GET /api/buffer/events - Returns list of currently enqueued event records in SQLite
-        routes.MapGet("/api/buffer/events", async () =>
-        {
-            using var db = new QueueDbContext();
-            var list = await db.QueueEvents
-                .OrderByDescending(x => x.Timestamp)
-                .Take(50)
-                .ToListAsync();
-            return Results.Ok(list);
-        });
     }
 }

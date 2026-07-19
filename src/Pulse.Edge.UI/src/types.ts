@@ -21,7 +21,7 @@ export interface DashboardData {
   };
   queue: {
     pendingTelemetry: number;
-    pendingEvents: number;
+    pendingOee: number;
   };
 }
 
@@ -101,13 +101,54 @@ export interface BufferTelemetryItem {
   isSending: boolean;
 }
 
-export interface BufferEventItem {
+export interface OeeOutboxItem {
   id: number;
-  eventType: string;
-  payloadJson: string;
-  timestamp: string;
-  retryCount: number;
+  channelId: number;
+  seq: number;
+  type: string;      // "state" | "sync"
+  ts: string;
+  state: string;     // "running" | "stopped" | "fault"
+  code: string | null;
+  goodCount: number | null;
+  rejectCount: number | null;
   isSending: boolean;
+  retryCount: number;
+  createdAt: string;
+}
+
+export interface OeeChannel {
+  id: number;
+  externalId: string;
+  name: string;
+  enabled: boolean;
+  runDataPointId: string;
+  faultDataPointId: string | null;
+  codeDataPointId: string | null;
+  goodDataPointId: string | null;
+  rejectDataPointId: string | null;
+  debounceSeconds: number;
+  nextSeq: number;
+  lastState: string | null;
+  lastStateChangedAt: string | null;
+  lastCode: string | null;
+  updatedAt: string;
+}
+
+export interface OeeChannelStatus {
+  id: number;
+  externalId: string;
+  name: string;
+  enabled: boolean;
+  lastState: string | null;
+  lastCode: string | null;
+  lastStateChangedAt: string | null;
+  nextSeq: number;
+  pendingCount: number;
+}
+
+export interface OeeStatusResponse {
+  channels: OeeChannelStatus[];
+  outboxDepth: number;
 }
 
 export interface StreamTemplate {

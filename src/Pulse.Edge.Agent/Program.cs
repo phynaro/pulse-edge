@@ -86,6 +86,11 @@ builder.Services.AddHostedService<EdgeConfigMonitor>(provider => provider.GetReq
 builder.Services.AddSingleton<CloudProvisioningService>();
 builder.Services.AddHostedService<CloudProvisioningService>(provider => provider.GetRequiredService<CloudProvisioningService>());
 
+// OEE data plane: storage + observer engine + dedicated delivery loop
+builder.Services.AddSingleton<OeeStorageService>();
+builder.Services.AddSingleton<OeeStateEngine>();
+builder.Services.AddHostedService<OeeSyncService>();
+
 // Register Background Worker
 builder.Services.AddHostedService<Worker>();
 

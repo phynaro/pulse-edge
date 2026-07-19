@@ -66,6 +66,9 @@ public sealed class AuthorizationMatrixTests(PulseEdgeAppFactory factory) : ICla
         ["POST /api/users"] = Access.AdminMutation,
         ["PUT /api/users/{id}"] = Access.AdminMutation,
         ["DELETE /api/users/{id}"] = Access.AdminMutation,
+        ["POST /api/oee/channels"] = Access.AdminMutation,
+        ["PUT /api/oee/channels/{id}"] = Access.AdminMutation,
+        ["DELETE /api/oee/channels/{id}"] = Access.AdminMutation,
 
         // --- Admin-only reads (handler IsInRole check) ---
         ["GET /api/users"] = Access.AdminRead,
@@ -73,7 +76,6 @@ public sealed class AuthorizationMatrixTests(PulseEdgeAppFactory factory) : ICla
 
         // --- Authenticated reads (ReadOnly allowed) ---
         ["GET /api/buffer/telemetry"] = Access.AuthenticatedRead,
-        ["GET /api/buffer/events"] = Access.AuthenticatedRead,
         ["GET /api/adapters"] = Access.AuthenticatedRead,
         ["GET /api/adapters/templates/modbus-power-meters"] = Access.AuthenticatedRead,
         ["GET /api/auth/me"] = Access.AuthenticatedRead,
@@ -88,6 +90,9 @@ public sealed class AuthorizationMatrixTests(PulseEdgeAppFactory factory) : ICla
         ["GET /api/diagnostic-logs/history"] = Access.AuthenticatedRead,
         ["GET /api/settings"] = Access.AuthenticatedRead,
         ["GET /api/settings/sync-status"] = Access.AuthenticatedRead,
+        ["GET /api/oee/channels"] = Access.AuthenticatedRead,
+        ["GET /api/oee/status"] = Access.AuthenticatedRead,
+        ["GET /api/oee/outbox"] = Access.AuthenticatedRead,
 
         // --- Special cases ---
         ["POST /api/auth/logout"] = Access.AuthenticatedAction,

@@ -1,0 +1,176 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Pulse.Edge.Storage;
+using Pulse.Edge.Storage.Models;
+using Pulse.Edge.Storage.Services;
+using Xunit;
+
+namespace Pulse.Edge.Tests;
+
+// GetPendingBatchAsync (below) and ResetSendingStatusAsync (in QueueStorageService) both scan
+// OeeOutboxMessages GLOBALLY — across every channel from every test, not just this class's own —
+// by design (that's the real production drain/recovery contract). Any other test class that
+// creates outbox rows and asserts on their IsSending flag (e.g. OeeStorageSchemaTests) is
+// vulnerable to this class's DrainLifecycle test marking/clobbering those same rows if both run
+// concurrently. Sharing the "EdgeApi" collection (DisableParallelization=true, defined in
+// Pulse.Edge.Tests.Integration.PulseEdgeAppFactory) serializes every OEE-table-touching test
+// class against every other one, closing that race for good.
+[Collection("EdgeApi")]
+public class OeeStorageServiceTests : IAsyncLifetime
+{
+    private readonly QueueStorageService _queueStorage = new();
+    private readonly OeeStorageService _oee = new();
+    private int _channelId;
+
+    public async Task InitializeAsync()
+    {
+        await _queueStorage.InitializeAsync();
+        var channel = await _oee.CreateChannelAsync(new OeeChannel
+        {
+            ExternalId = "svc-test-" + Guid.NewGuid().ToString("N"),
+            Name = "Service Test",
+            RunDataPointId = "dp-run",
+        });
+        _channelId = channel.Id;
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _oee.DeleteChannelAsync(_channelId);
+    }
+
+    [Fact]
+    public async Task Enqueue_AssignsMonotonicSeq_PersistedAcrossServiceInstances()
+    {
+        var s1 = await _oee.EnqueueMessageAsync(_channelId, "state", DateTime.UtcNow, "running", null, 100, 2);
+        var s2 = await _oee.EnqueueMessageAsync(_channelId, "sync", DateTime.UtcNow, "running", null, 101, 2);
+        Assert.Equal(0, s1);
+        Assert.Equal(1, s2);
+
+        // "Restart": a brand-new service instance must continue from the persisted counter.
+        var fresh = new OeeStorageService();
+        var s3 = await fresh.EnqueueMessageAsync(_channelId, "sync", DateTime.UtcNow, "running", null, 102, 2);
+        Assert.Equal(2, s3);
+
+        using var db = new QueueDbContext();
+        var channel = await db.OeeChannels.SingleAsync(c => c.Id == _channelId);
+        Assert.Equal(3, channel.NextSeq);
+    }
+
+    [Fact]
+    public async Task Enqueue_UpdatesLiveStateSnapshot_OnStateChangeOnly()
+    {
+        var ts1 = new DateTime(2026, 7, 18, 6, 0, 0, DateTimeKind.Utc);
+        await _oee.EnqueueMessageAsync(_channelId, "state", ts1, "fault", "E17", null, null);
+
+        using (var db = new QueueDbContext())
+        {
+            var c = await db.OeeChannels.SingleAsync(x => x.Id == _channelId);
+            Assert.Equal("fault", c.LastState);
+            Assert.Equal("E17", c.LastCode);
+            Assert.Equal(ts1, DateTime.SpecifyKind(c.LastStateChangedAt!.Value, DateTimeKind.Utc));
+        }
+
+        // A sync asserting the same state must NOT move LastStateChangedAt.
+        var ts2 = ts1.AddMinutes(1);
+        await _oee.EnqueueMessageAsync(_channelId, "sync", ts2, "fault", "E17", null, null);
+        using (var db = new QueueDbContext())
+        {
+            var c = await db.OeeChannels.SingleAsync(x => x.Id == _channelId);
+            Assert.Equal(ts1, DateTime.SpecifyKind(c.LastStateChangedAt!.Value, DateTimeKind.Utc));
+        }
+    }
+
+    [Fact]
+    public async Task Enqueue_ReturnsNull_WhenChannelDeleted()
+    {
+        var doomed = await _oee.CreateChannelAsync(new OeeChannel
+        {
+            ExternalId = "doomed-" + Guid.NewGuid().ToString("N"),
+            Name = "Doomed", RunDataPointId = "dp-run",
+        });
+        await _oee.DeleteChannelAsync(doomed.Id);
+        var seq = await _oee.EnqueueMessageAsync(doomed.Id, "sync", DateTime.UtcNow, "running", null, null, null);
+        Assert.Null(seq);
+    }
+
+    [Fact]
+    public async Task Enqueue_ConcurrentCalls_AssignUniqueGaplessSeqs()
+    {
+        var concurrent = await _oee.CreateChannelAsync(new OeeChannel
+        {
+            ExternalId = "concurrent-" + Guid.NewGuid().ToString("N"),
+            Name = "Concurrent", RunDataPointId = "dp-run",
+        });
+        try
+        {
+            const int callCount = 10;
+            var tasks = new List<Task<long?>>();
+            for (int i = 0; i < callCount; i++)
+            {
+                tasks.Add(_oee.EnqueueMessageAsync(
+                    concurrent.Id, "sync", DateTime.UtcNow, "running", null, i, 0));
+            }
+            var results = await Task.WhenAll(tasks);
+
+            Assert.All(results, r => Assert.NotNull(r));
+            var seqs = results.Select(r => r!.Value).OrderBy(s => s).ToList();
+            Assert.Equal(Enumerable.Range(0, callCount).Select(i => (long)i).ToList(), seqs);
+
+            using var db = new QueueDbContext();
+            Assert.Equal(callCount, await db.OeeOutboxMessages.CountAsync(m => m.ChannelId == concurrent.Id));
+        }
+        finally
+        {
+            await _oee.DeleteChannelAsync(concurrent.Id);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteChannel_RemovesItsOutboxRows()
+    {
+        var victim = await _oee.CreateChannelAsync(new OeeChannel
+        {
+            ExternalId = "victim-" + Guid.NewGuid().ToString("N"),
+            Name = "Victim", RunDataPointId = "dp-run",
+        });
+        await _oee.EnqueueMessageAsync(victim.Id, "sync", DateTime.UtcNow, "running", null, null, null);
+        await _oee.DeleteChannelAsync(victim.Id);
+
+        using var db = new QueueDbContext();
+        Assert.Equal(0, await db.OeeOutboxMessages.CountAsync(m => m.ChannelId == victim.Id));
+    }
+
+    [Fact]
+    public async Task DrainLifecycle_LocksCompletesAndReleases()
+    {
+        await _oee.EnqueueMessageAsync(_channelId, "state", DateTime.UtcNow, "running", null, 1, null);
+        await _oee.EnqueueMessageAsync(_channelId, "sync", DateTime.UtcNow, "running", null, 2, null);
+
+        var batch = (await _oee.GetPendingBatchAsync(batchSize: 1000))
+            .Where(m => m.ChannelId == _channelId).ToList();
+        Assert.Equal(2, batch.Count);
+        Assert.True(batch.All(m => m.IsSending));
+        Assert.True(batch[0].Seq < batch[1].Seq); // oldest (lowest seq) first
+
+        // Locked rows must not be handed out again.
+        var second = (await _oee.GetPendingBatchAsync(batchSize: 1000))
+            .Where(m => m.ChannelId == _channelId).ToList();
+        Assert.Empty(second);
+
+        // Release → visible again with RetryCount bumped.
+        await _oee.ReleaseBatchAsync(batch.Select(m => m.Id));
+        var third = (await _oee.GetPendingBatchAsync(batchSize: 1000))
+            .Where(m => m.ChannelId == _channelId).ToList();
+        Assert.Equal(2, third.Count);
+        Assert.True(third.All(m => m.RetryCount == 1));
+
+        // Complete → gone.
+        await _oee.CompleteBatchAsync(third.Select(m => m.Id));
+        Assert.Equal(0, (await _oee.GetPendingBatchAsync(batchSize: 1000))
+            .Count(m => m.ChannelId == _channelId));
+    }
+}

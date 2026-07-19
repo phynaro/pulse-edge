@@ -5,8 +5,8 @@ import type {
   DriverAdapter, 
   DataPoint, 
   DiagnosticData, 
-  BufferTelemetryItem, 
-  BufferEventItem,
+  BufferTelemetryItem,
+  OeeOutboxItem,
   MqttDevice
 } from '../types';
 import { EdgeContext } from './edge';
@@ -23,7 +23,7 @@ export const EdgeProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [diagnostics, setDiagnostics] = useState<DiagnosticData | null>(null);
   const [isSyncEnabled, setIsSyncEnabled] = useState<boolean>(true);
   const [bufferTelemetry, setBufferTelemetry] = useState<BufferTelemetryItem[]>([]);
-  const [bufferEvents, setBufferEvents] = useState<BufferEventItem[]>([]);
+  const [oeeOutbox, setOeeOutbox] = useState<OeeOutboxItem[]>([]);
 
   const [pollingInterval, setPollingInterval] = useState<number>(() => {
     const saved = localStorage.getItem('pulse_ui_polling_interval');
@@ -117,7 +117,7 @@ export const EdgeProvider: React.FC<{ children: React.ReactNode }> = ({ children
       diagnostics, setDiagnostics,
       isSyncEnabled, setIsSyncEnabled,
       bufferTelemetry, setBufferTelemetry,
-      bufferEvents, setBufferEvents,
+      oeeOutbox, setOeeOutbox,
       pollingInterval, setPollingInterval,
       maxLiveLogs, setMaxLiveLogs,
       telemetryWarningThreshold, setTelemetryWarningThreshold,
