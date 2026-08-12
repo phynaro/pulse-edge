@@ -5,10 +5,8 @@
   width: 100%;
   margin-bottom: 20px;
   border-radius: 8px;
-  background: rgba(26, 28, 35, 0.7); /* Deep dark slate to fit the edge dashboard theme */
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--sidebar-bg, #12131a); /* Same background as left side shell */
+  border: 1px solid var(--sidebar-border, #1a1c23);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
   animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
@@ -28,7 +26,7 @@
 
 .onboarding-tour-banner.tour-completed {
   border-color: rgba(60, 232, 189, 0.25);
-  background: rgba(26, 28, 35, 0.85);
+  background: var(--sidebar-bg, #12131a);
   box-shadow: 0 4px 24px rgba(60, 232, 189, 0.05);
 }
 
