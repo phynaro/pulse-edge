@@ -33,6 +33,9 @@ import CriticalAlertBanner from './components/CriticalAlertBanner';
 import OnboardingWizard from './components/OnboardingWizard';
 import OnboardingTourBanner from './components/OnboardingTourBanner';
 
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from './components/LanguageSwitcher';
+
 import { EdgeProvider } from './context/EdgeContext';
 import { useEdge } from './context/edge';
 import { ConfirmProvider } from './context/ConfirmProvider';
@@ -44,18 +47,18 @@ import { useBufferStatus } from './hooks/useBufferStatus';
 import { useAdaptersList } from './hooks/useAdaptersList';
 import { useDatapointsList } from './hooks/useDatapointsList';
 
-const getCloudStatusInfo = (status: string | undefined) => {
+const getCloudStatusInfo = (status: string | undefined, t: (key: string) => string) => {
   switch (status) {
     case 'Connected':
-      return { className: '', label: 'Cloud Link: Connected' };
+      return { className: '', label: t('cloudStatus.connected') };
     case 'PendingApproval':
-      return { className: 'pending', label: 'Cloud Link: Waiting for Approval' };
+      return { className: 'pending', label: t('cloudStatus.pending') };
     case 'Revoked':
-      return { className: 'revoked', label: 'Cloud Link: API Key Revoked' };
+      return { className: 'revoked', label: t('cloudStatus.revoked') };
     case 'Disconnected':
-      return { className: 'error', label: 'Cloud Link: Disconnected' };
+      return { className: 'error', label: t('cloudStatus.disconnected') };
     default:
-      return { className: 'pending', label: 'Cloud Link: Waiting for Approval' };
+      return { className: 'pending', label: t('cloudStatus.pending') };
   }
 };
 
@@ -94,6 +97,7 @@ function usePathRouting(defaultRoute: Route): [Route, (route: Route) => void] {
 }
 
 function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
+  const { t } = useTranslation();
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = usePathRouting('dashboard');
   
@@ -292,6 +296,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
 
       if (res.ok) {
         localStorage.removeItem('pulse_onboarding_tour_dismissed');
+        localStorage.removeItem('pulse_onboarding_completed');
         window.location.assign('/');
       } else {
         const data = await res.json().catch(() => ({}));
@@ -313,6 +318,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
         toast.success('Agent cloud pairing has been successfully reset. Configurations preserved.');
         
         localStorage.removeItem('pulse_onboarding_tour_dismissed');
+        localStorage.removeItem('pulse_onboarding_completed');
         setIsOnboarded(false);
         setHasInitializedSettings(false);
         setActiveTab('dashboard');
@@ -364,8 +370,9 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
           toast={toast} 
           requireFirstAdmin={!user}
           onComplete={() => { 
-            setHasInitializedSettings(false);
+            localStorage.setItem('pulse_onboarding_completed', 'true');
             setIsOnboarded(true); 
+            setHasInitializedSettings(false);
             void fetchStaticData(); 
           }} 
         />
@@ -386,7 +393,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
           <button
             onClick={toggleSidebar} 
             className="sidebar-toggle-btn"
-            title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            title={isSidebarCollapsed ? t('sidebar.expandSidebar') : t('sidebar.collapseSidebar')}
           >
             <PanelLeft size={18} />
           </button>
@@ -396,80 +403,80 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
           <button 
             className={`menu-item ${activeTab === 'dashboard' ? 'active' : ''}`}
             onClick={() => setActiveTab('dashboard')}
-            title={isSidebarCollapsed ? "Dashboard" : undefined}
+            title={isSidebarCollapsed ? t('nav.dashboard') : undefined}
           >
             <Activity size={18} />
-            {!isSidebarCollapsed && <span>Dashboard</span>}
+            {!isSidebarCollapsed && <span>{t('nav.dashboard')}</span>}
           </button>
           
           <button 
             className={`menu-item ${activeTab === 'protocols' ? 'active' : ''}`}
             onClick={() => setActiveTab('protocols')}
-            title={isSidebarCollapsed ? "Protocols" : undefined}
+            title={isSidebarCollapsed ? t('nav.protocols') : undefined}
           >
             <Network size={18} />
-            {!isSidebarCollapsed && <span>Protocols</span>}
+            {!isSidebarCollapsed && <span>{t('nav.protocols')}</span>}
           </button>
  
           <button 
             className={`menu-item ${activeTab === 'tags' ? 'active' : ''}`}
             onClick={() => setActiveTab('tags')}
-            title={isSidebarCollapsed ? "Tags" : undefined}
+            title={isSidebarCollapsed ? t('nav.tags') : undefined}
           >
             <Tag size={18} />
-            {!isSidebarCollapsed && <span>Tags</span>}
+            {!isSidebarCollapsed && <span>{t('nav.tags')}</span>}
           </button>
  
           <button 
             className={`menu-item ${activeTab === 'datasources' ? 'active' : ''}`}
             onClick={() => setActiveTab('datasources')}
-            title={isSidebarCollapsed ? "Streams" : undefined}
+            title={isSidebarCollapsed ? t('nav.streams') : undefined}
           >
             <Shuffle size={18} />
-            {!isSidebarCollapsed && <span>Streams</span>}
+            {!isSidebarCollapsed && <span>{t('nav.streams')}</span>}
           </button>
  
           <button 
             className={`menu-item ${activeTab === 'buffer' ? 'active' : ''}`}
             onClick={() => setActiveTab('buffer')}
-            title={isSidebarCollapsed ? `Buffer Explorer (${bufferTelemetry.length + oeeOutbox.length})` : undefined}
+            title={isSidebarCollapsed ? `${t('nav.buffer')} (${bufferTelemetry.length + oeeOutbox.length})` : undefined}
           >
             <Layers size={18} />
-            {!isSidebarCollapsed && <span>Buffer Explorer ({bufferTelemetry.length + oeeOutbox.length})</span>}
+            {!isSidebarCollapsed && <span>{t('nav.buffer')} ({bufferTelemetry.length + oeeOutbox.length})</span>}
           </button>
 
           <button
             className={`menu-item ${activeTab === 'oee' ? 'active' : ''}`}
             onClick={() => setActiveTab('oee')}
-            title={isSidebarCollapsed ? "OEE" : undefined}
+            title={isSidebarCollapsed ? t('nav.oee') : undefined}
           >
             <Gauge size={18} />
-            {!isSidebarCollapsed && <span>OEE</span>}
+            {!isSidebarCollapsed && <span>{t('nav.oee')}</span>}
           </button>
 
           <button
             className={`menu-item ${activeTab === 'logs' ? 'active' : ''}`}
             onClick={() => setActiveTab('logs')}
-            title={isSidebarCollapsed ? "Diagnostic Logs" : undefined}
+            title={isSidebarCollapsed ? t('nav.logs') : undefined}
           >
             <ScrollText size={18} />
-            {!isSidebarCollapsed && <span>Logs</span>}
+            {!isSidebarCollapsed && <span>{t('nav.logs')}</span>}
           </button>
 
           <button
             className={`menu-item ${activeTab === 'settings' ? 'active' : ''}`}
             onClick={() => setActiveTab('settings')}
-            title={isSidebarCollapsed ? "Settings" : undefined}
+            title={isSidebarCollapsed ? t('nav.settings') : undefined}
           >
             <SettingsIcon size={18} />
-            {!isSidebarCollapsed && <span>Settings</span>}
+            {!isSidebarCollapsed && <span>{t('nav.settings')}</span>}
           </button>
         </nav>
         
         {!isSidebarCollapsed && (
           <div className="sidebar-footer">
-            <div>AGENT V{dashboard?.version || '1.0.0'}</div>
-            <div className="sidebar-footer-note">DB Status: SQLite WAL</div>
+            <div>{t('sidebar.agentVersion', { version: dashboard?.version || '1.0.0' })}</div>
+            <div className="sidebar-footer-note">{t('sidebar.dbStatus')}</div>
           </div>
         )}
       </aside>
@@ -481,7 +488,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
             <div className="banner-warning">
               <AlertTriangle size={20} />
               <span>
-                <strong>Sync Loop Paused:</strong> Synchronization loop is currently paused. Telemetry packets are building up in the SQLite database queue buffer.
+                <strong>{t('alerts.syncPausedTitle')}</strong> {t('alerts.syncPausedMsg')}
               </span>
             </div>
           )}
@@ -594,8 +601,9 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
                   showDiagnosticsPanel={showDiagnosticsPanel}
                   setShowDiagnosticsPanel={setShowDiagnosticsPanel}
                   handleFactoryReset={handleFactoryReset}
-                handleSoftReset={handleSoftReset}
-                onRestoreComplete={fetchStaticData}
+                  handleSoftReset={handleSoftReset}
+                  onRestoreComplete={fetchStaticData}
+                  onOpenWizard={() => setIsOnboarded(false)}
                 />
               )}
             </>
@@ -606,36 +614,53 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
           <div className="bottombar-badge-group">
             {dashboard?.device.organizationName && dashboard.device.organizationName !== 'N/A' && (
               <div className="bottombar-node-badge">
-                <span className="badge-label">ORG</span>
+                <span className="badge-label">{t('bottombar.org')}</span>
                 <span className="badge-value">{dashboard.device.organizationName}</span>
               </div>
             )}
 
             {dashboard?.device.siteName && dashboard.device.siteName !== 'N/A' && (
               <div className="bottombar-node-badge">
-                <span className="badge-label">SITE</span>
+                <span className="badge-label">{t('bottombar.site')}</span>
                 <span className="badge-value">{dashboard.device.siteName}</span>
               </div>
             )}
 
             <div className="bottombar-node-badge">
-              <span className="badge-label">NODE</span>
+              <span className="badge-label">{t('bottombar.node')}</span>
               <span className="badge-value">{edgeSerial}</span>
             </div>
           </div>
           
           <div className="bottombar-status">
-            {user && <div className="status-indicator auth-user-chip"><ShieldCheck size={14} /><span>{user.username} · {user.role === 'ReadOnly' ? 'Read-only' : 'Admin'}</span><button onClick={() => void logout()}>Sign out</button></div>}
+            <LanguageSwitcher />
+            {user && (
+              <div className="status-indicator auth-user-chip">
+                <ShieldCheck size={14} />
+                <span>{user.username} · {user.role === 'ReadOnly' ? t('common.readOnly') : t('common.admin')}</span>
+                <button onClick={() => void logout()}>{t('common.signOut')}</button>
+              </div>
+            )}
             <div className="status-indicator">
               <div className={`pulse-dot ${isConnected ? '' : 'warning'}`} />
-              <span>{isConnected ? 'Local Agent: Online' : 'Local Agent: Offline'}</span>
+              <span>{isConnected ? t('bottombar.localAgentOnline') : t('bottombar.localAgentOffline')}</span>
             </div>
 
             {isConnected && dashboard && (
               (() => {
-                const cloudInfo = getCloudStatusInfo(dashboard.cloudStatus);
+                const cloudInfo = getCloudStatusInfo(dashboard.cloudStatus, t);
+                const isPending = dashboard.cloudStatus === 'PendingApproval';
                 return (
-                  <div className="status-indicator status-indicator-divider">
+                  <div
+                    className="status-indicator status-indicator-divider"
+                    style={{ cursor: isPending ? 'pointer' : 'default' }}
+                    onClick={() => {
+                      if (isPending) {
+                        setIsOnboarded(false);
+                      }
+                    }}
+                    title={isPending ? 'Click to open Cloud Pairing Wizard' : undefined}
+                  >
                     <div className={`pulse-dot ${cloudInfo.className}`} />
                     <span>{cloudInfo.label}</span>
                   </div>
@@ -647,7 +672,7 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
               type="button"
               onClick={() => { setIsLoading(true); void fetchStaticData(); }}
               className="refresh-btn"
-              title="Force Refresh Data"
+              title={t('common.forceRefresh')}
               aria-label="Force refresh data"
             >
               <RefreshCw size={16} className={isLoading ? 'spin refresh-icon' : 'refresh-icon'} />
@@ -665,8 +690,9 @@ export default function App() {
 }
 
 function AppGate() {
+  const { t } = useTranslation();
   const { loading, setupState, user } = useAuth();
-  if (loading) return <div className="auth-loading"><Activity className="spin" size={28} /> Loading secure access…</div>;
+  if (loading) return <div className="auth-loading"><Activity className="spin" size={28} /> {t('bottombar.loadingAccess')}</div>;
   if (setupState === 'Operational' && !user) return <LoginScreen />;
   return (
     <EdgeProvider>

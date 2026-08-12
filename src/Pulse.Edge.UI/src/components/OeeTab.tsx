@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Gauge, Plus, Pencil, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import ModalShell from './ModalShell';
 import OeeTagBrowserModal from './OeeTab/OeeTagBrowserModal';
 import type { DataPoint, DriverAdapter, OeeChannel, OeeStatusResponse } from '../types';
@@ -51,6 +52,7 @@ const ROLE_META: Record<TagRole, {
 const ROLE_ORDER: TagRole[] = ['run', 'fault', 'code', 'good', 'reject'];
 
 export default function OeeTab({ datapoints, adapters }: OeeTabProps) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<OeeStatusResponse>({ channels: [], outboxDepth: 0 });
   const [channels, setChannels] = useState<OeeChannel[]>([]);
   const [editing, setEditing] = useState<OeeChannel | null>(null);
@@ -188,18 +190,14 @@ export default function OeeTab({ datapoints, adapters }: OeeTabProps) {
     <div className="tab-stack">
       <div className="page-header">
         <div className="page-header-info">
-          <h2 className="page-header-title">
-            <Gauge size={24} className="page-header-icon" />
-            OEE Channels
-          </h2>
+          <h2 className="page-header-title"><Gauge size={24} className="page-header-icon" />{t('oee.title')}</h2>
           <p className="page-header-desc">
-            Monitored machines reporting state transitions and production counters to PULSE Cloud.
-            Outbox depth: {status.outboxDepth}
+            {t('oee.subtitle')}
           </p>
         </div>
         <div className="page-header-actions">
           <button type="button" className="btn-primary" onClick={openCreate}>
-            <Plus size={18} /> Add Channel
+            <Plus size={18} /> {t('common.add')} Channel
           </button>
         </div>
       </div>

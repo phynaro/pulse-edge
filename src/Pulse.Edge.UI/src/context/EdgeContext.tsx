@@ -89,7 +89,8 @@ export const EdgeProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setCloudEndpoint(settingsData.cloudEndpoint || 'http://localhost:3000');
           setEdgeSerial(settingsData.serialNumber || '');
           const hasApiKey = settingsData.apiKey && settingsData.apiKey !== 'None';
-          setIsOnboarded(!!settingsData.serialNumber && hasApiKey);
+          const isCompleted = localStorage.getItem('pulse_onboarding_completed') === 'true';
+          setIsOnboarded(!!settingsData.serialNumber && (hasApiKey || isCompleted));
           setHasInitializedSettings(true);
         }
         setIsConnected(true);

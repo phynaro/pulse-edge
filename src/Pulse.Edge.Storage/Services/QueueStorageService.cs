@@ -612,23 +612,31 @@ public class QueueStorageService
         var existing = await db.DeviceConfigs.FirstOrDefaultAsync();
         if (existing != null)
         {
-            existing.SerialNumber = config.SerialNumber;
-            existing.SiteId = config.SiteId;
-            existing.SiteName = config.SiteName;
-            existing.ApiKey = config.ApiKey;
-            existing.Version = config.Version;
-            existing.IsSyncEnabled = config.IsSyncEnabled;
-            existing.CloudEndpoint = config.CloudEndpoint;
-            existing.CloudEdgeId = config.CloudEdgeId;
-            existing.ClaimSecret = config.ClaimSecret;
-            existing.CloudStatus = config.CloudStatus;
-            existing.PairingToken = config.PairingToken;
-            existing.PairingShortCode = config.PairingShortCode;
-            existing.PairingExpiresAt = config.PairingExpiresAt;
-            existing.PairingBaseUrl = config.PairingBaseUrl;
-            existing.OrganizationId = config.OrganizationId;
-            existing.OrganizationName = config.OrganizationName;
-            db.DeviceConfigs.Update(existing);
+            if (existing.Id != config.Id)
+            {
+                db.DeviceConfigs.Remove(existing);
+                db.DeviceConfigs.Add(config);
+            }
+            else
+            {
+                existing.SerialNumber = config.SerialNumber;
+                existing.SiteId = config.SiteId;
+                existing.SiteName = config.SiteName;
+                existing.ApiKey = config.ApiKey;
+                existing.Version = config.Version;
+                existing.IsSyncEnabled = config.IsSyncEnabled;
+                existing.CloudEndpoint = config.CloudEndpoint;
+                existing.CloudEdgeId = config.CloudEdgeId;
+                existing.ClaimSecret = config.ClaimSecret;
+                existing.CloudStatus = config.CloudStatus;
+                existing.PairingToken = config.PairingToken;
+                existing.PairingShortCode = config.PairingShortCode;
+                existing.PairingExpiresAt = config.PairingExpiresAt;
+                existing.PairingBaseUrl = config.PairingBaseUrl;
+                existing.OrganizationId = config.OrganizationId;
+                existing.OrganizationName = config.OrganizationName;
+                db.DeviceConfigs.Update(existing);
+            }
         }
         else
         {

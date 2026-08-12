@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Bug, CirclePause, CirclePlay, Clock3, Database, Radio, Search, ShieldAlert, Square, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/auth';
 
 type LogLevel = 'Debug' | 'Information' | 'Warning' | 'Error' | 'Critical';
@@ -9,6 +10,7 @@ type AdapterOption = { id: string; name: string; protocol: string };
 type CaptureStatus = { isActive: boolean; adapterId: string; adapterName: string; startedAtUtc: string | null; expiresAtUtc: string | null; remainingSeconds: number; entryCount: number; hasRotated: boolean };
 
 export default function DiagnosticLogsTab() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [level, setLevel] = useState<'All' | LogLevel>('All');
@@ -62,14 +64,19 @@ export default function DiagnosticLogsTab() {
     return () => source.close();
   }, [live]);
 
-  const categories = useMemo(() => ['All', ...Array.from(new Set(entries.map(x => x.category).filter(Boolean))).sort()], [entries]);
-  const filtered = useMemo(() => entries.filter(item =>
-    (level === 'All' || item.level === level) &&
-    (category === 'All' || item.category === category) &&
-    (!search || `${item.message} ${item.details} ${item.category}`.toLowerCase().includes(search.toLowerCase()))
-  ), [entries, level, category, search]);
+  const filtered = useMemo(() => entries.filter(item => {
+    if (level !== 'All' && item.level !== level) return false;
+    if (category !== 'All' && item.category !== category) return false;
+    if (search.trim() !== '') {
+      const query = search.toLowerCase();
+      return item.message.toLowerCase().includes(query) || item.details.toLowerCase().includes(query) || item.eventCode.toLowerCase().includes(query) || item.correlationId.toLowerCase().includes(query);
+    }
+    return true;
+  }), [entries, level, category, search]);
+
+  const categories = useMemo(() => ['All', ...Array.from(new Set(entries.map(x => x.category))).sort()], [entries]);
+  const remainingSeconds = capture?.expiresAtUtc ? Math.max(0, Math.round((Date.parse(capture.expiresAtUtc) - clock) / 1000)) : 0;
   const count = (target: LogLevel) => entries.filter(x => x.level === target).length;
-  const remainingSeconds = capture?.isActive && capture.expiresAtUtc ? Math.max(0, Math.ceil((Date.parse(capture.expiresAtUtc) - clock) / 1000)) : 0;
 
   const startCapture = async () => {
     setCaptureBusy(true); setCaptureError('');
@@ -91,8 +98,8 @@ export default function DiagnosticLogsTab() {
   return <div className="diagnostic-logs-page">
     <div className="page-header logs-page-header">
       <div className="page-header-info">
-        <h2 className="page-header-title"><Radio size={23} className="page-header-icon" /> Diagnostic Logs</h2>
-        <p className="page-header-desc">Live edge-agent activity and retained operational incidents.</p>
+        <h2 className="page-header-title"><Radio size={23} className="page-header-icon" /> {t('logs.title')}</h2>
+        <p className="page-header-desc">{t('logs.subtitle')}</p>
       </div>
       <div className={`logs-connection ${connected ? 'is-live' : ''}`}><span />{connected ? 'LIVE STREAM' : 'RECONNECTING'}</div>
     </div>

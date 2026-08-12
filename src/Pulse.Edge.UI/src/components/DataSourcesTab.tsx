@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Database, Plus, Settings } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { DataSource, DataPoint, DriverAdapter, StreamTemplate } from '../types';
 import type { useToast } from '../hooks/useToast';
 
@@ -36,6 +37,7 @@ export default function DataSourcesTab({
   fetchData,
   toast
 }: DataSourcesTabProps) {
+  const { t } = useTranslation();
   const [streamSearchQuery, setStreamSearchQuery] = useState('');
   const [streamTypeFilter, setStreamTypeFilter] = useState('All');
   const [templates, setTemplates] = useState<StreamTemplate[]>([]);
@@ -117,10 +119,10 @@ export default function DataSourcesTab({
         <div className="page-header-info">
           <h2 className="page-header-title">
             <Database size={24} className="page-header-icon" />
-            Telemetry Data Streams
+            {t('datasources.title')}
           </h2>
           <p className="page-header-desc">
-            Decouple edge raw telemetry signals from cloud business context. Configure connection metrics under logical stream channels.
+            {t('datasources.subtitle')}
           </p>
         </div>
 

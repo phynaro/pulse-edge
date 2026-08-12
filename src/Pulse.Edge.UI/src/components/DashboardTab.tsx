@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Cpu, Play, Pause, Activity, HardDrive, Clock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import CustomSelect from './CustomSelect';
 import OperationalOverview from './Dashboard/OperationalOverview';
 import DashboardDetailModal, { type DashboardDrilldown } from './Dashboard/DashboardDetailModal';
@@ -66,6 +67,7 @@ export default function DashboardTab({
   oeeStatus,
   onOpenOee
 }: DashboardTabProps) {
+  const { t } = useTranslation();
   const [drilldown, setDrilldown] = useState<DashboardDrilldown | null>(null);
 
   const filteredLiveFeed = liveFeed
@@ -197,10 +199,10 @@ export default function DashboardTab({
         <div className="page-header-info">
           <h2 className="page-header-title">
             <Activity size={24} className="page-header-icon" />
-            Edge Node Health Summary
+            {t('dashboard.title')}
           </h2>
           <p className="page-header-desc">
-            Real-time diagnostics, sync status, and SQLite queue telemetry logs for this edge device.
+            {t('dashboard.subtitle')}
           </p>
         </div>
       </div>

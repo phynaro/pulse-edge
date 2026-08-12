@@ -90,17 +90,24 @@ public class EdgeConfigMonitor : BackgroundService
             _currentConfig = null;
             OnDeviceConfigChanged?.Invoke(oldConfig, null);
         }
-        else if (latestConfig != null && (_currentConfig == null 
-            || latestConfig.CloudEndpoint != _currentConfig.CloudEndpoint 
-            || latestConfig.ApiKey != _currentConfig.ApiKey
-            || latestConfig.SerialNumber != _currentConfig.SerialNumber
-            || latestConfig.ClaimSecret != _currentConfig.ClaimSecret
-            || latestConfig.PairingToken != _currentConfig.PairingToken
-            || latestConfig.CloudStatus != _currentConfig.CloudStatus))
+        else if (latestConfig != null)
         {
+            bool hasChanged = _currentConfig == null 
+                || latestConfig.CloudEndpoint != _currentConfig.CloudEndpoint 
+                || latestConfig.ApiKey != _currentConfig.ApiKey
+                || latestConfig.SerialNumber != _currentConfig.SerialNumber
+                || latestConfig.ClaimSecret != _currentConfig.ClaimSecret
+                || latestConfig.PairingToken != _currentConfig.PairingToken
+                || latestConfig.PairingShortCode != _currentConfig.PairingShortCode
+                || latestConfig.CloudStatus != _currentConfig.CloudStatus;
+
             var oldConfig = _currentConfig;
             _currentConfig = latestConfig;
-            OnDeviceConfigChanged?.Invoke(oldConfig, latestConfig);
+
+            if (hasChanged)
+            {
+                OnDeviceConfigChanged?.Invoke(oldConfig, latestConfig);
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Settings } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import CustomSelect from './CustomSelect';
 import FactoryResetModal from './FactoryResetModal';
 import SoftResetModal from './SoftResetModal';
@@ -7,6 +8,7 @@ import type { DashboardData } from '../types';
 import { useAuth } from '../context/auth';
 import UserManagement from './UserManagement';
 import ConfigurationBackupPanel from './ConfigurationBackupPanel';
+import LanguageSwitcher from './LanguageSwitcher';
 
 interface SettingsTabProps {
   dashboard: DashboardData | null;
@@ -30,16 +32,18 @@ interface SettingsTabProps {
   handleFactoryReset: () => Promise<void>;
   handleSoftReset: () => Promise<void>;
   onRestoreComplete: () => Promise<void>;
+  onOpenWizard?: () => void;
 }
 
 export default function SettingsTab(props: SettingsTabProps) {
+  const { t } = useTranslation();
   const {
     dashboard, cloudEndpoint, setCloudEndpoint, edgeSerial, setEdgeSerial,
     handleSaveSettings, pollingInterval, setPollingInterval, maxLiveLogs,
     setMaxLiveLogs, telemetryWarningThreshold, setTelemetryWarningThreshold,
     eventWarningThreshold, setEventWarningThreshold, showLiveFeedPanel,
     setShowLiveFeedPanel, showDiagnosticsPanel, setShowDiagnosticsPanel,
-    handleFactoryReset, handleSoftReset, onRestoreComplete
+    handleFactoryReset, handleSoftReset, onRestoreComplete, onOpenWizard
   } = props;
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
@@ -50,29 +54,40 @@ export default function SettingsTab(props: SettingsTabProps) {
     <>
       <div className="page-header">
         <div className="page-header-info">
-          <h2 className="page-header-title"><Settings size={24} className="page-header-icon" />Edge Agent Settings</h2>
-          <p className="page-header-desc">Configure cloud endpoints, device credentials, polling intervals, and user interface preferences.</p>
+          <h2 className="page-header-title"><Settings size={24} className="page-header-icon" />{t('settings.title')}</h2>
+          <p className="page-header-desc">{t('settings.subtitle')}</p>
         </div>
       </div>
 
       <div className="settings-grid">
         <div className="tab-stack">
           <div className="panel panel-flush">
-            <div className="panel-header"><h2 className="panel-title">Configure Connection Endpoints</h2></div>
-            <div className="form-group"><label className="form-label">PULSE Cloud Synchronizer Target</label><input className="form-input" type="url" value={cloudEndpoint} readOnly={!isAdmin} onChange={(e) => setCloudEndpoint(e.target.value)} /></div>
-            <div className="form-group"><label className="form-label">Hardware Serial Number</label><input className="form-input" type="text" value={edgeSerial} readOnly={!isAdmin} onChange={(e) => setEdgeSerial(e.target.value)} /><small className="form-hint">Warning: Changing the Serial Number forces device re-registration on next runtime start.</small></div>
-            {isAdmin && <button type="button" className="btn-primary" onClick={handleSaveSettings}>Save Changes</button>}
+            <div className="panel-header"><h2 className="panel-title">{t('settings.cloudHeader')}</h2></div>
+            <div className="form-group"><label className="form-label">{t('settings.cloudEndpoint')}</label><input className="form-input" type="url" value={cloudEndpoint} readOnly={!isAdmin} onChange={(e) => setCloudEndpoint(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">{t('settings.serialNumber')}</label><input className="form-input" type="text" value={edgeSerial} readOnly={!isAdmin} onChange={(e) => setEdgeSerial(e.target.value)} /><small className="form-hint">Warning: Changing the Serial Number forces device re-registration on next runtime start.</small></div>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+              {isAdmin && <button type="button" className="btn-primary" onClick={handleSaveSettings}>{t('settings.saveSettings')}</button>}
+              {onOpenWizard && <button type="button" className="btn-secondary" onClick={onOpenWizard}>Open Cloud Pairing Wizard</button>}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-header"><h2 className="panel-title">{t('settings.languageHeader')}</h2></div>
+            <div className="form-group">
+              <label className="form-label">{t('settings.languageSelectLabel')}</label>
+              <LanguageSwitcher variant="full" />
+            </div>
           </div>
 
           {isAdmin && <div className="panel">
-            <div className="panel-header"><h2 className="panel-title">User Interface Config</h2></div>
-            <div className="form-group"><label className="form-label">Background Polling Interval</label><CustomSelect value={pollingInterval.toString()} onChange={(val) => setPollingInterval(parseInt(val, 10))} options={[{ value: '1000', label: '1 Second (Realtime)' }, { value: '3000', label: '3 Seconds (Standard)' }, { value: '5000', label: '5 Seconds (Efficient)' }, { value: '10000', label: '10 Seconds (Low Power)' }]} /></div>
-            <div className="form-group"><label className="form-label">Live Telemetry Max Rows ({maxLiveLogs})</label><input className="form-input form-input-range" type="range" min="5" max="50" step="5" value={maxLiveLogs} onChange={(e) => setMaxLiveLogs(parseInt(e.target.value, 10))} /></div>
+            <div className="panel-header"><h2 className="panel-title">{t('settings.uiPreferences')}</h2></div>
+            <div className="form-group"><label className="form-label">{t('settings.pollingIntervalMs')}</label><CustomSelect value={pollingInterval.toString()} onChange={(val) => setPollingInterval(parseInt(val, 10))} options={[{ value: '1000', label: '1 Second (Realtime)' }, { value: '3000', label: '3 Seconds (Standard)' }, { value: '5000', label: '5 Seconds (Efficient)' }, { value: '10000', label: '10 Seconds (Low Power)' }]} /></div>
+            <div className="form-group"><label className="form-label">{t('settings.maxLiveLogsCount')} ({maxLiveLogs})</label><input className="form-input form-input-range" type="range" min="5" max="50" step="5" value={maxLiveLogs} onChange={(e) => setMaxLiveLogs(parseInt(e.target.value, 10))} /></div>
             <div className="form-grid-2col-settings">
-              <div className="form-group"><label className="form-label">Telemetry Alert Limit</label><input className="form-input" type="number" min="1" value={telemetryWarningThreshold} onChange={(e) => setTelemetryWarningThreshold(parseInt(e.target.value, 10) || 10)} /></div>
-              <div className="form-group"><label className="form-label">Event Alert Limit</label><input className="form-input" type="number" min="1" value={eventWarningThreshold} onChange={(e) => setEventWarningThreshold(parseInt(e.target.value, 10) || 5)} /></div>
+              <div className="form-group"><label className="form-label">{t('settings.telemetryWarnThreshold')}</label><input className="form-input" type="number" min="1" value={telemetryWarningThreshold} onChange={(e) => setTelemetryWarningThreshold(parseInt(e.target.value, 10) || 10)} /></div>
+              <div className="form-group"><label className="form-label">{t('settings.eventWarnThreshold')}</label><input className="form-input" type="number" min="1" value={eventWarningThreshold} onChange={(e) => setEventWarningThreshold(parseInt(e.target.value, 10) || 5)} /></div>
             </div>
-            <div className="form-group form-group-flush"><label className="form-label form-label-bold">Visible Dashboard Modules</label><label className="checkbox-label"><input type="checkbox" checked={showLiveFeedPanel} onChange={(e) => setShowLiveFeedPanel(e.target.checked)} /><span>Show Real-time Telemetry Feed Panel</span></label><label className="checkbox-label"><input type="checkbox" checked={showDiagnosticsPanel} onChange={(e) => setShowDiagnosticsPanel(e.target.checked)} /><span>Show System Diagnostics Panel</span></label></div>
+            <div className="form-group form-group-flush"><label className="form-label form-label-bold">Visible Dashboard Modules</label><label className="checkbox-label"><input type="checkbox" checked={showLiveFeedPanel} onChange={(e) => setShowLiveFeedPanel(e.target.checked)} /><span>{t('settings.showLiveFeed')}</span></label><label className="checkbox-label"><input type="checkbox" checked={showDiagnosticsPanel} onChange={(e) => setShowDiagnosticsPanel(e.target.checked)} /><span>{t('settings.showDiagnostics')}</span></label></div>
           </div>}
 
           {isAdmin && <ConfigurationBackupPanel onRestoreComplete={onRestoreComplete} />}
