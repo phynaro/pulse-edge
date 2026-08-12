@@ -9,6 +9,7 @@ import RestApiBrowserModal from './RestApiBrowserModal';
 import EthernetIpBrowserModal from './EthernetIpBrowserModal';
 import SiemensS7BrowserModal from './SiemensS7BrowserModal';
 import BacnetBrowserModal from './BacnetBrowserModal';
+import SimulatorBrowserModal, { type SimulatorVariable } from './SimulatorBrowserModal';
 import ModalShell from '../ModalShell';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
@@ -56,6 +57,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
   const [isEipBrowserOpen, setIsEipBrowserOpen] = useState(false);
   const [isS7BrowserOpen, setIsS7BrowserOpen] = useState(false);
   const [isBacnetBrowserOpen, setIsBacnetBrowserOpen] = useState(false);
+  const [isSimulatorBrowserOpen, setIsSimulatorBrowserOpen] = useState(false);
 
   const handleCreateAdapterChange = (adapterId: string) => {
     setNewDpAdapterId(adapterId);
@@ -192,6 +194,13 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
     setIsBacnetBrowserOpen(true);
   };
 
+  const handleOpenSimulatorBrowser = () => {
+    if (!newDpAdapterId) { toast.warning('Please select a Protocol Simulator adapter first.'); return; }
+    const adapter = adapters.find(a => a.id === newDpAdapterId);
+    if (!adapter || adapter.protocol !== 'SIMULATOR') { toast.warning('The selected adapter is not a Protocol Simulator adapter.'); return; }
+    setIsSimulatorBrowserOpen(true);
+  };
+
   if (!isOpen) return null;
 
   const activeAdapter = adapters.find(a => a.id === newDpAdapterId);
@@ -314,6 +323,9 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                       )}
                       {protocol === 'BACnet' && (
                         <button type="button" onClick={handleOpenBacnetBrowser} className="btn-browse">Browse Device</button>
+                      )}
+                      {protocol === 'SIMULATOR' && (
+                        <button type="button" onClick={handleOpenSimulatorBrowser} className="btn-browse">Browse Variables</button>
                       )}
                       {isBrowseSupported && (
                         <button 
@@ -551,6 +563,20 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
         adapters={adapters}
         toast={toast}
         onSaveSuccess={() => { setIsBacnetBrowserOpen(false); onClose(); fetchData(); }}
+      />
+
+      <SimulatorBrowserModal
+        isOpen={isSimulatorBrowserOpen}
+        onClose={() => setIsSimulatorBrowserOpen(false)}
+        adapterId={newDpAdapterId}
+        adapters={adapters}
+        toast={toast}
+        onSaveSuccess={() => { setIsSimulatorBrowserOpen(false); onClose(); void fetchData(); }}
+        onSelectVariable={(v: SimulatorVariable) => {
+          setNewDpAddress(v.address);
+          setNewDpDataType(v.dataType);
+          if (v.description) setNewDpDescription(v.description);
+        }}
       />
     </>
   );
