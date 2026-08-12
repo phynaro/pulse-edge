@@ -25,6 +25,7 @@ export default function CustomSelect({
   disabled = false
 }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,14 +42,32 @@ export default function CustomSelect({
     };
   }, [isOpen]);
 
+  const handleToggle = () => {
+    if (disabled) return;
+    if (!isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      // If space below is less than 220px and top space is larger, drop upwards
+      if (spaceBelow < 220 && rect.top > 220) {
+        setDropUp(true);
+      } else {
+        setDropUp(false);
+      }
+    }
+    setIsOpen(!isOpen);
+  };
+
   const selectedOption = options.find(opt => opt.value === value);
 
   return (
-    <div ref={containerRef} className={`custom-select ${className}`.trim()}>
+    <div
+      ref={containerRef}
+      className={`custom-select${isOpen ? ' is-open' : ''} ${className}`.trim()}
+    >
       <button
         type="button"
         disabled={disabled}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggle}
         className={[
           'custom-select-trigger',
           isOpen ? 'is-open' : '',
@@ -66,7 +85,7 @@ export default function CustomSelect({
       </button>
 
       {isOpen && (
-        <div className="custom-select-menu">
+        <div className={`custom-select-menu${dropUp ? ' is-drop-up' : ''}`}>
           {options.map(opt => {
             const isSelected = opt.value === value;
             return (
