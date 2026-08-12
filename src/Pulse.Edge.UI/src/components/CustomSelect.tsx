@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import './CustomSelect.css';
 
@@ -26,33 +27,64 @@ export default function CustomSelect({
 }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [dropUp, setDropUp] = useState(false);
+  const [menuCoords, setMenuCoords] = useState<{ left: number; top: number; bottom: number; width: number }>({
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 0,
+  });
+
   const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const updateCoords = () => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const isUp = spaceBelow < 220 && rect.top > 220;
+    setDropUp(isUp);
+    setMenuCoords({
+      left: rect.left,
+      width: rect.width,
+      top: rect.bottom + 4,
+      bottom: window.innerHeight - rect.top + 4,
+    });
+  };
 
   useEffect(() => {
+    if (!isOpen) return;
+
+    updateCoords();
+
     function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        menuRef.current && !menuRef.current.contains(target)
+      ) {
         setIsOpen(false);
       }
     }
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+
+    function handleScrollOrResize() {
+      updateCoords();
     }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
     };
   }, [isOpen]);
 
   const handleToggle = () => {
     if (disabled) return;
-    if (!isOpen && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      // If space below is less than 220px and top space is larger, drop upwards
-      if (spaceBelow < 220 && rect.top > 220) {
-        setDropUp(true);
-      } else {
-        setDropUp(false);
-      }
+    if (!isOpen) {
+      updateCoords();
     }
     setIsOpen(!isOpen);
   };
@@ -84,27 +116,40 @@ export default function CustomSelect({
         )}
       </button>
 
-      {isOpen && (
-        <div className={`custom-select-menu${dropUp ? ' is-drop-up' : ''}`}>
-          {options.map(opt => {
-            const isSelected = opt.value === value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  onChange(opt.value);
-                  setIsOpen(false);
-                }}
-                className={`custom-select-option ${isSelected ? 'is-selected' : ''}`}
-              >
-                <span className="custom-select-label">{opt.label}</span>
-                {isSelected && <span className="custom-select-check">✓</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {isOpen &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className={`custom-select-menu${dropUp ? ' is-drop-up' : ''}`}
+            style={{
+              position: 'fixed',
+              left: `${menuCoords.left}px`,
+              width: `${menuCoords.width}px`,
+              top: dropUp ? 'auto' : `${menuCoords.top}px`,
+              bottom: dropUp ? `${menuCoords.bottom}px` : 'auto',
+              zIndex: 999999,
+            }}
+          >
+            {options.map(opt => {
+              const isSelected = opt.value === value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.value);
+                    setIsOpen(false);
+                  }}
+                  className={`custom-select-option ${isSelected ? 'is-selected' : ''}`}
+                >
+                  <span className="custom-select-label">{opt.label}</span>
+                  {isSelected && <span className="custom-select-check">✓</span>}
+                </button>
+              );
+            })}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
