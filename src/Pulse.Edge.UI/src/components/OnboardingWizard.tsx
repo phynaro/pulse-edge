@@ -728,24 +728,40 @@ export default function OnboardingWizard({ toast, onComplete, requireFirstAdmin 
                     </div>
                   </div>
                 )}
-                {requireFirstAdmin ? (
-                  <form className="first-admin-form" style={{ marginTop: '20px' }} onSubmit={async e => {
-                    e.preventDefault();
-                    if (adminPassword !== confirmPassword) { setAdminError('Passwords do not match.'); return; }
-                    setIsSubmitting(true); setAdminError('');
-                    const error = await createFirstAdmin(adminUsername, adminPassword);
-                    setIsSubmitting(false);
-                    if (error) setAdminError(error); else onComplete();
-                  }}>
-                    <div className="first-admin-heading"><ShieldCheck size={18} /><div><strong>Create the local administrator</strong><span>This account controls configuration and future users.</span></div></div>
-                    <input className="form-input" value={adminUsername} onChange={e => setAdminUsername(e.target.value)} placeholder="Administrator username" autoComplete="username" required />
-                    <div className="first-admin-passwords">
-                      <input className="form-input" type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} placeholder="Password" autoComplete="new-password" required />
-                      <input className="form-input" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Confirm password" autoComplete="new-password" required />
-                    </div>
-                    <small className="onboarding-input-tip">10+ characters with upper-case, lower-case, number, and special character.</small>
-                    {adminError && <div className="auth-error">{adminError}</div>}
-                    <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                {pairingData.cloudStatus !== 'Connected' && pairingData.cloudStatus !== 'Revoked' && (
+                  requireFirstAdmin ? (
+                    <form className="first-admin-form" style={{ marginTop: '20px' }} onSubmit={async e => {
+                      e.preventDefault();
+                      if (adminPassword !== confirmPassword) { setAdminError('Passwords do not match.'); return; }
+                      setIsSubmitting(true); setAdminError('');
+                      const error = await createFirstAdmin(adminUsername, adminPassword);
+                      setIsSubmitting(false);
+                      if (error) setAdminError(error); else onComplete();
+                    }}>
+                      <div className="first-admin-heading"><ShieldCheck size={18} /><div><strong>Create the local administrator</strong><span>This account controls configuration and future users.</span></div></div>
+                      <input className="form-input" value={adminUsername} onChange={e => setAdminUsername(e.target.value)} placeholder="Administrator username" autoComplete="username" required />
+                      <div className="first-admin-passwords">
+                        <input className="form-input" type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} placeholder="Password" autoComplete="new-password" required />
+                        <input className="form-input" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Confirm password" autoComplete="new-password" required />
+                      </div>
+                      <small className="onboarding-input-tip">10+ characters with upper-case, lower-case, number, and special character.</small>
+                      {adminError && <div className="auth-error">{adminError}</div>}
+                      <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setStep(2)}
+                          className="onboarding-btn onboarding-btn-action-back"
+                          style={{ flex: 1, justifyContent: 'center' }}
+                        >
+                          <ArrowLeft size={16} /> Re-configure Cloud Target
+                        </button>
+                        <button disabled={isSubmitting} className="onboarding-btn onboarding-btn-primary" style={{ flex: 1, margin: 0, justifyContent: 'center' }}>
+                          {isSubmitting ? 'Securing node…' : <>Create Admin & Enter Dashboard <ArrowRight size={16} /></>}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '12px', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
                       <button
                         type="button"
                         onClick={() => setStep(2)}
@@ -754,30 +770,16 @@ export default function OnboardingWizard({ toast, onComplete, requireFirstAdmin 
                       >
                         <ArrowLeft size={16} /> Re-configure Cloud Target
                       </button>
-                      <button disabled={isSubmitting} className="onboarding-btn onboarding-btn-primary" style={{ flex: 1, margin: 0, justifyContent: 'center' }}>
-                        {isSubmitting ? 'Securing node…' : <>Create Admin & Enter Dashboard <ArrowRight size={16} /></>}
+                      <button
+                        type="button"
+                        onClick={onComplete}
+                        className="onboarding-btn onboarding-btn-primary"
+                        style={{ flex: 1, margin: 0, justifyContent: 'center' }}
+                      >
+                        Continue to Dashboard <ArrowRight size={16} />
                       </button>
                     </div>
-                  </form>
-                ) : (
-                  <div style={{ display: 'flex', gap: '12px', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                    <button
-                      type="button"
-                      onClick={() => setStep(2)}
-                      className="onboarding-btn onboarding-btn-action-back"
-                      style={{ flex: 1, justifyContent: 'center' }}
-                    >
-                      <ArrowLeft size={16} /> Re-configure Cloud Target
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onComplete}
-                      className="onboarding-btn onboarding-btn-primary"
-                      style={{ flex: 1, margin: 0, justifyContent: 'center' }}
-                    >
-                      Continue to Dashboard <ArrowRight size={16} />
-                    </button>
-                  </div>
+                  )
                 )}
               </div>
             ) : (
