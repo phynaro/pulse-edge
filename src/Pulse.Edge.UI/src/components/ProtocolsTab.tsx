@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Network, Plus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { DriverAdapter, DataPoint, MqttDevice } from '../types';
 import type { useToast } from '../hooks/useToast';
 
@@ -27,6 +28,7 @@ export default function ProtocolsTab({
   fetchData,
   toast
 }: ProtocolsTabProps) {
+  const { t } = useTranslation();
   const [isCreateAdapterOpen, setIsCreateAdapterOpen] = useState(false);
   const [editingAdapter, setEditingAdapter] = useState<DriverAdapter | null>(null);
   const [deletingAdapter, setDeletingAdapter] = useState<DriverAdapter | null>(null);
@@ -113,16 +115,16 @@ export default function ProtocolsTab({
         <div className="page-header-info">
           <h2 className="page-header-title">
             <Network size={24} className="page-header-icon" />
-            Protocol Connection Adapters
+            {t('protocols.title')}
           </h2>
           <p className="page-header-desc">
-            Manage local hardware connection drivers and configurations.
+            {t('protocols.subtitle')}
           </p>
         </div>
         <div className="page-header-actions">
           <button type="button" onClick={() => setIsCreateAdapterOpen(true)} className="btn-primary">
             <Plus size={18} />
-            Add Driver Adapter
+            {t('protocols.addAdapter')}
           </button>
         </div>
       </div>

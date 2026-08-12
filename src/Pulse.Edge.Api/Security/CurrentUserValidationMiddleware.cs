@@ -28,6 +28,8 @@ public sealed class CurrentUserValidationMiddleware(RequestDelegate next)
 
         using var db = new QueueDbContext();
         var hasUsers = await db.LocalUsers.AnyAsync();
+        var config = await db.DeviceConfigs.AsNoTracking().FirstOrDefaultAsync();
+        var hasApiKey = config != null && !string.IsNullOrEmpty(config.ApiKey);
 
         if (context.User.Identity?.IsAuthenticated == true)
         {
@@ -48,7 +50,7 @@ public sealed class CurrentUserValidationMiddleware(RequestDelegate next)
             return;
         }
 
-        if (isAnonymousCandidate && hasUsers && context.User.Identity?.IsAuthenticated != true &&
+        if (isAnonymousCandidate && hasUsers && hasApiKey && context.User.Identity?.IsAuthenticated != true &&
             !path.Equals("/api/auth/login", StringComparison.OrdinalIgnoreCase) &&
             !path.Equals("/api/auth/setup-status", StringComparison.OrdinalIgnoreCase) &&
             !isInternalIngest &&

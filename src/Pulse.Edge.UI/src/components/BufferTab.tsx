@@ -1,4 +1,5 @@
 import { Layers } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { BufferTelemetryItem, OeeOutboxItem } from '../types';
 
 const formatToLocalTime = (dateStr: string | null | undefined) => {
@@ -45,16 +46,17 @@ interface BufferTabProps {
 }
 
 export default function BufferTab({ bufferTelemetry, oeeOutbox }: BufferTabProps) {
+  const { t } = useTranslation();
   return (
     <div className="tab-stack">
       <div className="page-header">
         <div className="page-header-info">
           <h2 className="page-header-title">
             <Layers size={24} className="page-header-icon" />
-            SQLite Queue Buffer Explorer
+            {t('buffer.title')}
           </h2>
           <p className="page-header-desc">
-            Inspect the store-and-forward SQLite queues for pending telemetry frames and OEE machine-state messages.
+            {t('buffer.subtitle')}
           </p>
         </div>
       </div>

@@ -37,6 +37,7 @@ public class CloudClient
     {
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
     };
 
     public record OrganizationDto(string Id, string Name);
@@ -140,11 +141,10 @@ public class CloudClient
         return false;
     }
 
-    private static string ComputeSha256Hash(string input)
+    private static string ComputeSha256Hash(string? input)
     {
-        if (string.IsNullOrEmpty(input)) return string.Empty;
         using var sha256 = System.Security.Cryptography.SHA256.Create();
-        var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(input));
+        var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(input ?? string.Empty));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
@@ -165,11 +165,11 @@ public class CloudClient
             string pairingTokenHash = ComputeSha256Hash(pairingToken);
 
             var req = new RegisterRequest(deviceId, hostname, agentVersion, claimSecretHash, pairingTokenHash);
-            var response = await _httpClient.PostAsJsonAsync(GetUri(baseUrl, "/edge/register"), req);
+            var response = await _httpClient.PostAsJsonAsync(GetUri(baseUrl, "/edge/register"), req, JsonOptions);
             
             if (response.IsSuccessStatusCode)
             {
-                var res = await response.Content.ReadFromJsonAsync<RegisterResponse>();
+                var res = await response.Content.ReadFromJsonAsync<RegisterResponse>(JsonOptions);
                 if (res != null)
                 {
                     _logger.LogInformation("Registration request acknowledged. Cloud EdgeId: {EdgeId}, Status: {Status}, ShortCode: {ShortCode}", res.EdgeId, res.Status, res.ShortCode);
@@ -206,11 +206,11 @@ public class CloudClient
         try
         {
             var req = new ClaimRequest(deviceId, claimSecret);
-            var response = await _httpClient.PostAsJsonAsync(GetUri(baseUrl, "/edge/claim"), req);
+            var response = await _httpClient.PostAsJsonAsync(GetUri(baseUrl, "/edge/claim"), req, JsonOptions);
             
             if (response.IsSuccessStatusCode)
             {
-                var res = await response.Content.ReadFromJsonAsync<ClaimResponse>();
+                var res = await response.Content.ReadFromJsonAsync<ClaimResponse>(JsonOptions);
                 if (res != null)
                 {
                     _logger.LogInformation("Claim request successful. Status: {Status}", res.Status);
@@ -267,7 +267,7 @@ public class CloudClient
             
             if (response.IsSuccessStatusCode)
             {
-                var res = await response.Content.ReadFromJsonAsync<ConfigResponse>();
+                var res = await response.Content.ReadFromJsonAsync<ConfigResponse>(JsonOptions);
                 if (res != null)
                 {
                     _logger.LogInformation("Successfully retrieved configuration. Site: {SiteName}", res.Site?.Name ?? "None");
@@ -340,7 +340,7 @@ public class CloudClient
             var req = new HeartbeatRequest(version);
             var request = new HttpRequestMessage(HttpMethod.Post, GetUri(baseUrl, "/edge/heartbeat"))
             {
-                Content = JsonContent.Create(req)
+                Content = JsonContent.Create(req, options: JsonOptions)
             };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             
@@ -348,7 +348,7 @@ public class CloudClient
             
             if (response.IsSuccessStatusCode)
             {
-                var res = await response.Content.ReadFromJsonAsync<HeartbeatResponse>();
+                var res = await response.Content.ReadFromJsonAsync<HeartbeatResponse>(JsonOptions);
                 if (res != null)
                 {
                     _logger.LogDebug("Heartbeat successful. Status: {Status}", res.Status);

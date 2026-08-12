@@ -169,6 +169,18 @@ public class CloudProvisioningService : BackgroundService
                     continue;
                 }
 
+                bool secretsUpdated = false;
+                if (string.IsNullOrEmpty(_deviceConfig.ClaimSecret))
+                {
+                    var secretBytes = new byte[24];
+                    using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                    {
+                        rng.GetBytes(secretBytes);
+                    }
+                    _deviceConfig.ClaimSecret = Convert.ToHexString(secretBytes).ToLowerInvariant();
+                    secretsUpdated = true;
+                }
+
                 if (string.IsNullOrEmpty(_deviceConfig.PairingToken))
                 {
                     var tokenBytes = new byte[24];
@@ -177,6 +189,11 @@ public class CloudProvisioningService : BackgroundService
                         rng.GetBytes(tokenBytes);
                     }
                     _deviceConfig.PairingToken = Convert.ToHexString(tokenBytes).ToLowerInvariant();
+                    secretsUpdated = true;
+                }
+
+                if (secretsUpdated)
+                {
                     await _storageService.SaveDeviceConfigAsync(_deviceConfig);
                 }
 
@@ -191,7 +208,8 @@ public class CloudProvisioningService : BackgroundService
                     bool registerSuccess = true;
                     if (needsRegister)
                     {
-                        _logger.LogInformation("[Cloud Provisioning] Registering device with Cloud...");
+                        Console.WriteLine($"[Cloud Provisioning] Registering device with Cloud ({currentBaseUrl})...");
+                        _logger.LogInformation("[Cloud Provisioning] Registering device with Cloud ({BaseUrl})...", currentBaseUrl);
                         var regResult = await _cloudClient.RegisterDeviceAsync(
                             currentBaseUrl,
                             _deviceConfig.Id,
@@ -203,17 +221,38 @@ public class CloudProvisioningService : BackgroundService
 
                         if (regResult != null)
                         {
-                            _deviceConfig.CloudEdgeId = regResult.EdgeId;
-                            _deviceConfig.PairingShortCode = regResult.ShortCode ?? "";
-                            _deviceConfig.PairingExpiresAt = regResult.PairingExpiresAt;
-                            _deviceConfig.PairingBaseUrl = regResult.PairingBaseUrl ?? "";
-                            _deviceConfig.CloudStatus = "PendingApproval";
-                            await _storageService.SaveDeviceConfigAsync(_deviceConfig);
-                            _logger.LogInformation("[Cloud Provisioning] Registered. Code: {Code}, Expiry: {Expiry}", regResult.ShortCode, regResult.PairingExpiresAt);
+                            if (!string.IsNullOrEmpty(regResult.ShortCode))
+                            {
+                                _deviceConfig.CloudEdgeId = regResult.EdgeId;
+                                _deviceConfig.PairingShortCode = regResult.ShortCode;
+                                _deviceConfig.PairingExpiresAt = regResult.PairingExpiresAt;
+                                _deviceConfig.PairingBaseUrl = regResult.PairingBaseUrl ?? "";
+                                _deviceConfig.CloudStatus = "PendingApproval";
+                                await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+                                Console.WriteLine($"[Cloud Provisioning] Registered successfully. ShortCode: {regResult.ShortCode}, Expiry: {regResult.PairingExpiresAt}");
+                                _logger.LogInformation("[Cloud Provisioning] Registered. Code: {Code}, Expiry: {Expiry}", regResult.ShortCode, regResult.PairingExpiresAt);
+                            }
+                            else
+                            {
+                                // Cloud acknowledged an already-registered device ID without issuing a new shortCode.
+                                // Re-key device ID so Cloud provisions a fresh registration pairing session.
+                                _logger.LogWarning("[Cloud Provisioning] Cloud returned pending status without shortCode for existing device ID. Re-keying device ID...");
+                                _deviceConfig.Id = Guid.NewGuid().ToString();
+                                var secretBytes = new byte[24];
+                                using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                                {
+                                    rng.GetBytes(secretBytes);
+                                }
+                                _deviceConfig.ClaimSecret = Convert.ToHexString(secretBytes).ToLowerInvariant();
+                                _deviceConfig.PairingToken = Convert.ToHexString(secretBytes).ToLowerInvariant();
+                                await _storageService.SaveDeviceConfigAsync(_deviceConfig);
+                                registerSuccess = false;
+                            }
                         }
                         else
                         {
                             registerSuccess = false;
+                            Console.WriteLine("[Cloud Provisioning] Registration failed (regResult is null). Will retry.");
                             _logger.LogWarning("[Cloud Provisioning] Registration failed. Will retry registration.");
                         }
                     }

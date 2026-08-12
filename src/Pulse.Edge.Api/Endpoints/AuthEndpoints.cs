@@ -16,9 +16,7 @@ public static class AuthEndpoints
         {
             using var db = new QueueDbContext();
             var hasUsers = await db.LocalUsers.AnyAsync();
-            var config = await db.DeviceConfigs.AsNoTracking().FirstOrDefaultAsync();
-            var connected = string.Equals(config?.CloudStatus, "Connected", StringComparison.OrdinalIgnoreCase);
-            var state = hasUsers ? "Operational" : connected ? "NeedsFirstAdmin" : "NeedsCloudSetup";
+            var state = hasUsers ? "Operational" : "NeedsFirstAdmin";
             return Results.Ok(new { state, isAuthenticated = context.User.Identity?.IsAuthenticated == true,
                 user = context.User.Identity?.IsAuthenticated == true ? ToCurrentUser(context.User) : null });
         });
@@ -27,9 +25,6 @@ public static class AuthEndpoints
         {
             using var db = new QueueDbContext();
             if (await db.LocalUsers.AnyAsync()) return Results.Conflict(new { error = "Initial administrator has already been created." });
-            var config = await db.DeviceConfigs.AsNoTracking().FirstOrDefaultAsync();
-            if (!string.Equals(config?.CloudStatus, "Connected", StringComparison.OrdinalIgnoreCase))
-                return Results.BadRequest(new { error = "Cloud pairing must be completed first." });
             var error = ValidateUserInput(request.Username, request.Password);
             if (error != null) return Results.BadRequest(new { error });
             var user = NewUser(request.Username, request.Password, "Admin", passwords);

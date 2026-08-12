@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Pulse.Edge.Agent;
+using Pulse.Edge.Agent.Services;
 using Pulse.Edge.Cloud.Services;
 using Pulse.Edge.Storage;
 using Pulse.Edge.Storage.Models;
@@ -13,6 +14,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Pulse.Edge.Api.Endpoints;
 
@@ -60,7 +62,7 @@ public static class SettingsEndpoints
         });
 
         // POST /api/settings - Saves updated DeviceConfig (Cloud Endpoint, Serial Number) to SQLite database
-        routes.MapPost("/api/settings", async (UpdateSettingsRequest request, IEnumerable<IHostedService> hostedServices) =>
+        routes.MapPost("/api/settings", async (UpdateSettingsRequest request, [FromServices] CloudProvisioningService provisioningService) =>
         {
             if (!Pulse.Edge.Cloud.Services.CloudClient.IsAcceptableCloudEndpoint(request.CloudEndpoint))
                 return Results.BadRequest(new { error = "Cloud endpoint must use https:// (localhost may use http)." });
@@ -109,6 +111,9 @@ public static class SettingsEndpoints
                 
                 if (resetRequired)
                 {
+                    config.Id = Guid.NewGuid().ToString();
+                    config.ClaimSecret = generateClaimSecret();
+                    config.PairingToken = generateClaimSecret();
                     config.ApiKey = "";
                     config.SiteId = "";
                     config.SiteName = "";
@@ -132,8 +137,7 @@ public static class SettingsEndpoints
             }
             await db.SaveChangesAsync();
             
-            var worker = hostedServices.OfType<Worker>().FirstOrDefault();
-            worker?.WakeUpProvisioning();
+            provisioningService.WakeUpProvisioning();
 
             return Results.Ok(new { config.SerialNumber, config.CloudEndpoint, config.CloudStatus });
         });

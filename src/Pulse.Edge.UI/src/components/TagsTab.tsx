@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Tag, Plus, Search, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { DataPoint, DriverAdapter, MqttDevice } from '../types';
 import type { useToast } from '../hooks/useToast';
 import CreateTagWizard from './TagsTab/CreateTagWizard';
@@ -21,6 +22,7 @@ interface TagsTabProps {
 }
 
 export default function TagsTab({ datapoints, adapters, mqttDevices, handleDeleteDataPoint, fetchData, toast }: TagsTabProps) {
+  const { t } = useTranslation();
   const [tagSearchQuery, setTagSearchQuery] = useState('');
   const [tagProtocolFilter, setTagProtocolFilter] = useState('All');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -165,10 +167,10 @@ export default function TagsTab({ datapoints, adapters, mqttDevices, handleDelet
         <div className="page-header-info">
           <h2 className="page-header-title">
             <Tag size={24} className="page-header-icon" />
-            Physical Data Points &amp; Tag Registry
+            {t('tags.title')}
           </h2>
           <p className="page-header-desc">
-            Define and test physical sensor points (PLC registers, MQTT topics) before binding them to data streams. Verify connection health with live values.
+            {t('tags.subtitle')}
           </p>
         </div>
         <div className="page-header-actions">

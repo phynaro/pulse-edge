@@ -225,6 +225,13 @@ builder.Services.AddTransient<RestApiDriver>();
 builder.Services.AddTransient<BacnetDriver>();
 builder.Services.AddSingleton<CloudClient>();
 
+// Register Configuration Monitor & Provisioning Services globally
+builder.Services.AddSingleton<EdgeConfigMonitor>();
+builder.Services.AddHostedService<EdgeConfigMonitor>(provider => provider.GetRequiredService<EdgeConfigMonitor>());
+
+builder.Services.AddSingleton<CloudProvisioningService>();
+builder.Services.AddHostedService<CloudProvisioningService>(provider => provider.GetRequiredService<CloudProvisioningService>());
+
 var hostingMode = builder.Configuration["hostingMode"] ?? "SinglePort";
 var isSinglePort = string.Equals(hostingMode, "SinglePort", StringComparison.OrdinalIgnoreCase);
 
@@ -248,13 +255,6 @@ if (isSinglePort)
 
     // Register Registry
     builder.Services.AddSingleton<DriverPollerRegistry>();
-
-    // Register Configuration Monitor & Provisioning Services
-    builder.Services.AddSingleton<EdgeConfigMonitor>();
-    builder.Services.AddHostedService<EdgeConfigMonitor>(provider => provider.GetRequiredService<EdgeConfigMonitor>());
-
-    builder.Services.AddSingleton<CloudProvisioningService>();
-    builder.Services.AddHostedService<CloudProvisioningService>(provider => provider.GetRequiredService<CloudProvisioningService>());
 
     // Register background Worker process
     builder.Services.AddHostedService<Worker>();
