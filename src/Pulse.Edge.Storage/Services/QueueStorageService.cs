@@ -294,6 +294,7 @@ public class QueueStorageService
                     Icon TEXT NOT NULL DEFAULT 'Database'
                 );
             ");
+            await SeedDefaultStreamTemplatesAsync(db);
         }
         catch {}
 
@@ -491,6 +492,63 @@ public class QueueStorageService
     }
 
     private static int _resetSendingStatusDone;
+
+    private static async Task SeedDefaultStreamTemplatesAsync(QueueDbContext db)
+    {
+        try
+        {
+            var defaultTemplates = new List<StreamTemplate>
+            {
+                new StreamTemplate
+                {
+                    Id = "Electrical Meter",
+                    Description = "Electrical energy & power measurement stream template",
+                    Icon = "Zap",
+                    ParametersJson = JsonSerializer.Serialize(new List<string>
+                    {
+                        "voltage", "current", "power", "energy", "power_factor", "frequency"
+                    })
+                },
+                new StreamTemplate
+                {
+                    Id = "Flow Meter",
+                    Description = "Liquid or gas volumetric flow measurement stream template",
+                    Icon = "Wind",
+                    ParametersJson = JsonSerializer.Serialize(new List<string>
+                    {
+                        "flow_rate", "total_flow", "pressure", "temperature"
+                    })
+                },
+                new StreamTemplate
+                {
+                    Id = "Steam Meter",
+                    Description = "Thermal steam flow & energy measurement stream template",
+                    Icon = "Thermometer",
+                    ParametersJson = JsonSerializer.Serialize(new List<string>
+                    {
+                        "flow_rate", "total_flow", "pressure", "temperature", "enthalpy"
+                    })
+                }
+            };
+
+            bool addedAny = false;
+            foreach (var tmpl in defaultTemplates)
+            {
+                var existing = await db.StreamTemplates.FirstOrDefaultAsync(x => x.Id == tmpl.Id);
+                if (existing == null)
+                {
+                    db.StreamTemplates.Add(tmpl);
+                    addedAny = true;
+                }
+            }
+
+            if (addedAny)
+            {
+                await db.SaveChangesAsync();
+            }
+        }
+        catch {}
+    }
 
     // ── Telemetry Queue Migration ─────────────────────────────────────────────
     // Drop old single-metric schema and create the new merged-metrics schema.
