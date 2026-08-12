@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Search } from 'lucide-react';
 import type { DriverAdapter } from '../../types';
 import type { useToast } from '../../hooks/useToast';
@@ -150,7 +150,6 @@ interface SimulatorBrowserModalProps {
   adapters: DriverAdapter[];
   toast: ToastFn;
   onSaveSuccess?: () => void;
-  onSelectVariable?: (variable: SimulatorVariable) => void;
 }
 
 export default function SimulatorBrowserModal({
@@ -159,64 +158,43 @@ export default function SimulatorBrowserModal({
   adapterId,
   adapters,
   toast,
-  onSaveSuccess,
-  onSelectVariable
+  onSaveSuccess
 }: SimulatorBrowserModalProps) {
-  const [selectedAdapterId, setSelectedAdapterId] = useState(adapterId);
-  const [selectedCategory, setSelectedCategory] = useState<'all' | 'energy' | 'production'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedVariables, setSelectedVariables] = useState<Record<string, SimulatorVariable>>({});
   const [step, setStep] = useState(1);
   const [configuringTags, setConfiguringTags] = useState<SimulatorConfiguringTag[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Filter adapters to SIMULATOR protocol only
-  const simulatorAdapters = adapters.filter(a => a.protocol === 'SIMULATOR');
-  const activeAdapter = adapters.find(a => a.id === selectedAdapterId) || simulatorAdapters[0];
+  const activeAdapter = adapters.find(a => a.id === adapterId);
 
-  useEffect(() => {
-    if (adapterId) {
-      setSelectedAdapterId(adapterId);
-    }
-  }, [adapterId]);
-
-  // Set default category tab based on adapter template configuration
-  useEffect(() => {
-    if (activeAdapter && activeAdapter.configJson) {
-      try {
-        const config = JSON.parse(activeAdapter.configJson);
-        const template = (config.Template || '').toLowerCase();
-        if (template === 'energy') {
-          setSelectedCategory('energy');
-        } else if (template === 'production') {
-          setSelectedCategory('production');
-        }
-      } catch {
-        // Default to all
+  // Parse template from activeAdapter configJson
+  let template: 'energy' | 'production' = 'energy';
+  if (activeAdapter && activeAdapter.configJson) {
+    try {
+      const config = JSON.parse(activeAdapter.configJson);
+      if ((config.Template || '').toLowerCase() === 'production') {
+        template = 'production';
       }
+    } catch {
+      template = 'energy';
     }
-  }, [activeAdapter]);
+  }
 
   if (!isOpen) return null;
 
-  const filteredVariables = SIMULATOR_VARIABLES.filter(v => {
-    const matchesCategory = selectedCategory === 'all' || v.category === selectedCategory;
+  // Show ONLY the variables belonging to the currently selected adapter's template
+  const adapterVariables = SIMULATOR_VARIABLES.filter(v => v.category === template);
+
+  const filteredVariables = adapterVariables.filter(v => {
     const term = searchTerm.trim().toLowerCase();
-    const matchesSearch = !term ||
+    return !term ||
       v.address.toLowerCase().includes(term) ||
       v.name.toLowerCase().includes(term) ||
       v.description.toLowerCase().includes(term);
-    return matchesCategory && matchesSearch;
   });
 
   const handleToggleVariable = (v: SimulatorVariable) => {
-    if (onSelectVariable) {
-      // Direct single selection mode
-      onSelectVariable(v);
-      onClose();
-      return;
-    }
-
     setSelectedVariables(prev => {
       const next = { ...prev };
       if (next[v.address]) {
@@ -273,7 +251,7 @@ export default function SimulatorBrowserModal({
   };
 
   const handleSaveTags = async () => {
-    if (!selectedAdapterId) {
+    if (!adapterId) {
       toast.warning('Please select a connection driver adapter.');
       return;
     }
@@ -285,7 +263,7 @@ export default function SimulatorBrowserModal({
     try {
       for (const tag of configuringTags) {
         const payload = {
-          adapterId: selectedAdapterId,
+          adapterId: adapterId,
           mqttDeviceId: null,
           dataSourceId: '',
           metric: '',
@@ -336,59 +314,25 @@ export default function SimulatorBrowserModal({
       title="Browse Protocol Simulator Variables"
       subtitle={
         step === 1
-          ? 'Select simulated variables from power or production templates to bind to tags.'
+          ? `Select simulated variables for ${activeAdapter?.name || 'Adapter'} (${template === 'energy' ? 'Power & Energy Template' : 'Production & Machine State Template'}).`
           : 'Configure tag attributes and polling frequency for selected simulator variables.'
       }
       size="browser"
       onClose={onClose}
     >
-      {/* Top Adapter Selection Bar */}
-      <div className="browser-top-bar" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-            Simulator Driver:
-          </label>
-          <CustomSelect
-            value={selectedAdapterId}
-            onChange={(val) => setSelectedAdapterId(val)}
-            options={simulatorAdapters.map(a => ({
-              value: a.id,
-              label: `${a.name} (${a.protocol.replace('_', ' ')})`
-            }))}
-            className="is-compact"
-            placeholder="-- Choose Simulator Adapter --"
-          />
+      {/* Top Bar showing current adapter info */}
+      <div className="browser-top-bar" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+            Selected Adapter:
+          </span>
+          <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-primary)' }}>
+            {activeAdapter?.name || 'Simulator Adapter'}
+          </span>
+          <span className="badge success badge-protocol" style={{ textTransform: 'capitalize', fontSize: '10px' }}>
+            {template === 'energy' ? '⚡ Power & Energy Template' : '⚙️ Production Template'}
+          </span>
         </div>
-
-        {/* Category Tabs */}
-        {step === 1 && (
-          <div style={{ display: 'flex', gap: '4px', background: 'rgba(0,0,0,0.05)', padding: '3px', borderRadius: '6px' }}>
-            <button
-              type="button"
-              onClick={() => setSelectedCategory('all')}
-              className={`chip ${selectedCategory === 'all' ? 'is-active' : ''}`}
-              style={{ border: 'none', cursor: 'pointer' }}
-            >
-              All Variables
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedCategory('energy')}
-              className={`chip ${selectedCategory === 'energy' ? 'is-active' : ''}`}
-              style={{ border: 'none', cursor: 'pointer' }}
-            >
-              ⚡ Power & Energy
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedCategory('production')}
-              className={`chip ${selectedCategory === 'production' ? 'is-active' : ''}`}
-              style={{ border: 'none', cursor: 'pointer' }}
-            >
-              ⚙️ Production & Counts
-            </button>
-          </div>
-        )}
       </div>
 
       {step === 1 ? (
@@ -400,29 +344,27 @@ export default function SimulatorBrowserModal({
                 <Search size={14} style={{ position: 'absolute', left: 10, top: 10, color: 'var(--text-muted)' }} />
                 <input
                   type="text"
-                  placeholder="Filter by variable name, address, or description..."
+                  placeholder="Filter variables by name, address, or description..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="form-input"
                   style={{ paddingLeft: '32px', height: '34px', fontSize: '12px' }}
                 />
               </div>
-              {!onSelectVariable && (
-                <button
-                  type="button"
-                  onClick={handleSelectAll}
-                  className="btn-secondary btn-compact"
-                  style={{ height: '34px', whiteSpace: 'nowrap' }}
-                >
-                  {filteredVariables.every(v => selectedVariables[v.address]) ? 'Deselect All' : 'Select All'}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="btn-secondary btn-compact"
+                style={{ height: '34px', whiteSpace: 'nowrap' }}
+              >
+                {filteredVariables.every(v => selectedVariables[v.address]) ? 'Deselect All' : 'Select All'}
+              </button>
             </div>
 
             <div className="browser-node-list" style={{ flex: 1, overflowY: 'auto' }}>
               {filteredVariables.length === 0 ? (
                 <div style={{ padding: '24px', textAlign: 'center', opacity: 0.6, fontSize: '13px' }}>
-                  No matching simulator variables found.
+                  No matching simulator variables found for this adapter.
                 </div>
               ) : (
                 filteredVariables.map((v) => {
@@ -434,14 +376,12 @@ export default function SimulatorBrowserModal({
                       className={`browser-node-item${isSelected ? ' is-selected' : ''}`}
                       style={{ cursor: 'pointer' }}
                     >
-                      {!onSelectVariable && (
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => {}}
-                          className="browser-checkbox"
-                        />
-                      )}
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {}}
+                        className="browser-checkbox"
+                      />
                       <div className="browser-node-details" style={{ flex: 1 }}>
                         <div className="browser-node-name" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <strong>{v.name}</strong>
@@ -457,9 +397,6 @@ export default function SimulatorBrowserModal({
                           <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{v.dataType}</span>
                         </div>
                       </div>
-                      <span className="browser-type-chip" style={{ fontSize: '10px', textTransform: 'uppercase' }}>
-                        {v.category === 'energy' ? 'Power' : 'Production'}
-                      </span>
                     </div>
                   );
                 })
@@ -468,41 +405,39 @@ export default function SimulatorBrowserModal({
           </div>
 
           {/* Right Pane: Selected Variables Preview */}
-          {!onSelectVariable && (
-            <div className="browser-right-pane" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-              <div className="browser-right-header" style={{ flexShrink: 0 }}>
-                <span className="browser-section-label">Selected Variables ({selectedCount})</span>
-                {selectedCount > 0 && (
-                  <button type="button" onClick={() => setSelectedVariables({})} className="browser-clear-btn">
-                    Clear All
-                  </button>
-                )}
-              </div>
-
-              {selectedCount === 0 ? (
-                <div className="browser-empty-right" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                  <span className="browser-empty-icon" style={{ fontSize: '28px' }}>📋</span>
-                  <span className="browser-empty-text" style={{ fontSize: '12px', opacity: 0.7, marginTop: '8px', textAlign: 'center' }}>
-                    Select simulated variables on the left to register them as driver tags.
-                  </span>
-                </div>
-              ) : (
-                <div className="browser-selected-list" style={{ flex: 1, overflowY: 'auto' }}>
-                  {Object.values(selectedVariables).map((v) => (
-                    <div key={v.address} className="browser-selected-item">
-                      <div className="browser-selected-details">
-                        <div className="browser-selected-name">{v.name} ({v.address})</div>
-                        <div className="browser-selected-id">{v.dataType} {v.unit ? `• ${v.unit}` : ''}</div>
-                      </div>
-                      <button type="button" onClick={() => handleToggleVariable(v)} className="btn-browser-remove">
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
+          <div className="browser-right-pane" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+            <div className="browser-right-header" style={{ flexShrink: 0 }}>
+              <span className="browser-section-label">Selected Variables ({selectedCount})</span>
+              {selectedCount > 0 && (
+                <button type="button" onClick={() => setSelectedVariables({})} className="browser-clear-btn">
+                  Clear All
+                </button>
               )}
             </div>
-          )}
+
+            {selectedCount === 0 ? (
+              <div className="browser-empty-right" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <span className="browser-empty-icon" style={{ fontSize: '28px' }}>📋</span>
+                <span className="browser-empty-text" style={{ fontSize: '12px', opacity: 0.7, marginTop: '8px', textAlign: 'center' }}>
+                  Select simulated variables on the left to register them as driver tags.
+                </span>
+              </div>
+            ) : (
+              <div className="browser-selected-list" style={{ flex: 1, overflowY: 'auto' }}>
+                {Object.values(selectedVariables).map((v) => (
+                  <div key={v.address} className="browser-selected-item">
+                    <div className="browser-selected-details">
+                      <div className="browser-selected-name">{v.name} ({v.address})</div>
+                      <div className="browser-selected-id">{v.dataType} {v.unit ? `• ${v.unit}` : ''}</div>
+                    </div>
+                    <button type="button" onClick={() => handleToggleVariable(v)} className="btn-browser-remove">
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         /* STEP 2: Configure Tag Attributes */
@@ -589,16 +524,14 @@ export default function SimulatorBrowserModal({
               <button type="button" onClick={onClose} className="btn-browser-cancel">
                 Cancel
               </button>
-              {!onSelectVariable && (
-                <button
-                  type="button"
-                  onClick={handleNextStep}
-                  disabled={selectedCount === 0}
-                  className={`btn-browser-next${selectedCount === 0 ? ' is-empty' : ' is-ready'}`}
-                >
-                  Next Step →
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleNextStep}
+                disabled={selectedCount === 0}
+                className={`btn-browser-next${selectedCount === 0 ? ' is-empty' : ' is-ready'}`}
+              >
+                Next Step →
+              </button>
             </div>
           </>
         ) : (

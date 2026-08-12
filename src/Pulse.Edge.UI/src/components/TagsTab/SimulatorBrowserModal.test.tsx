@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import SimulatorBrowserModal, { SIMULATOR_VARIABLES } from './SimulatorBrowserModal';
+import SimulatorBrowserModal from './SimulatorBrowserModal';
 import type { DriverAdapter } from '../../types';
 
 describe('SimulatorBrowserModal', () => {
@@ -34,7 +34,7 @@ describe('SimulatorBrowserModal', () => {
     info: vi.fn(),
   };
 
-  it('renders correctly when open with default energy variables', () => {
+  it('renders strictly the variables for the currently selected energy adapter', () => {
     render(
       <SimulatorBrowserModal
         isOpen={true}
@@ -46,9 +46,28 @@ describe('SimulatorBrowserModal', () => {
     );
 
     expect(screen.getByText('Browse Protocol Simulator Variables')).toBeInTheDocument();
+    expect(screen.getByText('Power Meter Simulator')).toBeInTheDocument();
     expect(screen.getByText('Voltage')).toBeInTheDocument();
     expect(screen.getByText('Active Power')).toBeInTheDocument();
     expect(screen.getByText('Accumulated Energy')).toBeInTheDocument();
+    expect(screen.queryByText('Machine Running State')).not.toBeInTheDocument();
+  });
+
+  it('renders strictly the variables for a production adapter when selected', () => {
+    render(
+      <SimulatorBrowserModal
+        isOpen={true}
+        onClose={vi.fn()}
+        adapterId="adp-sim-2"
+        adapters={mockAdapters}
+        toast={mockToast as any}
+      />
+    );
+
+    expect(screen.getByText('Machine Production Simulator')).toBeInTheDocument();
+    expect(screen.getByText('Machine Running State')).toBeInTheDocument();
+    expect(screen.getByText('Total Produced Count')).toBeInTheDocument();
+    expect(screen.queryByText('Voltage')).not.toBeInTheDocument();
   });
 
   it('filters variables when searching', () => {
@@ -62,37 +81,14 @@ describe('SimulatorBrowserModal', () => {
       />
     );
 
-    const searchInput = screen.getByPlaceholderText(/Filter by variable name/i);
+    const searchInput = screen.getByPlaceholderText(/Filter variables by name/i);
     fireEvent.change(searchInput, { target: { value: 'voltage' } });
 
     expect(screen.getByText('Voltage')).toBeInTheDocument();
     expect(screen.queryByText('Accumulated Energy')).not.toBeInTheDocument();
   });
 
-  it('supports single selection callback when onSelectVariable is passed', () => {
-    const onSelectVariable = vi.fn();
-    const onClose = vi.fn();
-
-    render(
-      <SimulatorBrowserModal
-        isOpen={true}
-        onClose={onClose}
-        adapterId="adp-sim-1"
-        adapters={mockAdapters}
-        toast={mockToast as any}
-        onSelectVariable={onSelectVariable}
-      />
-    );
-
-    fireEvent.click(screen.getByText('Voltage'));
-
-    expect(onSelectVariable).toHaveBeenCalledWith(
-      expect.objectContaining({ address: 'voltage', name: 'Voltage' })
-    );
-    expect(onClose).toHaveBeenCalled();
-  });
-
-  it('allows category switching between Power and Production templates', () => {
+  it('supports multi-selection and proceeding to step 2 configuration', () => {
     render(
       <SimulatorBrowserModal
         isOpen={true}
@@ -103,10 +99,10 @@ describe('SimulatorBrowserModal', () => {
       />
     );
 
-    fireEvent.click(screen.getByText('⚙️ Production & Counts'));
+    fireEvent.click(screen.getByText('Select All'));
+    expect(screen.getByText(/6 variable\(s\) selected/i)).toBeInTheDocument();
 
-    expect(screen.getByText('Machine Running State')).toBeInTheDocument();
-    expect(screen.getByText('Total Produced Count')).toBeInTheDocument();
-    expect(screen.queryByText('Voltage')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Next Step →/i));
+    expect(screen.getByText('Step 2: Configure Tag Names & Polling Interval')).toBeInTheDocument();
   });
 });

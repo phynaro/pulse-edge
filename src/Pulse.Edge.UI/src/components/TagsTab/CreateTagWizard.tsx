@@ -9,7 +9,7 @@ import RestApiBrowserModal from './RestApiBrowserModal';
 import EthernetIpBrowserModal from './EthernetIpBrowserModal';
 import SiemensS7BrowserModal from './SiemensS7BrowserModal';
 import BacnetBrowserModal from './BacnetBrowserModal';
-import SimulatorBrowserModal, { type SimulatorVariable } from './SimulatorBrowserModal';
+import SimulatorBrowserModal from './SimulatorBrowserModal';
 import ModalShell from '../ModalShell';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
@@ -296,6 +296,9 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                     </label>
                     <div className="address-input-row">
                       <input className="form-input address-input-mono" type="text"
+                        readOnly={protocol === 'SIMULATOR'}
+                        onClick={protocol === 'SIMULATOR' ? handleOpenSimulatorBrowser : undefined}
+                        style={protocol === 'SIMULATOR' ? { cursor: 'pointer', background: 'rgba(0, 82, 204, 0.03)' } : undefined}
                         placeholder={
                           protocol === 'MODBUS_TCP' ? 'e.g. 40001 (Holding Register) or 30005 (Input Register)' :
                           protocol === 'Ethernet/IP' ? 'e.g. PROGRAM:Main.Machine_Speed or MyGlobalTag' :
@@ -303,7 +306,7 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
                           protocol === 'OPC_UA' ? 'e.g. ns=2;s=Machine_Temperature' :
                           (protocol === 'WEBHOOK' || protocol === 'REST_API') ? 'e.g. $.temperature or $.sensors.humidity' :
                           protocol === 'BACnet' ? 'e.g. AnalogInput:0 or BinaryValue:3' :
-                          protocol === 'SIMULATOR' ? 'e.g. voltage, current, active_power, energy, running, count' :
+                          protocol === 'SIMULATOR' ? "Click 'Browse Variables' to select simulation variable(s)" :
                           newDpMqttDeviceId
                             ? (mqttDevices.find(d => d.id === newDpMqttDeviceId)?.mqttParseMode === 'JSON' ? 'e.g. $.temperature or $.sensors.humidity' : 'e.g. temperature')
                             : 'e.g. factory/casepacker/temperature'
@@ -572,11 +575,6 @@ export default function CreateTagWizard({ isOpen, onClose, adapters, mqttDevices
         adapters={adapters}
         toast={toast}
         onSaveSuccess={() => { setIsSimulatorBrowserOpen(false); onClose(); void fetchData(); }}
-        onSelectVariable={(v: SimulatorVariable) => {
-          setNewDpAddress(v.address);
-          setNewDpDataType(v.dataType);
-          if (v.description) setNewDpDescription(v.description);
-        }}
       />
     </>
   );
