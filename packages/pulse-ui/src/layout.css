@@ -16,6 +16,7 @@
   border-right: 1px solid #1a1c23;
   flex-shrink: 0;
   z-index: 100;
+  font-family: var(--font-body);
 }
 
 .sidebar-brand {
@@ -59,6 +60,7 @@
   text-decoration: none;
   border-radius: 8px;
   font-weight: 500;
+  font-family: var(--font-body);
   transition: all 0.2s ease;
   cursor: pointer;
   border: none;
@@ -321,6 +323,14 @@
   color: var(--text-primary);
 }
 
+.panel-title code {
+  font-family: inherit;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 /* Form Settings Layout */
 .form-group {
   margin-bottom: 20px;
@@ -385,6 +395,11 @@
 }
 
 .badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
   padding: 4px 8px;
   border-radius: 12px;
   font-size: 11px;
