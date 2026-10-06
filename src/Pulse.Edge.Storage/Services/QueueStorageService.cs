@@ -45,6 +45,26 @@ public class QueueStorageService
         }
     }
 
+    // Password-recovery columns (spec 2026-10-06-edge-password-recovery-design §4). Idempotent:
+    // ADD COLUMN throws when the column exists, which we ignore like the other upgrades here.
+    // Users from before this upgrade get a random stamp, which signs out their old cookies once.
+    public static async Task UpgradeLocalUsersSchemaAsync(QueueDbContext db)
+    {
+        string[] columns =
+        [
+            "ALTER TABLE LocalUsers ADD COLUMN SecurityStamp TEXT NOT NULL DEFAULT '';",
+            "ALTER TABLE LocalUsers ADD COLUMN RecoveryCodeHash TEXT NOT NULL DEFAULT '';",
+            "ALTER TABLE LocalUsers ADD COLUMN RecoveryCodeCreatedAtUtc TEXT;",
+        ];
+        foreach (var ddl in columns)
+        {
+            try { await db.Database.ExecuteSqlRawAsync(ddl); }
+            catch { /* Column already exists */ }
+        }
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE LocalUsers SET SecurityStamp = lower(hex(randomblob(16))) WHERE SecurityStamp = '';");
+    }
+
     private async Task InitializeCoreAsync()
     {
         using var db = new QueueDbContext();
@@ -62,7 +82,10 @@ public class QueueStorageService
                 LockoutEndUtc TEXT,
                 CreatedAtUtc TEXT NOT NULL,
                 UpdatedAtUtc TEXT NOT NULL,
-                LastLoginAtUtc TEXT
+                LastLoginAtUtc TEXT,
+                SecurityStamp TEXT NOT NULL DEFAULT '',
+                RecoveryCodeHash TEXT NOT NULL DEFAULT '',
+                RecoveryCodeCreatedAtUtc TEXT
             );
             CREATE TABLE IF NOT EXISTS AuditEvents (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,6 +120,8 @@ public class QueueStorageService
             );
             INSERT OR IGNORE INTO DiagnosticCaptureConfigs (Id) VALUES (1);
         ");
+
+        await UpgradeLocalUsersSchemaAsync(db);
 
         // Create DeviceConfigs table if missing
         try
