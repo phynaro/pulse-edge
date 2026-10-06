@@ -8,7 +8,7 @@ export type AuthContextValue = {
   setupState: SetupState;
   user: AuthUser | null;
   login: (username: string, password: string) => Promise<string | null>;
-  createFirstAdmin: (username: string, password: string) => Promise<string | null>;
+  createFirstAdmin: (username: string, password: string) => Promise<{ error: string | null; recoveryCode: string | null }>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };

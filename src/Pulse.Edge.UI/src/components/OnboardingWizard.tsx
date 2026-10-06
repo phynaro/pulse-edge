@@ -16,6 +16,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import './OnboardingWizard.css';
 import { useAuth } from '../context/auth';
+import RecoveryCodeDisplay from './RecoveryCodeDisplay';
 
 interface OnboardingWizardProps {
   toast: {
@@ -43,6 +44,7 @@ interface PairingDashboard {
 
 export default function OnboardingWizard({ toast, onComplete, requireFirstAdmin }: OnboardingWizardProps) {
   const { createFirstAdmin } = useAuth();
+  const [firstAdminCode, setFirstAdminCode] = useState<string | null>(null);
   const [step, setStep] = useState<number>(0);
   const [serialNumber, setSerialNumber] = useState<string>('');
   const [cloudEndpoint, setCloudEndpoint] = useState<string>('http://localhost:3000');
@@ -543,14 +545,18 @@ export default function OnboardingWizard({ toast, onComplete, requireFirstAdmin 
                     <p style={{ opacity: 0.8, fontSize: '0.95rem', margin: '0 0 24px 0' }}>
                       Linked to: <strong>{pairingData.device?.organizationName || 'N/A'}</strong> / <strong>{pairingData.device?.siteName || 'N/A'}</strong>
                     </p>
-                    {requireFirstAdmin ? (
+                    {firstAdminCode ? (
+                      <RecoveryCodeDisplay code={firstAdminCode} onDone={onComplete} />
+                    ) : requireFirstAdmin ? (
                       <form className="first-admin-form" onSubmit={async e => {
                         e.preventDefault();
                         if (adminPassword !== confirmPassword) { setAdminError('Passwords do not match.'); return; }
                         setIsSubmitting(true); setAdminError('');
-                        const error = await createFirstAdmin(adminUsername, adminPassword);
+                        const result = await createFirstAdmin(adminUsername, adminPassword);
                         setIsSubmitting(false);
-                        if (error) setAdminError(error); else onComplete();
+                        if (result.error) setAdminError(result.error);
+                        else if (result.recoveryCode) setFirstAdminCode(result.recoveryCode);
+                        else onComplete();
                       }}>
                         <div className="first-admin-heading"><ShieldCheck size={18} /><div><strong>Create the local administrator</strong><span>This account controls configuration and future users.</span></div></div>
                         <input className="form-input" value={adminUsername} onChange={e => setAdminUsername(e.target.value)} placeholder="Administrator username" autoComplete="username" required />
@@ -729,14 +735,18 @@ export default function OnboardingWizard({ toast, onComplete, requireFirstAdmin 
                   </div>
                 )}
                 {pairingData.cloudStatus !== 'Connected' && pairingData.cloudStatus !== 'Revoked' && (
-                  requireFirstAdmin ? (
+                  firstAdminCode ? (
+                    <RecoveryCodeDisplay code={firstAdminCode} onDone={onComplete} />
+                  ) : requireFirstAdmin ? (
                     <form className="first-admin-form" style={{ marginTop: '20px' }} onSubmit={async e => {
                       e.preventDefault();
                       if (adminPassword !== confirmPassword) { setAdminError('Passwords do not match.'); return; }
                       setIsSubmitting(true); setAdminError('');
-                      const error = await createFirstAdmin(adminUsername, adminPassword);
+                      const result = await createFirstAdmin(adminUsername, adminPassword);
                       setIsSubmitting(false);
-                      if (error) setAdminError(error); else onComplete();
+                      if (result.error) setAdminError(result.error);
+                      else if (result.recoveryCode) setFirstAdminCode(result.recoveryCode);
+                      else onComplete();
                     }}>
                       <div className="first-admin-heading"><ShieldCheck size={18} /><div><strong>Create the local administrator</strong><span>This account controls configuration and future users.</span></div></div>
                       <input className="form-input" value={adminUsername} onChange={e => setAdminUsername(e.target.value)} placeholder="Administrator username" autoComplete="username" required />
