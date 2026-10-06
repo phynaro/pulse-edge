@@ -437,15 +437,6 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
             {!isSidebarCollapsed && <span>{t('nav.streams')}</span>}
           </button>
  
-          <button 
-            className={`menu-item ${activeTab === 'buffer' ? 'active' : ''}`}
-            onClick={() => setActiveTab('buffer')}
-            title={isSidebarCollapsed ? `${t('nav.buffer')} (${bufferTelemetry.length + oeeOutbox.length})` : undefined}
-          >
-            <Layers size={18} />
-            {!isSidebarCollapsed && <span>{t('nav.buffer')} ({bufferTelemetry.length + oeeOutbox.length})</span>}
-          </button>
-
           <button
             className={`menu-item ${activeTab === 'oee' ? 'active' : ''}`}
             onClick={() => setActiveTab('oee')}
@@ -453,6 +444,15 @@ function EdgeInner({ forceOnboarding = false }: { forceOnboarding?: boolean }) {
           >
             <Gauge size={18} />
             {!isSidebarCollapsed && <span>{t('nav.oee')}</span>}
+          </button>
+
+          <button 
+            className={`menu-item ${activeTab === 'buffer' ? 'active' : ''}`}
+            onClick={() => setActiveTab('buffer')}
+            title={isSidebarCollapsed ? `${t('nav.buffer')} (${bufferTelemetry.length + oeeOutbox.length})` : undefined}
+          >
+            <Layers size={18} />
+            {!isSidebarCollapsed && <span>{t('nav.buffer')} ({bufferTelemetry.length + oeeOutbox.length})</span>}
           </button>
 
           <button
