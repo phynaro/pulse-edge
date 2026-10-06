@@ -12,6 +12,8 @@ function renderLogin(overrides: Partial<AuthContextValue> = {}) {
     user: null,
     login: vi.fn(async () => null),
     createFirstAdmin: vi.fn(async () => ({ error: null, recoveryCode: null })),
+    pendingRecoveryCode: null,
+    acknowledgeRecoveryCode: vi.fn(),
     logout: vi.fn(async () => {}),
     refresh: vi.fn(async () => {}),
     ...overrides,

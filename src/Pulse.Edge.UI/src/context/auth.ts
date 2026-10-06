@@ -9,6 +9,10 @@ export type AuthContextValue = {
   user: AuthUser | null;
   login: (username: string, password: string) => Promise<string | null>;
   createFirstAdmin: (username: string, password: string) => Promise<{ error: string | null; recoveryCode: string | null }>;
+  /** First-admin recovery code awaiting the user's "I have saved it" acknowledgement. Held here,
+   * above the onboarding wizard, because the wizard unmounts as soon as setup becomes Operational. */
+  pendingRecoveryCode: string | null;
+  acknowledgeRecoveryCode: () => void;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };

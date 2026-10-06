@@ -5,6 +5,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [setupState, setSetupState] = useState<SetupState>('NeedsCloudSetup');
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [pendingRecoveryCode, setPendingRecoveryCode] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
@@ -32,6 +33,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await fetch('/api/auth/first-admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return { error: data.error || 'Authentication failed.', recoveryCode: null };
+    // Set before refresh(): refresh flips setup to Operational, which unmounts the wizard.
+    setPendingRecoveryCode(data.recoveryCode ?? null);
     await refresh();
     return { error: null, recoveryCode: data.recoveryCode ?? null };
   };
@@ -41,5 +44,5 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
-  return <AuthContext.Provider value={{ loading, setupState, user, login: (u, p) => submit('/api/auth/login', u, p), createFirstAdmin, logout, refresh }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ loading, setupState, user, login: (u, p) => submit('/api/auth/login', u, p), createFirstAdmin, pendingRecoveryCode, acknowledgeRecoveryCode: () => setPendingRecoveryCode(null), logout, refresh }}>{children}</AuthContext.Provider>;
 }

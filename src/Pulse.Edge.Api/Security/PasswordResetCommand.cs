@@ -47,6 +47,17 @@ public static class PasswordResetCommand
     {
         try
         {
+            // Refuse rather than create: running as the wrong OS user (e.g. plain `sudo` on Linux)
+            // resolves a different home directory, and silently creating an empty database there
+            // would report "No users exist yet" for a device that has users.
+            string path;
+            await using (var probe = openDb()) path = probe.Database.GetDbConnection().DataSource;
+            io.Out.WriteLine($"Database: {path}");
+            if (!File.Exists(path))
+            {
+                io.Out.WriteLine("No PULSE Edge database found at that path. Run as the service user, or set PULSE_EDGE_DATA_DIR to the data directory.");
+                return 1;
+            }
             await initialize();
             return args switch
             {

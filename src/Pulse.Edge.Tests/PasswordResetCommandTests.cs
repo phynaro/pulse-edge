@@ -123,4 +123,24 @@ public sealed class PasswordResetCommandTests : IDisposable
         Assert.Equal(1, await RunAsync(false, ["--bogus"]));
         Assert.Contains("reset-password --user <username>", _out.ToString());
     }
+
+    [Fact]
+    public async Task Missing_database_is_refused_and_not_created()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), $"pulse-reset-missing-{Guid.NewGuid():N}", "edge.db");
+        var io = new CommandIo(_out, _ => null, false, "tester");
+
+        var exit = await PasswordResetCommand.RunAsync(["--list"], io, () => new QueueDbContext(missing), () => Task.CompletedTask);
+
+        Assert.Equal(1, exit);
+        Assert.Contains(missing, _out.ToString());
+        Assert.False(File.Exists(missing));
+    }
+
+    [Fact]
+    public async Task Prints_the_database_path_it_uses()
+    {
+        await RunAsync(false, ["--list"]);
+        Assert.Contains(_dbPath, _out.ToString());
+    }
 }
