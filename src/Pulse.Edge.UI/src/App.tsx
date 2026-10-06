@@ -46,6 +46,7 @@ import { useDashboardData } from './hooks/useDashboardData';
 import { useBufferStatus } from './hooks/useBufferStatus';
 import { useAdaptersList } from './hooks/useAdaptersList';
 import { useDatapointsList } from './hooks/useDatapointsList';
+import FirstAdminCodeGate from './components/FirstAdminCodeGate';
 
 const getCloudStatusInfo = (status: string | undefined, t: (key: string) => string) => {
   switch (status) {
@@ -690,6 +691,10 @@ export default function App() {
 }
 
 function AppGate() {
+  return <FirstAdminCodeGate><AppRoutes /></FirstAdminCodeGate>;
+}
+
+function AppRoutes() {
   const { t } = useTranslation();
   const { loading, setupState, user } = useAuth();
   if (loading) return <div className="auth-loading"><Activity className="spin" size={28} /> {t('bottombar.loadingAccess')}</div>;

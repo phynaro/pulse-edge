@@ -41,9 +41,11 @@ public sealed class CurrentUserValidationMiddleware(RequestDelegate next)
             if (user == null || !string.Equals(user.Role, claimedRole, StringComparison.Ordinal) ||
                 !string.Equals(user.SecurityStamp, context.User.FindFirstValue(SecurityStampClaim), StringComparison.Ordinal))
             {
+                // Revoked/stale session: clear the cookie and continue as anonymous, so public paths
+                // (setup-status, login, recover) still answer and the UI lands on the login screen.
+                // Protected paths are rejected by the anonymous check below.
                 await context.SignOutAsync();
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                return;
+                context.User = new ClaimsPrincipal(new ClaimsIdentity());
             }
         }
 

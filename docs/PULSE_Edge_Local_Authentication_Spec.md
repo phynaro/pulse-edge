@@ -51,14 +51,21 @@ For anyone with access to the box's operating system. The command runs and exits
 4. `PulseEdge.Service.exe reset-password --user <username>` — type the new password twice (input is hidden).
 5. Sign in to the dashboard with the new password.
 
-**Linux (`.deb`)** — the same arguments on the installed binary, run as a user that can write the data directory (the service user, or via `sudo`).
+**Linux (`.deb`)** — run the installed binary **as the service user, with its home directory**, so it opens the same database as the service (`/var/lib/pulse-edge/.pulse/edge.db`):
+
+```bash
+sudo -u pulse env HOME=/var/lib/pulse-edge /opt/pulse-edge/Pulse.Edge reset-password --list
+sudo -u pulse env HOME=/var/lib/pulse-edge /opt/pulse-edge/Pulse.Edge reset-password --user <username>
+```
+
+A plain `sudo …` would look in `/root/.pulse` instead. The command always prints the database path it resolved first, and refuses (exit `1`) if no database exists there rather than creating an empty one. `PULSE_EDGE_DATA_DIR` overrides the data directory on any platform.
 
 The reset sets the password, clears any lockout, **re-enables** the account, and signs out its existing sessions. With piped input (scripts/SSH) the two lines are read from stdin and there is no re-prompt; interactively there are three attempts.
 
 | Exit code | Meaning |
 |---|---|
 | `0` | Success (or `--list` printed) |
-| `1` | Database error, or unrecognized arguments (usage is printed) |
+| `1` | No database at the resolved path, database error, or unrecognized arguments (usage is printed) |
 | `2` | Unknown username |
 | `3` | Password rules not met, or the confirmation did not match |
 
