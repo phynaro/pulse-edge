@@ -8,13 +8,19 @@ import { testCredentials } from '../test/credentials';
 const newCode = ['NNNN', 'EEEE', 'WWWW', 'CCCC', 'DDDD'].join('-');
 const oldCode = ['OOOO', 'LLLL', 'DDDD', 'CCCC', 'XXXX'].join('-');
 
+// Pastes rather than types: per-keystroke typing of ~80 chars can exceed the 5s test
+// timeout on a loaded machine, and paste still drives the inputs' onChange handlers.
 async function fillRecoveryForm(confirm = testCredentials.adminPassword) {
   const user = userEvent.setup();
+  const fill = async (label: string, value: string) => {
+    await user.click(screen.getByLabelText(label));
+    await user.paste(value);
+  };
   await user.click(screen.getByRole('button', { name: /use a recovery code/i }));
-  await user.type(screen.getByLabelText('Username'), testCredentials.adminUsername);
-  await user.type(screen.getByLabelText('Recovery code'), oldCode);
-  await user.type(screen.getByLabelText('New password'), testCredentials.adminPassword);
-  await user.type(screen.getByLabelText('Confirm new password'), confirm);
+  await fill('Username', testCredentials.adminUsername);
+  await fill('Recovery code', oldCode);
+  await fill('New password', testCredentials.adminPassword);
+  await fill('Confirm new password', confirm);
   await user.click(screen.getByRole('button', { name: /reset password/i }));
   return user;
 }
