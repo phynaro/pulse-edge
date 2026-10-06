@@ -7,6 +7,8 @@ namespace Pulse.Edge.Api.Security;
 
 public sealed class CurrentUserValidationMiddleware(RequestDelegate next)
 {
+    public const string SecurityStampClaim = "pulse:stamp";
+
     private static readonly string[] AnonymousApiPaths =
     [
         "/api/auth/login", "/api/auth/setup-status", "/api/auth/first-admin",
@@ -36,7 +38,8 @@ public sealed class CurrentUserValidationMiddleware(RequestDelegate next)
             var id = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
             var user = await db.LocalUsers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.IsEnabled);
             var claimedRole = context.User.FindFirstValue(ClaimTypes.Role);
-            if (user == null || !string.Equals(user.Role, claimedRole, StringComparison.Ordinal))
+            if (user == null || !string.Equals(user.Role, claimedRole, StringComparison.Ordinal) ||
+                !string.Equals(user.SecurityStamp, context.User.FindFirstValue(SecurityStampClaim), StringComparison.Ordinal))
             {
                 await context.SignOutAsync();
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;

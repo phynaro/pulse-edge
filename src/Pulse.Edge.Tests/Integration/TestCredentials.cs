@@ -15,7 +15,15 @@ internal static class TestCredentials
     public static string Password =>
         Environment.GetEnvironmentVariable("PULSE_TEST_PASSWORD") ?? "not-a-real-password";
 
+    /// <summary>
+    /// Satisfies the production password policy (10+ chars, upper, lower, digit, special) for
+    /// API paths that validate it (recover, first-admin, admin reset). Non-secret fallback.
+    /// </summary>
+    public static string StrongPassword =>
+        Environment.GetEnvironmentVariable("PULSE_TEST_STRONG_PASSWORD") ?? "Not-a-real-Pw-1";
+
     public const string AdminUsername = "test-admin";
+    public const string SecondAdminUsername = "test-admin-two";
     public const string ReadOnlyUsername = "test-readonly";
 
     /// <summary>A second ReadOnly identity for probes that consume their session (e.g. logout).</summary>

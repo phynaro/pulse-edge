@@ -102,17 +102,28 @@ public static class AuthEndpoints
             var removesAdmin = user.Role == "Admin" && ((request.Role != null && request.Role != "Admin") || request.IsEnabled == false);
             if (removesAdmin && await db.LocalUsers.CountAsync(x => x.Role == "Admin" && x.IsEnabled) <= 1)
                 return Results.BadRequest(new { error = "The final enabled administrator cannot be disabled or demoted." });
+            var passwordChanged = !string.IsNullOrEmpty(request.Password);
+            if (passwordChanged && PasswordService.Validate(request.Password!) is { } passwordError)
+                return Results.BadRequest(new { error = passwordError });
+            var roleChanged = request.Role != null && request.Role != user.Role;
+            var disabling = request.IsEnabled == false && user.IsEnabled;
+
+            if (roleChanged && user.Role == "Admin")
+            {
+                // Recovery codes are admin-only; a demoted user must not keep one.
+                user.RecoveryCodeHash = string.Empty;
+                user.RecoveryCodeCreatedAtUtc = null;
+            }
             if (request.Role != null) user.Role = request.Role;
             if (request.IsEnabled.HasValue) user.IsEnabled = request.IsEnabled.Value;
-            if (!string.IsNullOrEmpty(request.Password))
-            {
-                var passwordError = PasswordService.Validate(request.Password);
-                if (passwordError != null) return Results.BadRequest(new { error = passwordError });
-                user.PasswordHash = passwords.Hash(request.Password);
-            }
+            if (passwordChanged) user.PasswordHash = passwords.Hash(request.Password!);
+            if (passwordChanged || roleChanged || disabling) user.SecurityStamp = LocalUser.NewSecurityStamp();
             user.UpdatedAtUtc = DateTime.UtcNow;
             db.AuditEvents.Add(Audit("UserUpdated", context.User.Identity!.Name!, user.Username, context, true));
             await db.SaveChangesAsync();
+            // The stamp rotation above would sign the acting admin out of their own session.
+            var isSelf = context.User.FindFirstValue(ClaimTypes.NameIdentifier) == user.Id;
+            if (isSelf && user.IsEnabled && (passwordChanged || roleChanged)) await SignIn(context, user);
             return Results.Ok(ToUser(user));
         });
 
@@ -134,7 +145,8 @@ public static class AuthEndpoints
 
     private static async Task SignIn(HttpContext context, LocalUser user) => await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
         new ClaimsPrincipal(new ClaimsIdentity([
-            new Claim(ClaimTypes.NameIdentifier, user.Id), new Claim(ClaimTypes.Name, user.Username), new Claim(ClaimTypes.Role, user.Role)
+            new Claim(ClaimTypes.NameIdentifier, user.Id), new Claim(ClaimTypes.Name, user.Username), new Claim(ClaimTypes.Role, user.Role),
+            new Claim(CurrentUserValidationMiddleware.SecurityStampClaim, user.SecurityStamp)
         ], CookieAuthenticationDefaults.AuthenticationScheme)));
     private static LocalUser NewUser(string username, string password, string role, PasswordService passwords) => new()
         { Username = username.Trim(), NormalizedUsername = Normalize(username), PasswordHash = passwords.Hash(password), Role = role };
