@@ -16,12 +16,12 @@ const status: OeeStatusResponse = {
 describe('OeeOverviewPanel', () => {
   it('renders state labels, total, and outbox depth from status', () => {
     const { container } = render(<OeeOverviewPanel oeeStatus={status} onOpenOee={vi.fn()} />);
-    expect(screen.getByText('OEE machines')).toBeInTheDocument();
+    expect(screen.getByText('Performance machines')).toBeInTheDocument();
     for (const label of ['running', 'stopped', 'fault', 'no data']) {
       // getAllBy: state labels legitimately appear in both the metric grid and breakdown rows
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
-    expect(screen.getByTitle('Open the OEE tab').textContent).toContain('4'); // total button
+    expect(screen.getByTitle('Open the Performance tab').textContent).toContain('4'); // total button
     expect(screen.getByText(/Outbox depth/)).toBeInTheDocument();
     expect(screen.getByText('7')).toBeInTheDocument();
     // The rail has one segment per state, in order.
@@ -38,20 +38,20 @@ describe('OeeOverviewPanel', () => {
   it('clicking the total button opens the OEE tab', () => {
     const onOpenOee = vi.fn();
     render(<OeeOverviewPanel oeeStatus={status} onOpenOee={onOpenOee} />);
-    fireEvent.click(screen.getByTitle('Open the OEE tab'));
+    fireEvent.click(screen.getByTitle('Open the Performance tab'));
     expect(onOpenOee).toHaveBeenCalled();
   });
 
   it('shows the empty state at zero channels', () => {
     const onOpenOee = vi.fn();
     render(<OeeOverviewPanel oeeStatus={{ channels: [], outboxDepth: 0 }} onOpenOee={onOpenOee} />);
-    expect(screen.getByText('No OEE channels configured')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /open oee tab/i }));
+    expect(screen.getByText('No performance channels configured')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /open performance tab/i }));
     expect(onOpenOee).toHaveBeenCalled();
   });
 
   it('shows the unavailable state when status is null', () => {
     render(<OeeOverviewPanel oeeStatus={null} onOpenOee={vi.fn()} />);
-    expect(screen.getByText('OEE status unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Performance status unavailable')).toBeInTheDocument();
   });
 });
