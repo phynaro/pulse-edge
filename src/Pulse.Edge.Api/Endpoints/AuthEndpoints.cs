@@ -21,18 +21,21 @@ public static class AuthEndpoints
                 user = context.User.Identity?.IsAuthenticated == true ? ToCurrentUser(context.User) : null });
         });
 
-        routes.MapPost("/api/auth/first-admin", async (CreateFirstAdminRequest request, HttpContext context, PasswordService passwords) =>
+        routes.MapPost("/api/auth/first-admin", async (CreateFirstAdminRequest request, HttpContext context, PasswordService passwords, RecoveryCodeService codes) =>
         {
             using var db = new QueueDbContext();
             if (await db.LocalUsers.AnyAsync()) return Results.Conflict(new { error = "Initial administrator has already been created." });
             var error = ValidateUserInput(request.Username, request.Password);
             if (error != null) return Results.BadRequest(new { error });
             var user = NewUser(request.Username, request.Password, "Admin", passwords);
+            var recoveryCode = codes.Generate();
+            user.RecoveryCodeHash = codes.Hash(recoveryCode);
+            user.RecoveryCodeCreatedAtUtc = DateTime.UtcNow;
             db.LocalUsers.Add(user);
             db.AuditEvents.Add(Audit("FirstAdminCreated", "setup", user.Username, context, true));
             await db.SaveChangesAsync();
             await SignIn(context, user);
-            return Results.Ok(ToUser(user));
+            return Results.Ok(new { user.Id, user.Username, user.Role, user.IsEnabled, user.CreatedAtUtc, user.LastLoginAtUtc, user.LockoutEndUtc, recoveryCode });
         });
 
         routes.MapPost("/api/auth/login", async (LoginRequest request, HttpContext context, PasswordService passwords) =>
@@ -68,7 +71,70 @@ public static class AuthEndpoints
             return Results.Ok(new { success = true });
         });
 
-        routes.MapGet("/api/auth/me", (HttpContext context) => Results.Ok(ToCurrentUser(context.User)));
+        // Admin self-service recovery (spec 2026-10-06-edge-password-recovery-design §5.3). Every
+        // failure returns the same 401 so the endpoint never reveals which usernames exist.
+        routes.MapPost("/api/auth/recover", async (RecoverRequest request, HttpContext context, PasswordService passwords, RecoveryCodeService codes) =>
+        {
+            if (PasswordService.Validate(request.NewPassword ?? "") is { } passwordError)
+                return Results.BadRequest(new { error = passwordError });
+            using var db = new QueueDbContext();
+            var normalized = Normalize(request.Username ?? "");
+            var user = await db.LocalUsers.FirstOrDefaultAsync(x => x.NormalizedUsername == normalized);
+            var eligible = user is { Role: "Admin", IsEnabled: true };
+            // Verify always runs (against a dummy hash when ineligible) so timing is uniform.
+            var valid = codes.Verify(request.RecoveryCode, eligible ? user!.RecoveryCodeHash : null) && eligible;
+            if (!valid)
+            {
+                db.AuditEvents.Add(Audit("PasswordRecovered", request.Username ?? "", request.Username ?? "", context, false));
+                await db.SaveChangesAsync();
+                return Results.Json(new { error = "Invalid username or recovery code." }, statusCode: 401);
+            }
+            var newCode = codes.Generate();
+            user!.PasswordHash = passwords.Hash(request.NewPassword!);
+            user.SecurityStamp = LocalUser.NewSecurityStamp();
+            user.FailedLoginCount = 0;
+            user.LockoutEndUtc = null;
+            user.RecoveryCodeHash = codes.Hash(newCode);
+            user.RecoveryCodeCreatedAtUtc = DateTime.UtcNow;
+            user.UpdatedAtUtc = DateTime.UtcNow;
+            db.AuditEvents.Add(Audit("PasswordRecovered", user.Username, user.Username, context, true));
+            await db.SaveChangesAsync();
+            return Results.Ok(new { recoveryCode = newCode });
+        }).RequireRateLimiting("login");
+
+        routes.MapPost("/api/auth/recovery-code", async (RegenerateRecoveryCodeRequest request, HttpContext context, PasswordService passwords, RecoveryCodeService codes) =>
+        {
+            if (!context.User.IsInRole("Admin")) return Results.Forbid();
+            using var db = new QueueDbContext();
+            var user = await db.LocalUsers.FindAsync(context.User.FindFirstValue(ClaimTypes.NameIdentifier));
+            if (user == null) return Results.Unauthorized();
+            if (!passwords.Verify(request.CurrentPassword ?? "", user.PasswordHash))
+            {
+                db.AuditEvents.Add(Audit("RecoveryCodeRegenerated", user.Username, user.Username, context, false));
+                await db.SaveChangesAsync();
+                return Results.BadRequest(new { error = "Current password is incorrect." });
+            }
+            var code = codes.Generate();
+            user.RecoveryCodeHash = codes.Hash(code);
+            user.RecoveryCodeCreatedAtUtc = DateTime.UtcNow;
+            user.UpdatedAtUtc = DateTime.UtcNow;
+            db.AuditEvents.Add(Audit("RecoveryCodeRegenerated", user.Username, user.Username, context, true));
+            await db.SaveChangesAsync();
+            return Results.Ok(new { recoveryCode = code });
+        });
+
+        routes.MapGet("/api/auth/me", async (HttpContext context) =>
+        {
+            var id = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            using var db = new QueueDbContext();
+            var user = await db.LocalUsers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+            return Results.Ok(new
+            {
+                id, username = context.User.Identity?.Name, role = context.User.FindFirstValue(ClaimTypes.Role),
+                hasRecoveryCode = !string.IsNullOrEmpty(user?.RecoveryCodeHash),
+                recoveryCodeCreatedAtUtc = user?.RecoveryCodeCreatedAtUtc,
+            });
+        });
 
         routes.MapGet("/api/users", async (HttpContext context) =>
         {
@@ -164,3 +230,5 @@ public record LoginRequest(string Username, string Password);
 public record CreateFirstAdminRequest(string Username, string Password);
 public record CreateUserRequest(string Username, string Password, string Role);
 public record UpdateUserRequest(string? Role, bool? IsEnabled, string? Password);
+public record RecoverRequest(string? Username, string? RecoveryCode, string? NewPassword);
+public record RegenerateRecoveryCodeRequest(string? CurrentPassword);

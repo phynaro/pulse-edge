@@ -11,7 +11,7 @@ public sealed class CurrentUserValidationMiddleware(RequestDelegate next)
 
     private static readonly string[] AnonymousApiPaths =
     [
-        "/api/auth/login", "/api/auth/setup-status", "/api/auth/first-admin",
+        "/api/auth/login", "/api/auth/setup-status", "/api/auth/first-admin", "/api/auth/recover",
         "/api/settings", "/api/settings/validate-cloud", "/api/dashboard", "/api/webhooks/receive/",
         "/api/diagnostic-logs/ingest"
     ];
@@ -56,6 +56,7 @@ public sealed class CurrentUserValidationMiddleware(RequestDelegate next)
         if (isAnonymousCandidate && hasUsers && hasApiKey && context.User.Identity?.IsAuthenticated != true &&
             !path.Equals("/api/auth/login", StringComparison.OrdinalIgnoreCase) &&
             !path.Equals("/api/auth/setup-status", StringComparison.OrdinalIgnoreCase) &&
+            !path.Equals("/api/auth/recover", StringComparison.OrdinalIgnoreCase) &&
             !isInternalIngest &&
             !path.StartsWith("/api/webhooks/receive/", StringComparison.OrdinalIgnoreCase))
         {
