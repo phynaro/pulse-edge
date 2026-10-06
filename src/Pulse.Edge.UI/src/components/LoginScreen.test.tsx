@@ -83,4 +83,15 @@ describe('LoginScreen', () => {
       expect(screen.getByRole('button', { name: /sign in/i })).not.toBeDisabled(),
     );
   });
+
+  it('opens the forgot-password panel and returns to sign in', async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.click(screen.getByRole('button', { name: /forgot password/i }));
+    expect(screen.getByRole('button', { name: /use a recovery code/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /back to sign in/i }));
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
+  });
 });
