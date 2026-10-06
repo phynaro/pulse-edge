@@ -1,6 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+import type { ComponentProps } from 'react';
 import SimulatorBrowserModal from './SimulatorBrowserModal';
+import { jsonResponse } from '../../test/http';
 import type { DriverAdapter } from '../../types';
 
 describe('SimulatorBrowserModal', () => {
@@ -27,7 +29,7 @@ describe('SimulatorBrowserModal', () => {
     },
   ];
 
-  const mockToast = {
+  const mockToast: ComponentProps<typeof SimulatorBrowserModal>['toast'] = {
     success: vi.fn(),
     error: vi.fn(),
     warning: vi.fn(),
@@ -41,7 +43,7 @@ describe('SimulatorBrowserModal', () => {
         onClose={vi.fn()}
         adapterId="adp-sim-1"
         adapters={mockAdapters}
-        toast={mockToast as any}
+        toast={mockToast}
       />
     );
 
@@ -60,7 +62,7 @@ describe('SimulatorBrowserModal', () => {
         onClose={vi.fn()}
         adapterId="adp-sim-2"
         adapters={mockAdapters}
-        toast={mockToast as any}
+        toast={mockToast}
       />
     );
 
@@ -77,7 +79,7 @@ describe('SimulatorBrowserModal', () => {
         onClose={vi.fn()}
         adapterId="adp-sim-1"
         adapters={mockAdapters}
-        toast={mockToast as any}
+        toast={mockToast}
       />
     );
 
@@ -95,7 +97,7 @@ describe('SimulatorBrowserModal', () => {
         onClose={vi.fn()}
         adapterId="adp-sim-1"
         adapters={mockAdapters}
-        toast={mockToast as any}
+        toast={mockToast}
       />
     );
 
@@ -104,5 +106,25 @@ describe('SimulatorBrowserModal', () => {
 
     fireEvent.click(screen.getByText(/Next Step →/i));
     expect(screen.getByText('Step 2: Configure Tag Names & Polling Interval')).toBeInTheDocument();
+  });
+  it('warns with the failure count when only some tags register', async () => {
+    let call = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => (++call === 1 ? jsonResponse(200, {}) : jsonResponse(500, {}))));
+    render(
+      <SimulatorBrowserModal
+        isOpen={true}
+        onClose={vi.fn()}
+        adapterId="adp-sim-1"
+        adapters={mockAdapters}
+        toast={mockToast}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Select All'));
+    fireEvent.click(screen.getByText(/Next Step →/i));
+    fireEvent.click(screen.getByText('Save & Register Tags'));
+
+    await waitFor(() => expect(mockToast.warning).toHaveBeenCalledWith('Registered 1 simulator tag(s); 5 failed.'));
+    expect(mockToast.success).not.toHaveBeenCalled();
   });
 });

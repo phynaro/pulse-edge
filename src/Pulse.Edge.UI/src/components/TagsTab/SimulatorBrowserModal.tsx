@@ -18,7 +18,7 @@ export interface SimulatorVariable {
   scanIntervalMs: number;
 }
 
-export const SIMULATOR_VARIABLES: SimulatorVariable[] = [
+const SIMULATOR_VARIABLES: SimulatorVariable[] = [
   // Energy / Power Template
   {
     address: 'voltage',
@@ -293,7 +293,8 @@ export default function SimulatorBrowserModal({
       }
 
       if (successes > 0) {
-        toast.success(`Successfully registered ${successes} simulator tag(s).`);
+        if (failures > 0) toast.warning(`Registered ${successes} simulator tag(s); ${failures} failed.`);
+        else toast.success(`Successfully registered ${successes} simulator tag(s).`);
         if (onSaveSuccess) onSaveSuccess();
         onClose();
       } else {
