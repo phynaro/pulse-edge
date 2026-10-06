@@ -34,6 +34,14 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.DataProtection;
 
+// `PulseEdge.Service.exe reset-password ...` — local console password reset. Runs and exits
+// before the web host is built, so it is safe while the service itself is running.
+if (args.Length > 0 && args[0] == "reset-password")
+{
+    return await PasswordResetCommand.RunAsync(args[1..], CommandIo.FromSystemConsole(),
+        () => new QueueDbContext(), () => new QueueStorageService().InitializeAsync());
+}
+
 
 // Configure Serilog daily rolling file and console logging
 var appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
@@ -362,6 +370,8 @@ finally
 {
     Log.CloseAndFlush();
 }
+
+return 0;
 
 // Exposes the implicit top-level Program type to the test project for WebApplicationFactory<Program>.
 public partial class Program { }
