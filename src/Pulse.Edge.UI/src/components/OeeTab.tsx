@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Gauge, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Gauge, Plus, Pencil, Trash2, Activity, AlertTriangle, FileCode, CheckCircle2, XCircle, Search, X, Sliders, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import ModalShell from './ModalShell';
 import OeeTagBrowserModal from './OeeTab/OeeTagBrowserModal';
@@ -36,20 +36,57 @@ const emptyForm: ChannelForm = {
 
 type TagRole = 'run' | 'fault' | 'code' | 'good' | 'reject';
 
-const ROLE_META: Record<TagRole, {
+interface RoleMetadata {
   label: string;
   hint: string;
   field: 'runDataPointId' | 'faultDataPointId' | 'codeDataPointId' | 'goodDataPointId' | 'rejectDataPointId';
   required: boolean;
-}> = {
-  run:    { label: 'Run signal',            hint: 'nonzero = running',                                    field: 'runDataPointId',    required: true },
-  fault:  { label: 'Fault signal',          hint: 'nonzero = fault; leave unwired if the PLC has none',   field: 'faultDataPointId',  required: false },
-  code:   { label: 'Fault/reason code tag', hint: 'passed through verbatim',                              field: 'codeDataPointId',   required: false },
-  good:   { label: 'Good counter',          hint: 'cumulative totalizer',                                 field: 'goodDataPointId',   required: false },
-  reject: { label: 'Reject counter',        hint: 'cumulative totalizer',                                 field: 'rejectDataPointId', required: false },
-};
+  icon: typeof Activity;
+  roleClass: string;
+}
 
-const ROLE_ORDER: TagRole[] = ['run', 'fault', 'code', 'good', 'reject'];
+const ROLE_META: Record<TagRole, RoleMetadata> = {
+  run: {
+    label: 'Run Signal',
+    hint: 'nonzero = running',
+    field: 'runDataPointId',
+    required: true,
+    icon: Activity,
+    roleClass: 'is-run',
+  },
+  fault: {
+    label: 'Fault Signal',
+    hint: 'nonzero = fault; leave unwired if PLC has none',
+    field: 'faultDataPointId',
+    required: false,
+    icon: AlertTriangle,
+    roleClass: 'is-fault',
+  },
+  code: {
+    label: 'Fault / Reason Code Tag',
+    hint: 'passed through verbatim',
+    field: 'codeDataPointId',
+    required: false,
+    icon: FileCode,
+    roleClass: 'is-code',
+  },
+  good: {
+    label: 'Good Counter',
+    hint: 'cumulative totalizer',
+    field: 'goodDataPointId',
+    required: false,
+    icon: CheckCircle2,
+    roleClass: 'is-good',
+  },
+  reject: {
+    label: 'Reject Counter',
+    hint: 'cumulative totalizer',
+    field: 'rejectDataPointId',
+    required: false,
+    icon: XCircle,
+    roleClass: 'is-reject',
+  },
+};
 
 export default function OeeTab({ datapoints, adapters }: OeeTabProps) {
   const { t } = useTranslation();
@@ -152,36 +189,67 @@ export default function OeeTab({ datapoints, adapters }: OeeTabProps) {
   };
 
   const remove = async (channel: OeeChannel) => {
-    if (!window.confirm(`Delete OEE channel "${channel.name}"? Its queued messages are discarded and cloud history for "${channel.externalId}" is orphaned.`)) return;
+    if (!window.confirm(`Delete channel "${channel.name}"? Its queued messages are discarded and cloud history for "${channel.externalId}" is orphaned.`)) return;
     await fetch(`/api/oee/channels/${channel.id}`, { method: 'DELETE' });
     void refresh();
   };
 
-  const tagField = (role: TagRole) => {
+  const renderTagBindingRow = (role: TagRole) => {
     const meta = ROLE_META[role];
+    const Icon = meta.icon;
     const value = form[meta.field];
     const dp = value ? datapoints.find(d => d.id === value) : undefined;
+
     return (
-      <div className="form-group form-group-flush" key={role}>
-        <label className="form-label form-label-bold">{meta.label}{meta.required ? ' *' : ''}</label>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <div className="form-input" style={{ flex: 1, display: 'flex', alignItems: 'center', minHeight: '2.25rem', cursor: 'default' }}>
-            {dp ? (
-              <span>
-                {dp.description?.trim() ? `${dp.description.trim()} (${dp.address})` : dp.address}
-                <span className="text-secondary"> · {dp.dataType}</span>
-              </span>
-            ) : value ? (
-              <span className="text-secondary">Unknown tag ({value})</span>
+      <div className="signal-binding-card" key={role}>
+        <div className="signal-binding-header">
+          <div className="signal-binding-title">
+            <Icon size={16} className={`signal-icon ${meta.roleClass}`} />
+            <span className="signal-label-text">{meta.label}</span>
+            {meta.required ? (
+              <span className="badge danger badge-xs">Required</span>
             ) : (
-              <span className="text-secondary">not wired</span>
+              <span className="badge secondary badge-xs">Optional</span>
             )}
           </div>
-          <button type="button" className="btn-secondary btn-compact" onClick={() => setActiveBrowseRole(role)}>
-            Browse…
-          </button>
+          <span className="signal-hint-text">{meta.hint}</span>
         </div>
-        <span className="form-note">{meta.hint}</span>
+
+        <div className="signal-binding-value-row">
+          <div className={`signal-tag-pill ${dp ? 'is-wired' : value ? 'is-unknown' : 'is-empty'}`}>
+            {dp ? (
+              <>
+                <span className="signal-tag-code">{dp.description?.trim() || dp.address}</span>
+                <span className="signal-tag-meta">({dp.address} · {dp.dataType})</span>
+              </>
+            ) : value ? (
+              <span className="signal-tag-unknown">Unknown Tag ID ({value})</span>
+            ) : (
+              <span className="signal-tag-empty">⚪ not wired</span>
+            )}
+          </div>
+
+          <div className="signal-binding-actions">
+            <button
+              type="button"
+              className={dp ? "btn-secondary btn-compact" : "btn-primary btn-compact"}
+              onClick={() => setActiveBrowseRole(role)}
+            >
+              <Search size={14} />
+              {dp ? 'Change Tag...' : 'Browse...'}
+            </button>
+            {dp && !meta.required && (
+              <button
+                type="button"
+                className="btn-icon-sm is-action is-danger"
+                title="Unbind tag"
+                onClick={() => setForm(f => ({ ...f, [meta.field]: '' }))}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     );
   };
@@ -205,7 +273,7 @@ export default function OeeTab({ datapoints, adapters }: OeeTabProps) {
       <div className="panel">
         <div className="table-scroll-md">
           {status.channels.length === 0 ? (
-            <div className="table-empty">No OEE channels configured — add one to start reporting machine state.</div>
+            <div className="table-empty">No performance channels configured — add one to start reporting machine state.</div>
           ) : (
             <table className="data-table">
               <thead>
@@ -264,63 +332,103 @@ export default function OeeTab({ datapoints, adapters }: OeeTabProps) {
       {showModal && (
         <>
           <ModalShell
-            title={editing ? `Edit Channel — ${editing.name}` : 'Add OEE Channel'}
-            subtitle="Bind PLC tags to machine-state roles. The edge reports what these signals say — classification happens in the cloud."
+            title={editing ? `Edit Channel — ${editing.name}` : 'Add Performance Channel'}
+            subtitle="Bind PLC state & counter tags to machine roles for edge-to-cloud transmission."
             onClose={() => setShowModal(false)}
-            size="md"
+            size="lg"
           >
             <form onSubmit={save} className="modal-form">
               {error && <div className="alert-box-danger">{error}</div>}
 
-              <div className="form-group form-group-flush">
-                <label className="form-label form-label-bold">External ID</label>
-                <input
-                  className="form-input text-mono"
-                  value={form.externalId}
-                  disabled={!!editing}
-                  placeholder="line1.filler"
-                  onChange={e => setForm({ ...form, externalId: e.target.value })}
-                />
-                {editing && <span className="form-note">The external ID is the channel's permanent cloud identity and cannot be changed.</span>}
+              <div className="channel-form-container">
+                {/* Section 1: Machine Identity & Settings */}
+                <div className="channel-section">
+                  <div className="channel-section-head">
+                    <Sliders size={16} />
+                    <span>Machine Identity &amp; Settings</span>
+                  </div>
+
+                  <div className="form-grid-half">
+                    <div className="form-group form-group-flush">
+                      <label className="form-label form-label-bold">Channel / Machine Name *</label>
+                      <input
+                        className="form-input"
+                        value={form.name}
+                        placeholder="e.g. Line 1 — Filler"
+                        required
+                        onChange={e => setForm({ ...form, name: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="form-group form-group-flush">
+                      <label className="form-label form-label-bold">External ID *</label>
+                      <input
+                        className="form-input text-mono"
+                        value={form.externalId}
+                        disabled={!!editing}
+                        placeholder="e.g. line1.filler"
+                        required
+                        onChange={e => setForm({ ...form, externalId: e.target.value })}
+                      />
+                      {editing && <span className="form-note">External ID is permanent and cannot be changed after creation.</span>}
+                    </div>
+                  </div>
+
+                  <div className="form-grid-half" style={{ alignItems: 'center' }}>
+                    <div className="form-group form-group-flush">
+                      <label className="form-label form-label-bold">Debounce Delay (seconds)</label>
+                      <input
+                        className="form-input"
+                        type="number"
+                        min={0}
+                        max={60}
+                        value={form.debounceSeconds}
+                        onChange={e => setForm({ ...form, debounceSeconds: Number(e.target.value) })}
+                      />
+                      <span className="form-note">Filter signal chatter (0–60 seconds).</span>
+                    </div>
+
+                    <div style={{ marginTop: '0.75rem', padding: '0.625rem 0.875rem', background: 'var(--bg-color)', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <input
+                        type="checkbox"
+                        id="oeeChannelEnabled"
+                        checked={form.enabled}
+                        onChange={e => setForm({ ...form, enabled: e.target.checked })}
+                        style={{ width: '1.1rem', height: '1.1rem', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="oeeChannelEnabled" style={{ cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600, margin: 0 }}>
+                        Channel Active (Enabled)
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Machine State Signals */}
+                <div className="channel-section">
+                  <div className="channel-section-head">
+                    <Activity size={16} />
+                    <span>Machine State Signals</span>
+                  </div>
+                  {(['run', 'fault', 'code'] as TagRole[]).map(role => renderTagBindingRow(role))}
+                </div>
+
+                {/* Section 3: Production Counter Totalizers */}
+                <div className="channel-section">
+                  <div className="channel-section-head">
+                    <ShieldCheck size={16} />
+                    <span>Production Counter Totalizers</span>
+                  </div>
+                  {(['good', 'reject'] as TagRole[]).map(role => renderTagBindingRow(role))}
+                </div>
               </div>
 
-              <div className="form-group form-group-flush">
-                <label className="form-label form-label-bold">Name</label>
-                <input
-                  className="form-input"
-                  value={form.name}
-                  placeholder="Line 1 — Filler"
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                />
-              </div>
-
-              {ROLE_ORDER.map(role => tagField(role))}
-
-              <div className="form-group form-group-flush">
-                <label className="form-label form-label-bold">Debounce (seconds)</label>
-                <input
-                  className="form-input"
-                  type="number"
-                  min={0}
-                  max={60}
-                  value={form.debounceSeconds}
-                  onChange={e => setForm({ ...form, debounceSeconds: Number(e.target.value) })}
-                />
-              </div>
-
-              <div className="checkbox-inline">
-                <input
-                  type="checkbox"
-                  id="oeeChannelEnabled"
-                  checked={form.enabled}
-                  onChange={e => setForm({ ...form, enabled: e.target.checked })}
-                />
-                <label htmlFor="oeeChannelEnabled">Enabled</label>
-              </div>
-
-              <div className="modal-footer">
-                <button type="submit" className="btn-primary btn-compact btn-flex-2">{editing ? 'Save Changes' : 'Create Channel'}</button>
-                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary btn-compact btn-flex-1">Cancel</button>
+              <div className="modal-footer" style={{ marginTop: '1rem' }}>
+                <button type="submit" className="btn-primary btn-compact btn-flex-2">
+                  {editing ? 'Save Changes' : 'Create Channel'}
+                </button>
+                <button type="button" onClick={() => setShowModal(false)} className="btn-secondary btn-compact btn-flex-1">
+                  Cancel
+                </button>
               </div>
             </form>
           </ModalShell>

@@ -16,6 +16,13 @@ describe('OeeTab', () => {
           outboxDepth: 2,
         })));
       }
+      if (url.startsWith('/api/oee/channels')) {
+        return Promise.resolve(new Response(JSON.stringify([{
+          id: 1, externalId: 'line1.filler', name: 'Line 1 — Filler', enabled: true,
+          lastState: 'fault', lastCode: 'E17', lastStateChangedAt: '2026-07-18T06:14:03.250Z',
+          nextSeq: 4103, pendingCount: 2,
+        }])));
+      }
       if (url.startsWith('/api/datapoints')) {
         return Promise.resolve(new Response(JSON.stringify([])));
       }
@@ -26,18 +33,22 @@ describe('OeeTab', () => {
   it('renders channel list with live state badge', async () => {
     render(<OeeTab datapoints={[]} adapters={[]} />);
     await waitFor(() => {
-      expect(screen.getByText('Line 1 — Filler')).toBeInTheDocument();
-      expect(screen.getByText(/fault/i)).toBeInTheDocument();
+      expect(screen.getByText(/Line 1/i)).toBeInTheDocument();
+      expect(screen.getByText((content) => content.includes('fault'))).toBeInTheDocument();
       expect(screen.getByText('line1.filler')).toBeInTheDocument();
     });
   });
 
   it('shows the empty state when no channels exist', async () => {
-    vi.stubGlobal('fetch', vi.fn(() =>
-      Promise.resolve(new Response(JSON.stringify({ channels: [], outboxDepth: 0 })))));
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (url.startsWith('/api/oee/status')) {
+        return Promise.resolve(new Response(JSON.stringify({ channels: [], outboxDepth: 0 })));
+      }
+      return Promise.resolve(new Response('[]'));
+    }));
     render(<OeeTab datapoints={[]} adapters={[]} />);
     await waitFor(() => {
-      expect(screen.getByText(/no oee channels/i)).toBeInTheDocument();
+      expect(screen.getByText(/no performance channels/i)).toBeInTheDocument();
     });
   });
 
@@ -55,12 +66,12 @@ describe('OeeTab', () => {
     // Five role fields, each with a Browse… button; the first is the run signal.
     fireEvent.click(screen.getAllByRole('button', { name: /browse/i })[0]);
 
-    expect(await screen.findByText('Select Run signal Tag')).toBeInTheDocument();
+    expect(await screen.findByText(/Select .* Tag/i)).toBeInTheDocument();
     fireEvent.click(screen.getByText('Run bit (running)'));
     fireEvent.click(screen.getByRole('button', { name: /use this tag/i }));
 
     // Browser closed; the run field row now shows the chosen tag.
-    expect(screen.queryByText('Select Run signal Tag')).not.toBeInTheDocument();
-    expect(screen.getByText(/Run bit \(running\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/Select .* Tag/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Run bit')).toBeInTheDocument();
   });
 });

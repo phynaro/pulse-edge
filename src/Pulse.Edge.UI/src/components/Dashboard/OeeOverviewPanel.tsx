@@ -28,11 +28,11 @@ export default function OeeOverviewPanel({ oeeStatus, onOpenOee }: Props) {
       <section className="ops-health-panel is-oee">
         <header className="ops-panel-head">
           <div className="ops-panel-icon"><Gauge size={17} /></div>
-          <div><h3>OEE machines</h3><p>Machine state &amp; delivery</p></div>
+          <div><h3>Performance machines</h3><p>Machine state &amp; delivery</p></div>
         </header>
         <div className="ops-empty-note">
-          <span>{oeeStatus ? 'No OEE channels configured' : 'OEE status unavailable'}</span>
-          <button type="button" className="btn-secondary text-xs" onClick={onOpenOee}>Open OEE tab</button>
+          <span>{oeeStatus ? 'No performance channels configured' : 'Performance status unavailable'}</span>
+          <button type="button" className="btn-secondary text-xs" onClick={onOpenOee}>Open Performance tab</button>
         </div>
       </section>
     );
@@ -52,8 +52,8 @@ export default function OeeOverviewPanel({ oeeStatus, onOpenOee }: Props) {
     <section className="ops-health-panel is-oee">
       <header className="ops-panel-head">
         <div className="ops-panel-icon"><Gauge size={17} /></div>
-        <div><h3>OEE machines</h3><p>Machine state &amp; delivery</p></div>
-        <button className="ops-total" onClick={onOpenOee} title="Open the OEE tab">
+        <div><h3>Performance machines</h3><p>Machine state &amp; delivery</p></div>
+        <button className="ops-total" onClick={onOpenOee} title="Open the Performance tab">
           <strong>{channels.length}</strong><span>Total</span>
         </button>
       </header>
@@ -70,7 +70,7 @@ export default function OeeOverviewPanel({ oeeStatus, onOpenOee }: Props) {
       </div>
       <div className="ops-metric-grid">
         {STATE_ORDER.map(k => (
-          <button key={k} onClick={onOpenOee} title={`Machines ${STATE_LABELS[k]} — open OEE tab`}>
+          <button key={k} onClick={onOpenOee} title={`Machines ${STATE_LABELS[k]} — open Performance tab`}>
             <span className={`ops-dot is-${k}`} /><b>{counts[k]}</b><small>{STATE_LABELS[k]}</small>
           </button>
         ))}
