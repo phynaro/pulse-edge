@@ -28,11 +28,10 @@ public static class DashboardEndpoints
             int pendingTelemetryCount = await db.QueueTelemetry.CountAsync();
             int pendingOeeCount = await db.OeeOutboxMessages.CountAsync();
 
-            // Pairing credentials are Admin-only once the device is commissioned. During initial
-            // setup (no users yet or unpaired) they must be visible so the operator can pair the device.
+            // Pairing credentials are Admin-only once an admin exists (paired or not). During initial
+            // setup (no users yet) they must be visible so the operator can pair the device.
             bool hasUsers = await db.LocalUsers.AnyAsync();
-            bool isUnpaired = string.IsNullOrEmpty(config?.ApiKey);
-            bool showPairing = !hasUsers || isUnpaired || context.User.IsInRole("Admin");
+            bool showPairing = !hasUsers || context.User.IsInRole("Admin");
 
             return Results.Ok(new
             {
