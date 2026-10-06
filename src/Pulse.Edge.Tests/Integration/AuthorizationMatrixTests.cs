@@ -99,6 +99,8 @@ public sealed class AuthorizationMatrixTests(PulseEdgeAppFactory factory) : ICla
         ["GET /api/diagnostic-logs/stream"] = Access.StreamRead,
         ["POST /api/auth/first-admin"] = Access.SetupWindowClosed,
         ["POST /api/auth/login"] = Access.AnonymousLogin,
+        ["POST /api/auth/recover"] = Access.AnonymousReachable,       // {} body -> handler 400 (password rules), never 401/403
+        ["POST /api/auth/recovery-code"] = Access.AdminMutation,      // handler IsInRole("Admin") -> ReadOnly 403
         ["GET /api/auth/setup-status"] = Access.AnonymousReachable,
         ["POST /api/webhooks/receive/{adapterId}"] = Access.AnonymousReachable,
         ["POST /api/diagnostic-logs/ingest"] = Access.AnonymousReachable, // loopback+key guarded in-handler; TestServer has no remote IP -> 404
