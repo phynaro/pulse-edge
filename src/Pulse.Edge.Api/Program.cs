@@ -181,6 +181,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 builder.Services.AddSingleton<PasswordService>();
+builder.Services.AddSingleton<RecoveryCodeService>();
 builder.Services.AddSingleton(diagnosticLogs);
 builder.Services.AddSingleton<ConfigurationBackupService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<DiagnosticLogService>());
