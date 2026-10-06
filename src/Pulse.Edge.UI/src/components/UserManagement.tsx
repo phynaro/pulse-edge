@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Shield, UserPlus, Trash2 } from 'lucide-react';
+import MyRecoveryCode from './MyRecoveryCode';
 
 type User = { id: string; username: string; role: 'Admin' | 'ReadOnly'; isEnabled: boolean; lastLoginAtUtc?: string };
 
@@ -21,6 +22,7 @@ export default function UserManagement({ currentUserId }: { currentUserId: strin
   return <div className="panel user-management">
     <div className="panel-header"><h2 className="panel-title"><Shield size={17} /> Local Access</h2></div>
     <p className="text-secondary user-management-copy">Manage who can view or configure this edge node.</p>
+    <MyRecoveryCode />
     <form className="user-create-row" onSubmit={async e => { e.preventDefault(); const res = await fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, role }) }); const data = await res.json().catch(() => ({})); setMessage(res.ok ? 'User created.' : data.error || 'Creation failed.'); if (res.ok) { setUsername(''); setPassword(''); void load(); } }}>
       <input className="form-input" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} required />
       <input className="form-input" type="password" placeholder="Temporary password" value={password} onChange={e => setPassword(e.target.value)} required />

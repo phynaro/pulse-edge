@@ -110,3 +110,28 @@ describe('AuthProvider', () => {
     await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('none'));
   });
 });
+
+function FirstAdminConsumer() {
+  const { createFirstAdmin } = useAuth();
+  const [result, setResult] = useState('unset');
+  return <div>
+    <span data-testid="result">{result}</span>
+    <button onClick={async () => setResult(JSON.stringify(await createFirstAdmin(testCredentials.adminUsername, testCredentials.adminPassword)))}>create</button>
+  </div>;
+}
+
+describe('createFirstAdmin', () => {
+  it('returns the recovery code issued with the first admin', async () => {
+    const issued = ['FFFF', 'IIII', 'RRRR', 'SSSS', 'TTTT'].join('-');
+    stubFetch({
+      'GET /api/auth/setup-status': () => jsonResponse(200, { state: 'NeedsFirstAdmin', user: null }),
+      'POST /api/auth/first-admin': () => jsonResponse(200, { recoveryCode: issued }),
+    });
+    const user = userEvent.setup();
+    render(<AuthProvider><FirstAdminConsumer /></AuthProvider>);
+
+    await user.click(screen.getByRole('button', { name: 'create' }));
+
+    await waitFor(() => expect(screen.getByTestId('result')).toHaveTextContent(JSON.stringify({ error: null, recoveryCode: issued })));
+  });
+});
