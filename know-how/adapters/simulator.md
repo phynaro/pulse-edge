@@ -16,7 +16,7 @@ The adapter's `ConfigJson` picks a template:
 |----------|-------------------|
 | `energy` | One power meter: voltage, current, power, accumulated energy, power factor, frequency. |
 | `production` | One machine on a repeating 5-minute cycle (4 min running, 40 s idle, 20 s faulted) with counters. |
-| `scenario` | A whole fictional plant (131 units) that behaves like a real factory. See sections 3 and 4. |
+| `scenario` | A whole fictional plant (125 units) that behaves like a real factory. See sections 3 and 4. |
 
 If `Template` is missing, the simulator behaves as `energy`. There is no `hvac` template; older notes that mentioned one were wrong.
 
@@ -44,7 +44,7 @@ Every tag address is `<unit>.<signal>`, for example `iws1.state` or `m_main.kw`.
 | machine | `state` (1 running, else 0), `fault` (1 when faulted), `fault_code`, `good_count`, `reject_count`, `speed` (units per minute while running) |
 | analog | `value` (a process value that moves toward a target, e.g. a temperature) |
 | ambient | `value` (a quiet background reading: motor current, vibration, room temperature, humidity, tank level, voltage) |
-| meter | `kw`, `kwh` (cumulative), `pf` (power factor) |
+| meter | `kw`, `kwh` (cumulative), `pf` (power factor), `current` (amps, from the load: I = kW x 1000 / (sqrt(3) x V x pf), with V the centre of the meter's `<meter>_voltage` reading, 400 V when there is none) |
 
 Adapter config for the plant:
 
@@ -82,9 +82,9 @@ Everything is a pure function of the clock and the plant name, plus counters sav
 | Utilities (5, run 24/7) | `blr1` (boiler), `nh3_1` (ammonia compressor), `chl1` (chiller), `ac1` (air compressor), `wwt1` (wastewater) |
 | Analog process values (10) | `silo1_temp`, `silo2_temp`, `htst1_outlet`, `ckr1_temp`, `hld1_temp`, `cold1_temp`, `chl1_glycol`, `blr1_pressure`, `ac1_pressure`, `wwt1_flow` |
 | Power meters (6) | `m_main` (whole plant), `m_boiler`, `m_refrig`, `m_iws1`, `m_iws2`, `m_air` |
-| Ambient readings (90) | `<machine>_motor_current` and `<machine>_vibration` for each of the 25 machines, room temperature and humidity (`rcv_room_*`, `chs_room_*`, `prc_room_*`, `pkg_room_*`, `wh_dock_*`, `qa_lab_*`, `rip1_*`), tank levels, utility flows, and voltage and current per meter |
+| Ambient readings (84) | `<machine>_motor_current` and `<machine>_vibration` for each of the 25 machines, room temperature and humidity (`rcv_room_*`, `chs_room_*`, `prc_room_*`, `pkg_room_*`, `wh_dock_*`, `qa_lab_*`, `rip1_*`), tank levels, utility flows, and voltage per meter (a meter's current is its own `current` signal, which follows the load) |
 
-That is 25 machines + 10 analogs + 6 meters + 90 ambient readings = 131 units. Analog and ambient values that belong to a machine fall to a stopped value when it stops (for example `htst1_outlet` cools to 20 C, `blr1_pressure` falls toward 0.3 bar, motor currents read 0).
+That is 25 machines + 10 analogs + 6 meters + 84 ambient readings = 125 units. Analog and ambient values that belong to a machine fall to a stopped value when it is faulted or in PlannedStop (for example `htst1_outlet` cools to 20 C, `blr1_pressure` falls toward 0.3 bar, motor currents read 0). A micro-stop (Idle, 20 to 90 s) does not count as stopped: the pasteuriser stays at about 73 C and motor currents keep their running values.
 
 Ambient readings are deliberately boring background. They stay in their normal band, so they never raise alarms on their own; only the events below disturb the plant.
 
@@ -127,7 +127,7 @@ curl -s -b cookies.txt -H "Content-Type: application/json" \
 Notes:
 
 * The status call works in single-port mode only; in split mode it returns 503.
-* The trigger is queued and picked up on the next simulator tick. Triggering an event that is already active extends it; it does not stack.
+* The trigger is queued and picked up on the next simulator tick (about once a second). The Scenario panel shows "active until" straight away from the event's duration and then switches to the server's time. Triggering an event that is already active extends it; it does not stack.
 * An unknown scenario or event id returns 404.
 
 ---
@@ -138,10 +138,19 @@ Files live in `<dataDir>/simulator/`, where `<dataDir>` is the edge data directo
 
 | File | Content |
 |------|---------|
-| `<scenario>.state.json` | counters (`good_count`, `reject_count`, `kwh`), analog values, active events, last update time. Saved about every 30 s of plant time and on shutdown; written to a temp file and renamed, so a crash cannot leave half a file. |
+| `<scenario>.state.json` | counters (`good_count`, `reject_count`, `kwh`), analog values, active events, last update time. Saved about every 30 s of plant time and on shutdown; written to a temp file, flushed to disk, then renamed, so a crash cannot leave half a file. |
+| `<scenario>.state.json.bak` | the previous save, kept on every save. |
+| `<scenario>.state.json.corrupt-<utc>` | a state file that could not be read (empty or not valid JSON), moved aside on start-up. The engine logs an error and resumes from the `.bak`; only when neither is usable does the plant start fresh. |
 | `<scenario>.events.json` | the queue of events requested through the API, emptied by the simulator on its next tick. |
 
-To reset the plant to its starting counters, stop the agent and delete `<scenario>.state.json`.
+To reset the plant to its starting counters, stop the agent and delete `<scenario>.state.json` and `<scenario>.state.json.bak`.
+
+### Downtime and clock changes
+
+* The simulator does its work at most once per second, however often the agent polls.
+* After the agent was stopped, the first update catches up the production and energy of the missed time, but at most the **last 7 days**. A longer gap logs a warning and the older days are skipped.
+* If the clock goes backwards (for example an NTP correction), counters never go backwards: nothing is caught up, the counters stay, and machine modes follow the new clock.
+* If the state file cannot be read because another program holds it, the error is logged and the next update tries again.
 
 ---
 
@@ -158,3 +167,13 @@ The existing OEE channel feature works unchanged; point each of its inputs at th
 | Reject count | `iws1.reject_count` |
 
 Any other machine works the same way: replace `iws1` with its unit id. The counters rise only while the machine is Running, and the reject share is a fixed fraction per machine (1.5% for `iws1`), so OEE quality will sit near that figure.
+
+---
+
+## 7. Not built yet (follow-ups)
+
+These parts of the scenario design are deferred (ruling R13) and not in the simulator today:
+
+* **Time-of-day load shape beyond shifts.** Machines are either in a shift or not; there is no ramp-up at shift start, lunch dip or busier hours inside a shift.
+* **CIP / cleaning windows.** `cip1` runs like any other machine; there are no scheduled cleaning windows that stop the lines it cleans.
+* **Slowly varying reject fraction.** Each machine rejects a fixed share (for example 1.5% for `iws1`); it does not drift over hours or days.
