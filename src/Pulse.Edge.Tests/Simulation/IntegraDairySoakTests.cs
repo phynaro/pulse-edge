@@ -65,6 +65,9 @@ public sealed class IntegraDairySoakTests : IDisposable
 
         var ambients = def.Units.Where(u => u.Kind == "ambient").ToArray();
 
+        // Analogs that declare a Min (flows, levels, pressures) must never read below it.
+        var floored = def.Units.Where(u => u.Analog?.Min is not null).Select(u => (Addr: $"{u.Id}.value", Min: u.Analog!.Min!.Value)).ToArray();
+
         var fired = def.Events.ToDictionary(e => e.Id, _ => 0);
         var wasActive = def.Events.ToDictionary(e => e.Id, _ => false);
 
@@ -85,6 +88,12 @@ public sealed class IntegraDairySoakTests : IDisposable
             {
                 var v = engine.Read(Sid, addr);
                 if (double.IsNaN(v) || v < min || v > max) Fail($"{addr} = {v} outside [{min}, {max}] at {t:O}");
+            }
+
+            foreach (var (addr, min) in floored)
+            {
+                var v = engine.Read(Sid, addr);
+                if (v < min) Fail($"{addr} = {v} below its Min {min} at {t:O}");
             }
 
             var htst = engine.Read(Sid, "htst1_outlet.value");
@@ -128,6 +137,9 @@ public sealed class IntegraDairySoakTests : IDisposable
         // Windows scanners/indexers briefly lock the state file now and then; the engine reports those to
         // onError and retries next tick (by design). Anything else would be a real fault.
         Console.WriteLine($"Soak: {errors.Count} transient state-file IO errors tolerated");
+        // Systemic failure must not hide: a save is attempted about every 30 s of plant time.
+        var saveAttempts = (int)((End - Start) / TimeSpan.FromSeconds(30));
+        Assert.True(errors.Count < saveAttempts * 0.05, $"{errors.Count} state-file IO errors in ~{saveAttempts} saves (5% cap)");
         Assert.DoesNotContain(errors, e => e is not (IOException or UnauthorizedAccessException));
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
         foreach (var (id, count) in fired)

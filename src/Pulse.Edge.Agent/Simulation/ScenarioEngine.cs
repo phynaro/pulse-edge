@@ -248,7 +248,8 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
                         else if (advancing)
                             x += (target - x) * (1 - Math.Exp(-dt.TotalSeconds / Math.Max(p.TauSeconds, 1e-6)));
                         _analogs[u.Id] = x;
-                        Values[b] = x + Noise(u.Id, now, p.NoiseSd);
+                        var reported = x + Noise(u.Id, now, p.NoiseSd);
+                        Values[b] = p.Min is { } floor ? Math.Max(reported, floor) : reported;
                         break;
                     }
                     case "ambient":

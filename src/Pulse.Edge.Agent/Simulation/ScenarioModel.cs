@@ -44,13 +44,15 @@ public sealed record MachineParams(
     double RunningKw,
     double IdleKw);
 
+/// <summary>Min, when set, is a hard floor on the reported value (flows, levels and pressures cannot go negative).</summary>
 public sealed record AnalogParams(
     double Setpoint,
     double TauSeconds,
     double NoiseSd,
     string? FollowsUnit,
     double? StoppedValue,
-    string Unit);
+    string Unit,
+    double? Min = null);
 
 public sealed record MeterParams(
     double BaseKw,
