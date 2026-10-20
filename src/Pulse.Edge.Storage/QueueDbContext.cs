@@ -34,6 +34,28 @@ public class QueueDbContext : DbContext
     public DbSet<OeeChannel> OeeChannels => Set<OeeChannel>();
     public DbSet<OeeOutboxMessage> OeeOutboxMessages => Set<OeeOutboxMessage>();
 
+    /// <summary>
+    /// The PULSE Edge data directory (not created here): <c>PULSE_EDGE_DATA_DIR</c> when set, else the
+    /// OS default (Windows: CommonApplicationData\PULSE Edge; elsewhere: ~/.pulse).
+    /// </summary>
+    public static string ResolveDataDirectory()
+    {
+        // An explicit PULSE_EDGE_DATA_DIR override wins (used by integration tests and by
+        // operators who relocate the data directory).
+        var overrideDir = Environment.GetEnvironmentVariable("PULSE_EDGE_DATA_DIR");
+        if (!string.IsNullOrWhiteSpace(overrideDir))
+            return overrideDir;
+
+        if (OperatingSystem.IsWindows())
+        {
+            var appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            return Path.Combine(appDataFolder, "PULSE Edge");
+        }
+
+        var userFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return Path.Combine(userFolder, ".pulse");
+    }
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (optionsBuilder.IsConfigured) return;
@@ -45,25 +67,7 @@ public class QueueDbContext : DbContext
             return;
         }
 
-        // Default path resolution. An explicit PULSE_EDGE_DATA_DIR override wins (used by
-        // integration tests and by operators who relocate the data directory).
-        var overrideDir = Environment.GetEnvironmentVariable("PULSE_EDGE_DATA_DIR");
-        string pulseFolder;
-        if (!string.IsNullOrWhiteSpace(overrideDir))
-        {
-            pulseFolder = overrideDir;
-        }
-        else if (OperatingSystem.IsWindows())
-        {
-            var appDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-            pulseFolder = Path.Combine(appDataFolder, "PULSE Edge");
-        }
-        else
-        {
-            var userFolder = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            pulseFolder = Path.Combine(userFolder, ".pulse");
-        }
-
+        var pulseFolder = ResolveDataDirectory();
         Directory.CreateDirectory(pulseFolder); // Ensure the folder exists
         var dbPath = Path.Combine(pulseFolder, "edge.db");
 
