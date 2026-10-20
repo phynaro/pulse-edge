@@ -15,10 +15,12 @@ public sealed record ActiveEvent(string Id, DateTime UntilUtc);
 /// <summary>
 /// Runs scenarios: advances counters, analogs and meters on each <see cref="Update"/>, applies presenter
 /// and scheduled events, and persists through <see cref="ScenarioStateStore"/> (at most every 30 s of
-/// scenario time, plus on Dispose). Machine modes, noise and scheduled events are pure functions of time,
+/// scenario time, immediately after draining event requests, plus on Dispose). IO failures in saving or
+/// draining never escape Update: they go to <c>onError</c> (default no-op) and are retried next tick.
+/// Machine modes, noise and scheduled events are pure functions of time,
 /// so a restart resumes the same plant. One lock per scenario.
 /// </summary>
-public sealed class ScenarioEngine(ScenarioStateStore store) : IDisposable
+public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? onError = null) : IDisposable
 {
     private static readonly TimeSpan SaveInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LongGap = TimeSpan.FromMinutes(5);
@@ -31,11 +33,20 @@ public sealed class ScenarioEngine(ScenarioStateStore store) : IDisposable
         var rt = Get(scenarioId);
         lock (rt.Gate)
         {
-            rt.Update(store, nowUtc);
-            if (rt.LastSaveUtc is not { } saved || (nowUtc - saved).Duration() >= SaveInterval)
+            var drained = rt.Update(store, nowUtc, onError);
+            // Save right after a non-empty drain: the requests are gone from disk, so a crash before
+            // the next periodic save would otherwise lose them.
+            if (drained || rt.LastSaveUtc is not { } saved || (nowUtc - saved).Duration() >= SaveInterval)
             {
-                store.Save(scenarioId, rt.Snapshot());
-                rt.LastSaveUtc = nowUtc;
+                try
+                {
+                    store.Save(scenarioId, rt.Snapshot());
+                    rt.LastSaveUtc = nowUtc;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    onError?.Invoke(ex); // LastSaveUtc unchanged: retried on the next tick
+                }
             }
         }
     }
@@ -82,8 +93,10 @@ public sealed class ScenarioEngine(ScenarioStateStore store) : IDisposable
             {
                 if (rt.LastUpdateUtc is null) continue;
                 try { store.Save(id, rt.Snapshot()); }
-                catch (IOException) { /* best effort on shutdown; the last periodic save stands */ }
-                catch (UnauthorizedAccessException) { }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    onError?.Invoke(ex); // best effort on shutdown; the last periodic save stands
+                }
             }
         }
     }
@@ -166,10 +179,21 @@ public sealed class ScenarioEngine(ScenarioStateStore store) : IDisposable
         public ScenarioPersistedState Snapshot() =>
             new(new(_counters), new(_analogs), new(_activeUntil), LastUpdateUtc ?? DateTime.MinValue);
 
-        public void Update(ScenarioStateStore store, DateTime now)
+        /// <summary>Advances the scenario to <paramref name="now"/>; returns true when event requests were drained.</summary>
+        public bool Update(ScenarioStateStore store, DateTime now, Action<Exception>? onError)
         {
             now = AsUtc(now);
-            foreach (var (eventId, requested) in store.DrainEventRequests(Id))
+            IReadOnlyList<(string EventId, DateTime RequestedUtc)> requests;
+            try
+            {
+                requests = store.DrainEventRequests(Id);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                onError?.Invoke(ex); // the requests stay on disk; drained on a later tick
+                requests = [];
+            }
+            foreach (var (eventId, requested) in requests)
             {
                 if (!EventById.TryGetValue(eventId, out var ev)) continue; // unknown id: ignore
                 var until = requested.AddMinutes(ev.DurationMinutes);
@@ -277,6 +301,7 @@ public sealed class ScenarioEngine(ScenarioStateStore store) : IDisposable
             foreach (var k in _activeUntil.Where(kv => kv.Value <= now).Select(kv => kv.Key).ToList())
                 _activeUntil.Remove(k);
             if (last is null || advancing) LastUpdateUtc = now;
+            return requests.Count > 0;
         }
 
         public ScenarioStatus Status(DateTime now)
@@ -339,7 +364,12 @@ public sealed class ScenarioEngine(ScenarioStateStore store) : IDisposable
             {
                 var mode = useCurrent ? _modeNow[f].Mode : EffectiveMode(f, t).Mode;
                 var m = Units[f].Machine!;
-                kw += mode == MachineMode.Running ? m.RunningKw : m.IdleKw;
+                kw += mode switch
+                {
+                    MachineMode.Running => m.RunningKw,
+                    MachineMode.PlannedStop => 0, // switched off outside shifts
+                    _ => m.IdleKw, // Idle and Fault stay energised
+                };
             }
             return kw;
         }

@@ -319,4 +319,103 @@ public sealed class ScenarioEngineTests : IDisposable
         Assert.Equal(DateTimeKind.Utc, back.LastUpdateUtc.Kind);
         Assert.Equal(WeekdayMorning, back.LastUpdateUtc);
     }
+
+    // ---- Fix round 1 ----
+
+    [Fact]
+    public void Store_DrainEmptyExistingFile_LeavesItUntouched()
+    {
+        var dir = NewDir();
+        var store = new ScenarioStateStore(dir);
+        store.RequestEvent(Sid, "htst_temp_drop", WeekdayMorning);
+        Assert.Single(store.DrainEventRequests(Sid));
+        var path = Path.Combine(dir, "simulator", $"{Sid}.events.json");
+        var stamp = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(path, stamp);
+        Assert.Empty(store.DrainEventRequests(Sid));
+        Assert.Equal(stamp, File.GetLastWriteTimeUtc(path));
+    }
+
+    [Fact]
+    public void DrainedEvent_SurvivesCrash_WithoutDispose()
+    {
+        var dir = NewDir();
+        var store = new ScenarioStateStore(dir);
+        var a = new ScenarioEngine(store); // deliberately never disposed: simulates a crash
+        a.Update(Sid, WeekdayMorning); // first update saves
+        store.RequestEvent(Sid, "htst_temp_drop", WeekdayMorning.AddSeconds(1));
+        a.Update(Sid, WeekdayMorning.AddSeconds(1)); // drains, well inside the 30 s throttle
+
+        using var b = new ScenarioEngine(new ScenarioStateStore(dir));
+        b.Update(Sid, WeekdayMorning.AddSeconds(2));
+        Assert.Contains(b.Status(Sid, WeekdayMorning.AddSeconds(2)).ActiveEvents, e => e.Id == "htst_temp_drop");
+    }
+
+    [Fact]
+    public void MachineModel_BucketCache_StaysBounded()
+    {
+        var m = Model("iws1");
+        for (var t = WeekdayMorning; t < WeekdayMorning.AddDays(30); t = t.AddMinutes(1)) m.At(t);
+        Assert.True(m.CachedBucketCount <= 6, $"cached={m.CachedBucketCount}");
+        // eviction must not change results
+        var fresh = Model("iws1");
+        for (var t = WeekdayMorning; t < WeekdayMorning.AddDays(2); t = t.AddSeconds(37))
+            Assert.Equal(fresh.At(t), m.At(t));
+        Assert.True(m.ProducedBetween(WeekdayMorning, WeekdayMorning.AddHours(3)) ==
+                    fresh.ProducedBetween(WeekdayMorning, WeekdayMorning.AddHours(3)));
+    }
+
+    [Fact]
+    public void Meter_PlannedStopDrawsNothing()
+    {
+        using var a = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        a.Update(Sid, Sunday);
+        var baseKw = Def.Units.Single(u => u.Id == "m_iws1").Meter!.BaseKw;
+        Assert.Equal(baseKw, a.Read(Sid, "m_iws1.kw"), 6);
+        var sundayMain = a.Read(Sid, "m_main.kw");
+
+        using var b = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        b.Update(Sid, FindRunning(b, "iws1", TimeSpan.Zero, TimeSpan.Zero, null));
+        var weekdayMain = b.Read(Sid, "m_main.kw");
+        Assert.True(sundayMain < 0.6 * weekdayMain, $"sunday={sundayMain} weekday={weekdayMain}");
+    }
+
+    [Fact]
+    public void Update_SaveFailure_DoesNotThrow_AndCleansTemp()
+    {
+        var dir = NewDir();
+        var sim = Path.Combine(dir, "simulator");
+        Directory.CreateDirectory(Path.Combine(sim, $"{Sid}.state.json")); // a directory where the file goes: Move fails
+        var errors = new List<Exception>();
+        using var engine = new ScenarioEngine(new ScenarioStateStore(dir), errors.Add);
+        var t = FindRunning(engine, "iws1", TimeSpan.Zero, TimeSpan.FromMinutes(2), "iws1_film_jam");
+        engine.Update(Sid, t);
+        var g0 = engine.Read(Sid, "iws1.good_count");
+        engine.Update(Sid, t.AddSeconds(1)); // retried: the failed save didn't count as saved
+        engine.Update(Sid, t.AddMinutes(2));
+        Assert.True(engine.Read(Sid, "iws1.good_count") > g0);
+        Assert.True(errors.Count >= 2, $"errors={errors.Count}");
+        Assert.Empty(Directory.GetFiles(sim, "*.tmp"));
+    }
+
+    [Fact]
+    public void Update_DrainFailure_DoesNotThrow_AndRetriesNextTick()
+    {
+        var dir = NewDir();
+        var store = new ScenarioStateStore(dir) { LockTimeout = TimeSpan.FromMilliseconds(50) };
+        var errors = new List<Exception>();
+        using var engine = new ScenarioEngine(store, errors.Add);
+        var t = FindRunning(engine, "htst1", TimeSpan.Zero, TimeSpan.FromMinutes(1), "htst_temp_drop");
+        engine.Update(Sid, t);
+        store.RequestEvent(Sid, "htst_temp_drop", t);
+        var path = Path.Combine(dir, "simulator", $"{Sid}.events.json");
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            engine.Update(Sid, t.AddSeconds(1)); // drain blocked by another holder
+        }
+        Assert.NotEmpty(errors);
+        Assert.DoesNotContain(engine.Status(Sid, t.AddSeconds(1)).ActiveEvents, e => e.Id == "htst_temp_drop");
+        engine.Update(Sid, t.AddSeconds(2));
+        Assert.Contains(engine.Status(Sid, t.AddSeconds(2)).ActiveEvents, e => e.Id == "htst_temp_drop");
+    }
 }

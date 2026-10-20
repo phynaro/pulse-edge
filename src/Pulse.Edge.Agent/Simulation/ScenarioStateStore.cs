@@ -22,7 +22,10 @@ public sealed class ScenarioStateStore(string directory)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private static readonly ConcurrentDictionary<string, object> PathLocks = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>How long to retry opening the events file while another process holds it (holds last milliseconds;
+    /// kept short because a blocked drain delays the 1 Hz Update). Settable for tests.</summary>
+    public TimeSpan LockTimeout { get; init; } = TimeSpan.FromSeconds(2);
 
     private readonly string _dir = Path.Combine(Path.GetFullPath(directory), "simulator");
 
@@ -56,8 +59,16 @@ public sealed class ScenarioStateStore(string directory)
         Directory.CreateDirectory(_dir);
         var path = StatePath(scenarioId);
         var tmp = $"{path}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(s, Json));
-        File.Move(tmp, path, overwrite: true);
+        try
+        {
+            File.WriteAllText(tmp, JsonSerializer.Serialize(s, Json));
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
     }
 
     public void RequestEvent(string scenarioId, string eventId, DateTime requestedUtc)
@@ -78,6 +89,8 @@ public sealed class ScenarioStateStore(string directory)
         if (!File.Exists(EventsPath(scenarioId))) return [];
         var text = WithEventsFile(scenarioId, fs =>
         {
+            // Empty queue (the usual case, every tick): touch nothing, no write, no fsync.
+            if (fs.Length == 0) return "";
             fs.Seek(0, SeekOrigin.Begin);
             using var ms = new MemoryStream();
             fs.CopyTo(ms);
@@ -86,6 +99,7 @@ public sealed class ScenarioStateStore(string directory)
             return Encoding.UTF8.GetString(ms.ToArray());
         });
 
+        if (text.Length == 0) return [];
         var result = new List<(string, DateTime)>();
         foreach (var raw in text.Split('\n'))
         {

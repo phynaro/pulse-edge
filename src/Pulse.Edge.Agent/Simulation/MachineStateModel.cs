@@ -42,6 +42,9 @@ public sealed class MachineStateModel(string scenarioId, UnitDefinition unit, Sh
         return int.Parse(parts[0], CultureInfo.InvariantCulture) * 60 + int.Parse(parts[1], CultureInfo.InvariantCulture);
     }
 
+    /// <summary>Hour buckets currently cached. Public (not internal) for test access — InternalsVisibleTo collides with the hosts' implicit Program types (CS0433).</summary>
+    public int CachedBucketCount => _buckets.Count;
+
     public MachineSnapshot At(DateTime utc)
     {
         var ticks = utc.Ticks;
@@ -107,7 +110,24 @@ public sealed class MachineStateModel(string scenarioId, UnitDefinition unit, Sh
     private long HourIndex(long utcTicks) =>
         (long)Math.Floor((double)(utcTicks + utcOffset.Ticks) / TimeSpan.TicksPerHour);
 
-    private Bucket GetBucket(long hourIndex) => _buckets.GetOrAdd(hourIndex, Build);
+    private long _maxHour = long.MinValue;
+
+    /// <summary>
+    /// Cached bucket lookup. Whenever a later hour than any seen before is queried, buckets older than
+    /// the lookback window behind it are evicted, so a long-lived model holds a handful of buckets.
+    /// Build is pure, so an evicted bucket that is queried again is rebuilt identically.
+    /// </summary>
+    private Bucket GetBucket(long hourIndex)
+    {
+        var max = Interlocked.Read(ref _maxHour);
+        if (hourIndex > max && Interlocked.CompareExchange(ref _maxHour, hourIndex, max) == max)
+        {
+            var keepFrom = hourIndex - LookbackBuckets - 1;
+            foreach (var key in _buckets.Keys)
+                if (key < keepFrom) _buckets.TryRemove(key, out _);
+        }
+        return _buckets.GetOrAdd(hourIndex, Build);
+    }
 
     private Bucket Build(long hourIndex)
     {
