@@ -102,6 +102,40 @@ public sealed class SimulatorScenarioPollerTests : IDisposable
         Assert.Null(dp.LastError);
     }
 
+    private sealed class CapturingLogger : Microsoft.Extensions.Logging.ILogger<SimulatorDriverPoller>
+    {
+        public readonly List<string> Errors = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == Microsoft.Extensions.Logging.LogLevel.Error) lock (Errors) Errors.Add(formatter(state, exception));
+        }
+    }
+
+    [Fact]
+    public async Task ScenarioError_IsLoggedAgain_AfterASuccessfulPoll()
+    {
+        var logger = new CapturingLogger();
+        var poller = new SimulatorDriverPoller(logger, new SimulatorDriver(), new QueueStorageService(), _engine);
+        var adapter = Adapter("""{"Template":"scenario","Scenario":"no-such-scenario"}""");
+        var dp = Dp(adapter, "iws1.good_count");
+        int ScenarioErrors() => logger.Errors.Count(e => e.Contains("could not be loaded"));
+
+        await poller.PollGroupAsync([dp], adapter, WeekdayMorning, [], CancellationToken.None);
+        await poller.PollGroupAsync([dp], adapter, WeekdayMorning.AddSeconds(1), [], CancellationToken.None);
+        Assert.Equal(1, ScenarioErrors()); // logged once, not every tick
+
+        adapter.ConfigJson = """{"Template":"scenario","Scenario":"integra-dairy"}""";
+        await poller.PollGroupAsync([dp], adapter, WeekdayMorning.AddSeconds(2), [], CancellationToken.None);
+        Assert.Equal(1, ScenarioErrors());
+
+        adapter.ConfigJson = """{"Template":"scenario","Scenario":"no-such-scenario"}""";
+        await poller.PollGroupAsync([dp], adapter, WeekdayMorning.AddSeconds(3), [], CancellationToken.None);
+        Assert.Equal(2, ScenarioErrors());
+    }
+
     [Fact]
     public async Task ProductionTemplate_Unchanged()
     {

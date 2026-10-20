@@ -104,7 +104,11 @@ public class SimulatorDriverPoller : IProtocolDriver
                     scenarioError = $"Scenario '{scenarioId}' could not be loaded: {ex.Message}";
                 }
             }
-            if (scenarioError != null && _scenarioErrorLogged.TryAdd(adapterId, true))
+            if (scenarioError == null)
+            {
+                _scenarioErrorLogged.TryRemove(adapterId, out _); // a later failure is logged again
+            }
+            else if (_scenarioErrorLogged.TryAdd(adapterId, true))
             {
                 _logger.LogError("Simulator adapter {AdapterId}: {Error}", adapterId, scenarioError);
             }

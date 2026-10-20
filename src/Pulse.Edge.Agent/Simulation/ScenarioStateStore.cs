@@ -13,7 +13,8 @@ public sealed record ScenarioPersistedState(
 
 /// <summary>
 /// File persistence for scenarios under <c>&lt;directory&gt;/simulator/</c>:
-/// <c>&lt;id&gt;.state.json</c> (atomic temp-file + rename) and <c>&lt;id&gt;.events.json</c>
+/// <c>&lt;id&gt;.state.json</c> (temp file fsynced, then renamed over it; the previous state is kept as
+/// <c>&lt;id&gt;.state.json.bak</c>) and <c>&lt;id&gt;.events.json</c>
 /// (append-only JSON lines of presenter event requests). The events file is opened exclusively
 /// (FileShare.None, retried) for both append and drain, so requests from another process
 /// (split mode) are never lost between the drain's read and its truncate.
@@ -32,25 +33,45 @@ public sealed class ScenarioStateStore(string directory)
     private sealed record EventLine(string EventId, DateTime RequestedUtc);
 
     private string StatePath(string scenarioId) => Path.Combine(_dir, $"{scenarioId}.state.json");
+    private string BackupPath(string scenarioId) => StatePath(scenarioId) + ".bak";
     private string EventsPath(string scenarioId) => Path.Combine(_dir, $"{scenarioId}.events.json");
 
-    public ScenarioPersistedState? Load(string scenarioId)
+    /// <summary>
+    /// The saved state, or null when there is none. A corrupt or empty state file is moved aside as
+    /// <c>&lt;id&gt;.state.json.corrupt-&lt;utc&gt;</c> and reported through <paramref name="onError"/>; then the
+    /// <c>.bak</c> is tried. IO errors (e.g. the file is locked) propagate so the caller can retry.
+    /// </summary>
+    public ScenarioPersistedState? Load(string scenarioId, Action<Exception>? onError = null) =>
+        TryLoad(StatePath(scenarioId), onError) ?? TryLoad(BackupPath(scenarioId), onError);
+
+    private static ScenarioPersistedState? TryLoad(string path, Action<Exception>? onError)
     {
-        var path = StatePath(scenarioId);
         if (!File.Exists(path)) return null;
+        var text = File.ReadAllText(path);
         try
         {
-            var s = JsonSerializer.Deserialize<ScenarioPersistedState>(File.ReadAllText(path), Json);
-            if (s is null) return null;
+            if (string.IsNullOrWhiteSpace(text)) throw new JsonException("the file is empty");
+            var s = JsonSerializer.Deserialize<ScenarioPersistedState>(text, Json)
+                ?? throw new JsonException("the file holds no state");
             return new ScenarioPersistedState(
                 s.Counters ?? [],
                 s.Analogs ?? [],
                 (s.ActiveEventsUntil ?? []).ToDictionary(kv => kv.Key, kv => AsUtc(kv.Value)),
                 AsUtc(s.LastUpdateUtc));
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            return null; // a corrupt state file restarts the scenario rather than crashing the host
+            var aside = $"{path}.corrupt-{DateTime.UtcNow:yyyyMMddTHHmmssfffZ}";
+            try
+            {
+                File.Move(path, aside);
+            }
+            catch (Exception moveEx) when (moveEx is IOException or UnauthorizedAccessException)
+            {
+                aside = $"(could not move it aside: {moveEx.Message})";
+            }
+            onError?.Invoke(new InvalidDataException($"Scenario state file '{path}' is corrupt ({ex.Message}); moved to {aside}.", ex));
+            return null;
         }
     }
 
@@ -61,7 +82,14 @@ public sealed class ScenarioStateStore(string directory)
         var tmp = $"{path}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
         try
         {
-            File.WriteAllText(tmp, JsonSerializer.Serialize(s, Json));
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(s, Json);
+            using (var fs = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                fs.Write(bytes);
+                fs.Flush(flushToDisk: true); // the bytes are on disk before the rename makes them the state
+            }
+            // Keep the previous state: the main file stays in place until the rename replaces it.
+            if (File.Exists(path)) File.Copy(path, BackupPath(scenarioId), overwrite: true);
             File.Move(tmp, path, overwrite: true);
         }
         catch

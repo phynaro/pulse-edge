@@ -87,13 +87,13 @@ public sealed class ScenarioEngineTests : IDisposable
     public void Analog_WithMin_NeverReadsBelowIt_WhileItsMachineIsStopped()
     {
         // Real path: wwt1_flow (Min 0, stopped value 0, noise sd 0.8) follows wwt1. Find the first instant
-        // wwt1 is not Running, start a fresh engine there (an analog starts settled at its stopped value),
+        // wwt1 is faulted or in planned stop, start a fresh engine there (an analog starts settled at its stopped value),
         // then run one hour at 1 s steps.
         Assert.Equal(0, Def.Units.Single(u => u.Id == "wwt1_flow").Analog!.Min);
         var m = Model("wwt1");
         DateTime? stopped = null;
         for (var t = WeekdayMorning; t < WeekdayMorning.AddDays(60) && stopped is null; t = t.AddMinutes(1))
-            if (m.At(t).Mode != MachineMode.Running) stopped = t;
+            if (m.At(t).Mode is MachineMode.Fault or MachineMode.PlannedStop) stopped = t; // Idle keeps the flow (R11)
         Assert.NotNull(stopped);
 
         using var engine = new ScenarioEngine(new ScenarioStateStore(NewDir()));
@@ -443,5 +443,242 @@ public sealed class ScenarioEngineTests : IDisposable
         Assert.DoesNotContain(engine.Status(Sid, t.AddSeconds(1)).ActiveEvents, e => e.Id == "htst_temp_drop");
         engine.Update(Sid, t.AddSeconds(2));
         Assert.Contains(engine.Status(Sid, t.AddSeconds(2)).ActiveEvents, e => e.Id == "htst_temp_drop");
+    }
+
+    // ---- Final fix wave ----
+
+    private static string StateFile(string dir) => Path.Combine(dir, "simulator", $"{Sid}.state.json");
+
+    private static ScenarioPersistedState StateWith(double good, DateTime at) =>
+        new(new() { ["iws1.good_count"] = good }, [], [], at);
+
+    [Fact]
+    public void Analog_StaysHot_DuringIdleMicroStop()
+    {
+        // R11: a 20-90 s micro-stop (Idle) must not cool the pasteuriser; only Fault and PlannedStop do.
+        var m = Model("htst1");
+        using var probe = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        DateTime? idleStart = null;
+        for (var day = 0; day < 60 && idleStart is null; day++)
+        {
+            var dayStart = WeekdayMorning.AddDays(day);
+            if ((dayStart + Offset).DayOfWeek == DayOfWeek.Sunday) continue;
+            for (var t = dayStart; t < dayStart.AddHours(10); t = t.AddSeconds(5))
+            {
+                if (m.At(t).Mode != MachineMode.Idle) continue;
+                var s = t;
+                while (m.At(s.AddSeconds(-1)).Mode == MachineMode.Idle) s = s.AddSeconds(-1);
+                if (RunningThroughout(m, s.AddMinutes(-5), s.AddSeconds(-1))
+                    && NoScheduled(probe, "htst_temp_drop", s.AddMinutes(-5), s.AddMinutes(3)))
+                {
+                    idleStart = s;
+                    break;
+                }
+                t = t.AddMinutes(2);
+            }
+        }
+        Assert.NotNull(idleStart);
+
+        using var engine = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        var idleSamples = 0;
+        Step(engine, idleStart.Value.AddMinutes(-5), idleStart.Value.AddMinutes(2), now =>
+        {
+            if (m.At(now).Mode != MachineMode.Idle) return;
+            idleSamples++;
+            var v = engine.Read(Sid, "htst1_outlet.value");
+            Assert.True(v >= 70, $"htst1_outlet fell to {v} during a micro-stop at {now:O}");
+        });
+        Assert.True(idleSamples >= 20, $"only {idleSamples} idle samples");
+    }
+
+    [Fact]
+    public void Meter_Current_FollowsLoad()
+    {
+        Assert.Equal(["kw", "kwh", "pf", "current"], ScenarioCatalog.SignalsOf(Def.Units.Single(u => u.Id == "m_main")));
+        Assert.DoesNotContain(Def.Units, u => u.Id == "m_main_current");
+        Assert.Equal(400, Def.Units.Single(u => u.Id == "m_main_voltage").Ambient!.Center);
+
+        using var probe = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        var running = FindRunning(probe, "iws1", TimeSpan.Zero, TimeSpan.Zero, null);
+        using var b = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        b.Update(Sid, running);
+        var kw = b.Read(Sid, "m_main.kw");
+        var pf = b.Read(Sid, "m_main.pf");
+        var expected = kw * 1000 / (Math.Sqrt(3) * 400 * pf);
+        var weekday = b.Read(Sid, "m_main.current");
+        Assert.InRange(weekday, expected * 0.98, expected * 1.02);
+
+        using var a = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        a.Update(Sid, Sunday);
+        // m_main keeps the 24/7 utilities on Sunday (and a lower pf at low load); m_iws1 drops to its base load.
+        var sunday = a.Read(Sid, "m_main.current");
+        Assert.True(sunday > 0 && sunday < 0.75 * weekday, $"m_main sunday={sunday} weekday={weekday}");
+        var iwsSunday = a.Read(Sid, "m_iws1.current");
+        var iwsWeekday = b.Read(Sid, "m_iws1.current");
+        Assert.True(iwsSunday > 0 && iwsSunday < 0.2 * iwsWeekday, $"m_iws1 sunday={iwsSunday} weekday={iwsWeekday}");
+    }
+
+    [Fact]
+    public void Store_CorruptState_FallsBackToBak_AndMovesItAside()
+    {
+        var dir = NewDir();
+        var store = new ScenarioStateStore(dir);
+        store.Save(Sid, StateWith(111, WeekdayMorning));
+        store.Save(Sid, StateWith(222, WeekdayMorning.AddMinutes(1))); // the first save becomes the .bak
+        Assert.True(File.Exists(StateFile(dir) + ".bak"));
+        File.WriteAllText(StateFile(dir), "{\"counters\":{\"iws1.good_co"); // torn write
+
+        var errors = new List<Exception>();
+        var back = store.Load(Sid, errors.Add);
+
+        Assert.NotNull(back);
+        Assert.Equal(111, back.Counters["iws1.good_count"]);
+        Assert.False(File.Exists(StateFile(dir)));
+        Assert.Single(Directory.GetFiles(Path.Combine(dir, "simulator"), $"{Sid}.state.json.corrupt-*"));
+        Assert.Contains(errors, e => e is InvalidDataException);
+    }
+
+    [Fact]
+    public void Store_EmptyState_NoBak_StartsFresh_AndReports()
+    {
+        var dir = NewDir();
+        var store = new ScenarioStateStore(dir);
+        Directory.CreateDirectory(Path.Combine(dir, "simulator"));
+        File.WriteAllText(StateFile(dir), "");
+        var errors = new List<Exception>();
+        Assert.Null(store.Load(Sid, errors.Add));
+        Assert.Single(errors);
+        Assert.Single(Directory.GetFiles(Path.Combine(dir, "simulator"), $"{Sid}.state.json.corrupt-*"));
+    }
+
+    [Fact]
+    public void Store_Save_KeepsPreviousAsBak()
+    {
+        var dir = NewDir();
+        var store = new ScenarioStateStore(dir);
+        store.Save(Sid, StateWith(1, WeekdayMorning));
+        Assert.False(File.Exists(StateFile(dir) + ".bak")); // nothing to keep yet
+        store.Save(Sid, StateWith(2, WeekdayMorning.AddMinutes(1)));
+        Assert.Contains("\"iws1.good_count\":1", File.ReadAllText(StateFile(dir) + ".bak"));
+        Assert.Contains("\"iws1.good_count\":2", File.ReadAllText(StateFile(dir)));
+        Assert.Empty(Directory.GetFiles(Path.Combine(dir, "simulator"), "*.tmp"));
+    }
+
+    [Fact]
+    public void Engine_CorruptState_ResumesFromBak()
+    {
+        var dir = NewDir();
+        var store = new ScenarioStateStore(dir);
+        store.Save(Sid, StateWith(50_000, WeekdayMorning));
+        store.Save(Sid, StateWith(60_000, WeekdayMorning));
+        File.WriteAllText(StateFile(dir), "not json");
+        var errors = new List<Exception>();
+        using var engine = new ScenarioEngine(new ScenarioStateStore(dir), errors.Add);
+        engine.Update(Sid, WeekdayMorning.AddSeconds(1));
+        Assert.True(engine.Read(Sid, "iws1.good_count") >= 50_000);
+        Assert.Contains(errors, e => e is InvalidDataException);
+    }
+
+    [Fact]
+    public void Gap_OverSevenDays_CatchesUpOnlyTheLastSevenDays()
+    {
+        // htst1 has no force_fault events, so its production is exactly the model's ProducedBetween.
+        var errors = new List<Exception>();
+        using var engine = new ScenarioEngine(new ScenarioStateStore(NewDir()), errors.Add);
+        var t0 = WeekdayMorning;
+        var t1 = t0.AddDays(30);
+        engine.Update(Sid, t0);
+        var g0 = engine.Read(Sid, "htst1.good_count");
+
+        var sw = Stopwatch.StartNew();
+        engine.Update(Sid, t1);
+        sw.Stop();
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5), $"30-day catch-up took {sw.Elapsed}");
+
+        var expected = Model("htst1").ProducedBetween(t1 - ScenarioEngine.MaxCatchUp, t1) * (1 - 0.002);
+        Assert.True(expected > 100_000, $"expected={expected}");
+        Assert.InRange(engine.Read(Sid, "htst1.good_count") - g0, expected - 1, expected + 1);
+        Assert.Contains(errors, e => e is ScenarioNotice);
+        Assert.DoesNotContain(errors, e => e is not ScenarioNotice);
+    }
+
+    [Fact]
+    public void BackwardsClockJump_NeverDecreasesACounter()
+    {
+        var counters = Def.Units
+            .SelectMany(u => ScenarioCatalog.SignalsOf(u)
+                .Where(s => s is "good_count" or "reject_count" or "kwh")
+                .Select(s => $"{u.Id}.{s}"))
+            .ToArray();
+        using var engine = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        var t = WeekdayMorning;
+        engine.Update(Sid, t);
+        engine.Update(Sid, t.AddMinutes(30));
+        var before = counters.Select(c => engine.Read(Sid, c)).ToArray();
+
+        var back = t.AddMinutes(10);
+        engine.Update(Sid, back); // the clock went back 20 minutes
+        var after = counters.Select(c => engine.Read(Sid, c)).ToArray();
+        for (var i = 0; i < counters.Length; i++)
+            Assert.True(after[i] >= before[i], $"{counters[i]} went {before[i]} -> {after[i]}");
+        Assert.Equal(Model("htst1").At(back).Mode.ToString(),
+            engine.Status(Sid, back).Units.Single(u => u.Id == "htst1").Mode);
+
+        engine.Update(Sid, back.AddMinutes(5)); // production resumes from the new clock
+        Assert.True(engine.Read(Sid, "m_main.kwh") > after[Array.IndexOf(counters, "m_main.kwh")]);
+        for (var i = 0; i < counters.Length; i++)
+            Assert.True(engine.Read(Sid, counters[i]) >= after[i], counters[i]);
+    }
+
+    [Fact]
+    public void Load_IoFailureOnce_IsRetriedOnTheNextUpdate()
+    {
+        var dir = NewDir();
+        new ScenarioStateStore(dir).Save(Sid, StateWith(70_000, WeekdayMorning));
+        var errors = new List<Exception>();
+        using var engine = new ScenarioEngine(new ScenarioStateStore(dir), errors.Add);
+        using (new FileStream(StateFile(dir), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            engine.Update(Sid, WeekdayMorning.AddSeconds(1)); // load fails: reported, not thrown
+        }
+        Assert.Contains(errors, e => e is IOException);
+
+        engine.Update(Sid, WeekdayMorning.AddSeconds(2));
+        Assert.True(engine.Read(Sid, "iws1.good_count") >= 70_000, "the retried load must pick up the saved counters");
+    }
+
+    [Fact]
+    public void UnknownScenario_NeverCreatesARuntime()
+    {
+        using var engine = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        for (var i = 0; i < 5; i++)
+        {
+            Assert.Throws<KeyNotFoundException>(() => engine.Update($"nope-{i}", WeekdayMorning));
+            Assert.Throws<KeyNotFoundException>(() => engine.Read($"nope-{i}", "iws1.state"));
+        }
+        Assert.Equal(0, engine.RuntimeCount);
+        engine.Update(Sid, WeekdayMorning);
+        Assert.Equal(1, engine.RuntimeCount);
+    }
+
+    [Fact]
+    public void Update_TenTimesWithinASecond_IsOneStep()
+    {
+        string[] addrs = ["iws1.good_count", "htst1.good_count", "m_main.kwh", "m_iws1.kwh"];
+        using var probe = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        var t = FindRunning(probe, "iws1", TimeSpan.Zero, TimeSpan.FromSeconds(5), null);
+
+        using var single = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        single.Update(Sid, t);
+        single.Update(Sid, t.AddSeconds(1));
+
+        using var many = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        many.Update(Sid, t);
+        for (var k = 0; k < 10; k++) many.Update(Sid, t.AddSeconds(1).AddMilliseconds(k * 95));
+
+        foreach (var a in addrs) Assert.Equal(single.Read(Sid, a), many.Read(Sid, a));
+
+        many.Update(Sid, t.AddSeconds(2)); // a full second later the next step applies
+        Assert.True(many.Read(Sid, "m_main.kwh") > single.Read(Sid, "m_main.kwh"));
     }
 }

@@ -83,6 +83,34 @@ public class MachineStateModelTests
         Assert.InRange(m.ProducedBetween(a, b) + m.ProducedBetween(b, c) - whole, -1, 1);
     }
 
+    [Theory]
+    [InlineData("iws1")] // follows shifts, frequent micro-stops
+    [InlineData("blr1")] // 24/7 utility
+    [InlineData("htst1")]
+    public void ProducedBetween_EqualsPerSecondCount(string unitId)
+    {
+        // The interval-based count must equal probing At() at every whole second, including odd sub-second ends
+        // and windows that cross shift changes, Sunday and hour boundaries.
+        var unit = ScenarioCatalog.Load(ScenarioId).Units.Single(u => u.Id == unitId);
+        var m = Model(unitId);
+        double BruteForce(DateTime from, DateTime to)
+        {
+            const long perSec = TimeSpan.TicksPerSecond;
+            long running = 0;
+            for (var s = (from.Ticks + perSec - 1) / perSec; s < (to.Ticks + perSec - 1) / perSec; s++)
+                if (m.At(new DateTime(s * perSec, DateTimeKind.Utc)).Mode == MachineMode.Running) running++;
+            return running * unit.Machine!.RatePerMin / 60.0;
+        }
+        var from0 = Start.AddMilliseconds(437);
+        Assert.Equal(BruteForce(from0, from0.AddDays(6).AddMilliseconds(250)), m.ProducedBetween(from0, from0.AddDays(6).AddMilliseconds(250)));
+        for (var i = 0; i < 200; i++)
+        {
+            var f = Start.AddSeconds(i * 2671.3);
+            var t = f.AddSeconds(1 + i * 37.9);
+            Assert.Equal(BruteForce(f, t), m.ProducedBetween(f, t));
+        }
+    }
+
     [Fact]
     public void ProducedBetween_ThirtyDays_FinishesQuickly()
     {
