@@ -1,16 +1,48 @@
-import { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import type { DriverAdapter } from '../../types';
 import type { useToast } from '../../hooks/useToast';
 import CustomSelect from '../CustomSelect';
 import ModalShell from '../ModalShell';
+import type { ScenarioCatalogEntry } from '../ProtocolsTab/ScenarioPanel';
+
+const SCENARIO_KIND_LABELS: Record<string, string> = {
+  machine: 'Machines',
+  meter: 'Meters',
+  analog: 'Analog sensors',
+  ambient: 'Ambient',
+};
+const SCENARIO_KIND_ORDER = ['machine', 'meter', 'analog', 'ambient'];
+
+function scenarioDataType(signal: string): string {
+  if (signal === 'state' || signal === 'fault') return 'Boolean';
+  if (signal === 'good_count' || signal === 'reject_count') return 'UInt32';
+  if (signal === 'fault_code') return 'Int32';
+  return 'Double';
+}
+
+function scenarioVariables(scenario: ScenarioCatalogEntry): SimulatorVariable[] {
+  const rank = (k: string) => { const i = SCENARIO_KIND_ORDER.indexOf(k); return i < 0 ? SCENARIO_KIND_ORDER.length : i; };
+  return [...scenario.units]
+    .sort((a, b) => rank(a.kind) - rank(b.kind))
+    .flatMap(u => u.signals.map(signal => ({
+      address: `${u.id}.${signal}`,
+      name: signal,
+      category: 'scenario' as const,
+      categoryLabel: SCENARIO_KIND_LABELS[u.kind] ?? u.kind,
+      dataType: scenarioDataType(signal),
+      unit: '',
+      description: `${scenario.name} - ${u.id} ${signal}`,
+      scanIntervalMs: 1000,
+    })));
+}
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 
 export interface SimulatorVariable {
   address: string;
   name: string;
-  category: 'energy' | 'production';
+  category: 'energy' | 'production' | 'scenario';
   categoryLabel: string;
   dataType: string;
   unit: string;
@@ -169,29 +201,54 @@ export default function SimulatorBrowserModal({
   const activeAdapter = adapters.find(a => a.id === adapterId);
 
   // Parse template from activeAdapter configJson
-  let template: 'energy' | 'production' = 'energy';
+  let template: 'energy' | 'production' | 'scenario' = 'energy';
+  let scenarioId = '';
   if (activeAdapter && activeAdapter.configJson) {
     try {
       const config = JSON.parse(activeAdapter.configJson);
-      if ((config.Template || '').toLowerCase() === 'production') {
+      const tpl = String(config.Template || '').toLowerCase();
+      if (tpl === 'production') {
         template = 'production';
+      } else if (tpl === 'scenario') {
+        template = 'scenario';
+        scenarioId = String(config.Scenario || '');
       }
     } catch {
       template = 'energy';
     }
   }
 
+  const [scenarioVars, setScenarioVars] = useState<SimulatorVariable[]>([]);
+  const [scenarioError, setScenarioError] = useState(false);
+  useEffect(() => {
+    if (!isOpen || template !== 'scenario') return;
+    let cancelled = false;
+    fetch('/api/simulator/scenarios')
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+      .then((all: ScenarioCatalogEntry[]) => {
+        if (cancelled) return;
+        setScenarioError(false);
+        const found = all.find(s => s.id === scenarioId);
+        setScenarioVars(found ? scenarioVariables(found) : []);
+      })
+      .catch(() => { if (!cancelled) setScenarioError(true); });
+    return () => { cancelled = true; };
+  }, [isOpen, template, scenarioId]);
+
   if (!isOpen) return null;
 
   // Show ONLY the variables belonging to the currently selected adapter's template
-  const adapterVariables = SIMULATOR_VARIABLES.filter(v => v.category === template);
+  const adapterVariables = template === 'scenario'
+    ? scenarioVars
+    : SIMULATOR_VARIABLES.filter(v => v.category === template);
 
   const filteredVariables = adapterVariables.filter(v => {
     const term = searchTerm.trim().toLowerCase();
     return !term ||
       v.address.toLowerCase().includes(term) ||
       v.name.toLowerCase().includes(term) ||
-      v.description.toLowerCase().includes(term);
+      v.description.toLowerCase().includes(term) ||
+      v.categoryLabel.toLowerCase().includes(term);
   });
 
   const handleToggleVariable = (v: SimulatorVariable) => {
@@ -315,7 +372,7 @@ export default function SimulatorBrowserModal({
       title="Browse Protocol Simulator Variables"
       subtitle={
         step === 1
-          ? `Select simulated variables for ${activeAdapter?.name || 'Adapter'} (${template === 'energy' ? 'Power & Energy Template' : 'Production & Machine State Template'}).`
+          ? `Select simulated variables for ${activeAdapter?.name || 'Adapter'} (${template === 'energy' ? 'Power & Energy Template' : template === 'scenario' ? 'Scenario Template' : 'Production & Machine State Template'}).`
           : 'Configure tag attributes and polling frequency for selected simulator variables.'
       }
       size="browser"
@@ -331,7 +388,7 @@ export default function SimulatorBrowserModal({
             {activeAdapter?.name || 'Simulator Adapter'}
           </span>
           <span className="badge success badge-protocol" style={{ textTransform: 'capitalize', fontSize: '10px' }}>
-            {template === 'energy' ? '⚡ Power & Energy Template' : '⚙️ Production Template'}
+            {template === 'energy' ? '⚡ Power & Energy Template' : template === 'scenario' ? '🏭 Scenario Template' : '⚙️ Production Template'}
           </span>
         </div>
       </div>
@@ -365,14 +422,20 @@ export default function SimulatorBrowserModal({
             <div className="browser-node-list" style={{ flex: 1, overflowY: 'auto' }}>
               {filteredVariables.length === 0 ? (
                 <div style={{ padding: '24px', textAlign: 'center', opacity: 0.6, fontSize: '13px' }}>
-                  No matching simulator variables found for this adapter.
+                  {scenarioError ? 'Could not load the scenario catalog.' : 'No matching simulator variables found for this adapter.'}
                 </div>
               ) : (
-                filteredVariables.map((v) => {
+                filteredVariables.map((v, i) => {
                   const isSelected = !!selectedVariables[v.address];
+                  const showGroup = template === 'scenario' && (i === 0 || filteredVariables[i - 1].categoryLabel !== v.categoryLabel);
                   return (
+                    <React.Fragment key={v.address}>
+                    {showGroup && (
+                      <div className="browser-section-label" style={{ padding: '6px 12px', position: 'sticky', top: 0, background: 'var(--surface-color, #fff)' }}>
+                        {v.categoryLabel}
+                      </div>
+                    )}
                     <div
-                      key={v.address}
                       onClick={() => handleToggleVariable(v)}
                       className={`browser-node-item${isSelected ? ' is-selected' : ''}`}
                       style={{ cursor: 'pointer' }}
@@ -399,6 +462,7 @@ export default function SimulatorBrowserModal({
                         </div>
                       </div>
                     </div>
+                    </React.Fragment>
                   );
                 })
               )}

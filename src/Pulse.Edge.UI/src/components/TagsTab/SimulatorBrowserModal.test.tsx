@@ -107,6 +107,32 @@ describe('SimulatorBrowserModal', () => {
     fireEvent.click(screen.getByText(/Next Step →/i));
     expect(screen.getByText('Step 2: Configure Tag Names & Polling Interval')).toBeInTheDocument();
   });
+  it('lists unit.signal tags with mapped data types for a scenario adapter', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, [{
+      id: 'integra-dairy', name: 'Integra Dairy', events: [],
+      units: [
+        { id: 'filler-1', kind: 'machine', signals: ['state', 'good_count', 'fault_code', 'speed'] },
+        { id: 'chiller-1', kind: 'analog', signals: ['value'] },
+      ],
+    }])));
+    const adapters: DriverAdapter[] = [{ ...mockAdapters[0], id: 'adp-sc', configJson: JSON.stringify({ Template: 'scenario', Scenario: 'integra-dairy' }) }];
+    render(<SimulatorBrowserModal isOpen={true} onClose={vi.fn()} adapterId='adp-sc' adapters={adapters} toast={mockToast} />);
+
+    expect(await screen.findByText('filler-1.state')).toBeInTheDocument();
+    expect(screen.getByText('chiller-1.value')).toBeInTheDocument();
+    expect(screen.queryByText('Voltage')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText(/Filter variables by name/i), { target: { value: 'chiller' } });
+    expect(screen.queryByText('filler-1.state')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText(/Filter variables by name/i), { target: { value: '' } });
+    fireEvent.click(screen.getByText('Select All'));
+    fireEvent.click(screen.getByText(/Next Step →/i));
+    expect(screen.getByDisplayValue('filler-1.state')).toBeInTheDocument();
+    expect(screen.getAllByText('Boolean')).toHaveLength(1);
+    expect(screen.getAllByText('UInt32')).toHaveLength(1);
+    expect(screen.getAllByText('Int32')).toHaveLength(1);
+    expect(screen.getAllByText('Double')).toHaveLength(2);
+  });
+
   it('warns with the failure count when only some tags register', async () => {
     let call = 0;
     vi.stubGlobal('fetch', vi.fn(async () => (++call === 1 ? jsonResponse(200, {}) : jsonResponse(500, {}))));
