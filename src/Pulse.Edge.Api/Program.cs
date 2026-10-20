@@ -244,6 +244,10 @@ builder.Services.AddHostedService<CloudProvisioningService>(provider => provider
 var hostingMode = builder.Configuration["hostingMode"] ?? "SinglePort";
 var isSinglePort = string.Equals(hostingMode, "SinglePort", StringComparison.OrdinalIgnoreCase);
 
+// The store is needed in every hosting mode: POST event only writes the request file (split mode: the
+// Agent engine drains it). The engine stays with the poller (SinglePort) so only one process saves state.
+builder.Services.AddSingleton(new Pulse.Edge.Agent.Simulation.ScenarioStateStore(Pulse.Edge.Storage.QueueDbContext.ResolveDataDirectory()));
+
 if (isSinglePort)
 {
     // Register Agent background synchronization & communication protocols
@@ -251,7 +255,6 @@ if (isSinglePort)
     builder.Services.AddTransient<MqttDriver>();
     builder.Services.AddTransient<ModbusDriver>();
     builder.Services.AddTransient<SimulatorDriver>();
-    builder.Services.AddSingleton(new Pulse.Edge.Agent.Simulation.ScenarioStateStore(Pulse.Edge.Storage.QueueDbContext.ResolveDataDirectory()));
     builder.Services.AddSingleton(sp => new Pulse.Edge.Agent.Simulation.ScenarioEngine(
         sp.GetRequiredService<Pulse.Edge.Agent.Simulation.ScenarioStateStore>(),
         ex => sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
@@ -336,6 +339,7 @@ app.MapSettingsEndpoints();
 app.MapBufferEndpoints();
 app.MapBackupEndpoints();
 app.MapOeeEndpoints();
+app.MapSimulatorEndpoints();
 
 // Run database initialization and setup before starting the web server
 using (var scope = app.Services.CreateScope())
