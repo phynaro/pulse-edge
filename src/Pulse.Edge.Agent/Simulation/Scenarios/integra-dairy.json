@@ -484,7 +484,7 @@
         "tauSeconds": 120,
         "noiseSd": 0.05,
         "followsUnit": "blr1",
-        "stoppedValue": 0,
+        "stoppedValue": 0.3,
         "unit": "bar"
       }
     },
