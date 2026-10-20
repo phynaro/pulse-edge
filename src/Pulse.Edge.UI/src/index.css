@@ -842,3 +842,26 @@ button.ops-status-item:hover { color:var(--text); background:var(--surface2); bo
 .ops-oee-breakdown .ops-breakdown-title span:not(:first-child),.ops-oee-breakdown button b { text-align:right; }
 .ops-empty-note { display:flex; flex-direction:column; gap:8px; align-items:flex-start; padding:10px 4px; color:var(--text-muted); font-size:12.5px; }
 .ops-oee-outbox { margin-top:6px; font-size:11.5px; color:var(--text-muted); }
+
+/* Scenario simulator panel (adapter card) */
+.scenario-panel { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); font-size: 12px; }
+.scenario-panel-title { font-weight: 800; margin-bottom: 0.5rem; }
+.scenario-panel-error { color: #ef4444; margin-bottom: 0.5rem; }
+.scenario-section { margin-bottom: 0.75rem; }
+.scenario-section-label, .scenario-kind-label { font-weight: 700; color: var(--text-secondary); margin: 0.4rem 0 0.25rem; }
+.scenario-events { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.scenario-event { display: flex; flex-direction: column; gap: 0.2rem; }
+.scenario-event-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0.4rem 0.7rem; }
+.scenario-event-meta { font-size: 11px; opacity: 0.7; }
+.scenario-event-active { font-size: 11px; font-weight: 700; color: #8b5cf6; }
+.scenario-units { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.scenario-unit { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; }
+.scenario-unit-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.scenario-unit-id { flex: 1; font-family: var(--font-mono, monospace); overflow: hidden; text-overflow: ellipsis; }
+.scenario-unit-mode { font-weight: 700; }
+.scenario-unit-value { font-family: var(--font-mono, monospace); opacity: 0.7; }
+@media (max-width: 480px) {
+  .scenario-events { flex-direction: column; }
+  .scenario-event, .scenario-event-btn { width: 100%; }
+  .scenario-event-btn { min-height: 44px; }
+}

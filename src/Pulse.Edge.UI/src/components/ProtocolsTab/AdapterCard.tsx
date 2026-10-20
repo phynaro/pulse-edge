@@ -1,9 +1,11 @@
 
-import React from 'react';
+import React, { useContext } from 'react';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import type { DriverAdapter, MqttDevice } from '../../types';
 import type { useToast } from '../../hooks/useToast';
 import { useConfirm } from '../../hooks/useConfirm';
+import { AuthContext } from '../../context/auth';
+import ScenarioPanel from './ScenarioPanel';
 
 type ToastFn = ReturnType<typeof useToast>['toast'];
 
@@ -45,6 +47,7 @@ export default function AdapterCard({
   onDragEnd
 }: AdapterCardProps) {
   const confirm = useConfirm();
+  const auth = useContext(AuthContext);
 
 
   const adapterMqttDevices = mqttDevices.filter(d => d.adapterId === adapter.id);
@@ -54,6 +57,8 @@ export default function AdapterCard({
   } catch {
     config = {};
   }
+
+  const isScenarioAdapter = adapter.protocol === 'SIMULATOR' && String(config.Template ?? '').toLowerCase() === 'scenario';
 
   const handleDeleteMqttDevice = async (id: string) => {
     const confirmed = await confirm({
@@ -287,6 +292,10 @@ export default function AdapterCard({
               return <span className="adapter-info-muted">No parameters</span>;
             })()}
           </div>
+
+          {isScenarioAdapter && typeof config.Scenario === 'string' && (
+            <ScenarioPanel scenarioId={config.Scenario} canTrigger={auth?.user?.role === 'Admin'} />
+          )}
 
           {adapter.protocol === 'MQTT' && (
             <div className="adapter-info-section">

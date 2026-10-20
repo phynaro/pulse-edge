@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle2 } from 'lucide-react';
 import CustomSelect from '../CustomSelect';
 import type { useToast } from '../../hooks/useToast';
+import { useTranslation } from 'react-i18next';
+import ScenarioSelect from './ScenarioSelect';
 import ModalShell from '../ModalShell';
 import { useConfirm } from '../../hooks/useConfirm';
 
@@ -43,6 +45,7 @@ export default function CreateAdapterWizard({
   fetchData
 }: CreateAdapterWizardProps) {
   const confirm = useConfirm();
+  const { t } = useTranslation();
   const [wizardStep, setWizardStep] = useState(1);
   const [newAdapterName, setNewAdapterName] = useState('');
   const [newAdapterProtocol, setNewAdapterProtocol] = useState('OPC_UA');
@@ -67,6 +70,7 @@ export default function CreateAdapterWizard({
   const [opcEndpoints, setOpcEndpoints] = useState<OpcEndpoint[]>([]);
   const [webhookToken, setWebhookToken] = useState('');
   const [newSimulatorTemplate, setNewSimulatorTemplate] = useState<string>('energy');
+  const [newSimulatorScenario, setNewSimulatorScenario] = useState<string>('');
   const [opcDiscoverStatus, setOpcDiscoverStatus] = useState<'idle' | 'discovering' | 'success' | 'error'>('idle');
   const [opcDiscoverMessage, setOpcDiscoverMessage] = useState('');
   const [hostDiscoverStatus, setHostDiscoverStatus] = useState<'idle' | 'discovering' | 'success' | 'error'>('idle');
@@ -251,6 +255,10 @@ export default function CreateAdapterWizard({
       toast.warning('Please fill in all required fields.');
       return;
     }
+    if (newAdapterProtocol === 'SIMULATOR' && newSimulatorTemplate === 'scenario' && !newSimulatorScenario) {
+      toast.warning(t('scenario.selectScenario'));
+      return;
+    }
     if (newAdapterProtocol !== 'WEBHOOK' && newAdapterProtocol !== 'SIMULATOR' && createTestStatus !== 'passed') {
       const reason = createTestStatus === 'failed' ? `\nReason: ${createTestMessage}` : '\nNo connection test was run.';
       const confirmed = await confirm({
@@ -274,7 +282,7 @@ export default function CreateAdapterWizard({
       } else if (newAdapterProtocol === 'WEBHOOK') {
         configJson = JSON.stringify({ Token: webhookToken, LastPayload: '', LastSeen: '' });
       } else if (newAdapterProtocol === 'SIMULATOR') {
-        configJson = JSON.stringify({ Template: newSimulatorTemplate });
+        configJson = JSON.stringify(newSimulatorTemplate === 'scenario' ? { Template: 'scenario', Scenario: newSimulatorScenario } : { Template: newSimulatorTemplate });
       } else if (newAdapterProtocol === 'Ethernet/IP') {
         configJson = JSON.stringify({ PlcType: newPlcType, Protocol: newPlcProtocol, Path: newPlcPath, TimeoutMs: Number(newPlcTimeoutMs) });
       } else if (newAdapterProtocol === 'Siemens S7') {
@@ -441,6 +449,7 @@ export default function CreateAdapterWizard({
                     setNewAdapterHost('simulator');
                     setNewAdapterPort(0);
                     setNewSimulatorTemplate('energy');
+                    setNewSimulatorScenario('');
                   }
                   // Reset test statuses
                   setCreateTestStatus('idle');
@@ -1174,13 +1183,17 @@ export default function CreateAdapterWizard({
                     onChange={setNewSimulatorTemplate} 
                     options={[
                       { value: 'energy', label: 'Energy (Voltage, Current, Power, Energy, Power Factor, Frequency)' },
-                      { value: 'production', label: 'Production (Running, Total Count, Speed, Fault Code)' }
+                      { value: 'production', label: 'Production (Running, Total Count, Speed, Fault Code)' },
+                      { value: 'scenario', label: t('scenario.optionLabel') }
                     ]} 
                   />
                   <span className="text-secondary text-xs" style={{ display: 'block', marginTop: '0.4rem' }}>
                     Choose the simulated template. Standard tags will be auto-generated for this adapter automatically.
                   </span>
                 </div>
+                {newSimulatorTemplate === 'scenario' && (
+                  <ScenarioSelect value={newSimulatorScenario} onChange={setNewSimulatorScenario} />
+                )}
               </div>
             )}
           </div>

@@ -3,6 +3,8 @@ import { RefreshCw } from 'lucide-react';
 import type { DriverAdapter } from '../../types';
 import CustomSelect from '../CustomSelect';
 import type { useToast } from '../../hooks/useToast';
+import { useTranslation } from 'react-i18next';
+import ScenarioSelect from './ScenarioSelect';
 import ModalShell from '../ModalShell';
 import { useConfirm } from '../../hooks/useConfirm';
 
@@ -22,6 +24,7 @@ interface EditAdapterModalProps {
 
 export default function EditAdapterModal({ onClose, adapter, toast, fetchData }: EditAdapterModalProps) {
   const confirm = useConfirm();
+  const { t } = useTranslation();
   const config = (() => { try { return JSON.parse(adapter.configJson || '{}'); } catch { return {}; } })();
 
   const [editAdapterName, setEditAdapterName] = useState(adapter.name);
@@ -44,7 +47,8 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
   const [editMqttUsername, setEditMqttUsername] = useState<string>(config.Username ?? '');
   const [editMqttPassword, setEditMqttPassword] = useState<string>(config.Password ?? '');
   const [webhookToken, setWebhookToken] = useState<string>(config.Token ?? '');
-  const [editSimulatorTemplate, setEditSimulatorTemplate] = useState<string>(config.Template ?? 'energy');
+  const [editSimulatorTemplate, setEditSimulatorTemplate] = useState<string>(String(config.Template ?? 'energy').toLowerCase());
+  const [editSimulatorScenario, setEditSimulatorScenario] = useState<string>(config.Scenario ?? '');
   const [editTestStatus, setEditTestStatus] = useState<'idle' | 'testing' | 'passed' | 'failed'>('idle');
   const [editTestMessage, setEditTestMessage] = useState('');
   const [opcEndpoints, setOpcEndpoints] = useState<OpcEndpoint[]>([]);
@@ -129,6 +133,10 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
   };
 
   const saveProtocol = async (id: string) => {
+    if (editAdapterProtocol === 'SIMULATOR' && editSimulatorTemplate === 'scenario' && !editSimulatorScenario) {
+      toast.warning(t('scenario.selectScenario'));
+      return;
+    }
     if (editAdapterProtocol !== 'WEBHOOK' && editAdapterProtocol !== 'SIMULATOR' && editAdapterProtocol !== 'MODBUS_RTU' && editTestStatus !== 'passed') {
       const reason = editTestStatus === 'failed' ? `\nReason: ${editTestMessage}` : '\nNo connection test was run.';
       const confirmed = await confirm({
@@ -152,7 +160,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
       } else if (editAdapterProtocol === 'WEBHOOK') {
         configJson = JSON.stringify({ Token: webhookToken, LastPayload: config.LastPayload ?? '', LastSeen: config.LastSeen ?? '' });
       } else if (editAdapterProtocol === 'SIMULATOR') {
-        configJson = JSON.stringify({ Template: editSimulatorTemplate });
+        configJson = JSON.stringify(editSimulatorTemplate === 'scenario' ? { Template: 'scenario', Scenario: editSimulatorScenario } : { Template: editSimulatorTemplate });
       } else if (editAdapterProtocol === 'Ethernet/IP') {
         configJson = JSON.stringify({ PlcType: editPlcType, Protocol: editPlcProtocol, Path: editPlcPath, TimeoutMs: Number(editPlcTimeoutMs) });
       } else if (editAdapterProtocol === 'Siemens S7') {
@@ -248,6 +256,7 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                   setEditAdapterHost('simulator');
                   setEditAdapterPort(0);
                   setEditSimulatorTemplate('energy');
+                  setEditSimulatorScenario('');
                   }
                   else if (nextProtocol === 'BACnet') {
                     setEditAdapterPort(47808);
@@ -709,13 +718,17 @@ export default function EditAdapterModal({ onClose, adapter, toast, fetchData }:
                     onChange={setEditSimulatorTemplate} 
                     options={[
                       { value: 'energy', label: 'Energy (Voltage, Current, Power, Energy, Power Factor, Frequency)' },
-                      { value: 'production', label: 'Production (Running, Total Count, Speed, Fault Code)' }
+                      { value: 'production', label: 'Production (Running, Total Count, Speed, Fault Code)' },
+                      { value: 'scenario', label: t('scenario.optionLabel') }
                     ]} 
                   />
                   <span className="text-secondary text-xs" style={{ display: 'block', marginTop: '0.4rem' }}>
                     Choose the simulated template. Note: Changing the template does not automatically delete/recreate existing tags.
                   </span>
                 </div>
+                {editSimulatorTemplate === 'scenario' && (
+                  <ScenarioSelect value={editSimulatorScenario} onChange={setEditSimulatorScenario} />
+                )}
               </div>
             )}
 
