@@ -9,7 +9,7 @@ public sealed class IntegraDairySoakTests : IDisposable
     private const string Sid = "integra-dairy";
     private static readonly TimeSpan Step = TimeSpan.FromSeconds(10);
 
-    // Noise is Gaussian, so it has no hard edge. A week is ~60k steps x 90 ambient units = 5.4M samples; at 4 sigma
+    // Noise is Gaussian, so it has no hard edge. A week is ~60k steps x 84 ambient units = 5M samples; at 4 sigma
     // (6e-5 per sample) hundreds would stray, at 6 sigma (2e-9) essentially none do.
     private const double NoiseSigmas = 6;
 
@@ -53,15 +53,24 @@ public sealed class IntegraDairySoakTests : IDisposable
             ("cold1_temp.value", 0, 15),
             ("blr1_pressure.value", 0, 12),
             ("m_main.kw", 40, 900),
+            // I = P / (sqrt(3) * 400 V * pf), pf 0.78-0.93: 40 kW is ~62-74 A, 900 kW ~1400-1670 A.
+            ("m_main.current", 50, 1700),
         ];
 
-        // Ambient units wander gently around Center while their followed machine runs
-        // (or always, when they follow nothing); otherwise they sit at StoppedValue.
-        // The HTST outlet is only a pasteurising temperature while the line runs: when stopped it cools to
-        // its stopped value (20 C) and after a restart it warms up over a few minutes (tau 60 s). So the
-        // 60-80 C band applies after 10 minutes of continuous running; 0-80 C holds always.
-        var htstRunningSteps = 0;
-        var warmedUpAfter = (int)(TimeSpan.FromMinutes(10) / Step);
+        // R11: analogs and ambients treat only Fault and PlannedStop as stopped; a micro-stop (Idle) keeps
+        // running values. Fault = the machine's fault tag; PlannedStop = outside its shifts (from the model,
+        // which events never override with anything but Fault).
+        var models = def.Units.Where(u => u.Kind == "machine")
+            .ToDictionary(u => u.Id, u => new MachineStateModel(Sid, u, def.Shifts, TimeSpan.FromHours(7)));
+        var stoppedNow = new Dictionary<string, bool>();
+
+        // Ambient units wander gently around Center unless their followed machine is stopped; then they sit at
+        // StoppedValue. The HTST outlet is a pasteurising temperature unless the line is stopped: when stopped it
+        // cools to its stopped value (20 C) and after a restart it warms up over a few minutes (tau 60 s). So the
+        // 60-80 C band applies whenever htst1 is neither faulted nor in planned stop, except for the physical
+        // warm-up of 10 minutes after a real stop; 0-80 C holds always.
+        var htstStepsSinceStop = int.MaxValue / 2;
+        var warmUp = (int)(TimeSpan.FromMinutes(10) / Step);
 
         var ambients = def.Units.Where(u => u.Kind == "ambient").ToArray();
 
@@ -76,6 +85,8 @@ public sealed class IntegraDairySoakTests : IDisposable
         for (var t = Start; t < End; t = t + Step, stepNo++)
         {
             engine.Update(Sid, t);
+            foreach (var (id, model) in models)
+                stoppedNow[id] = engine.Read(Sid, $"{id}.fault") == 1 || model.At(t).Mode == MachineMode.PlannedStop;
 
             for (var i = 0; i < counters.Length; i++)
             {
@@ -97,16 +108,16 @@ public sealed class IntegraDairySoakTests : IDisposable
             }
 
             var htst = engine.Read(Sid, "htst1_outlet.value");
-            htstRunningSteps = engine.Read(Sid, "htst1.state") == 1 ? htstRunningSteps + 1 : 0;
+            htstStepsSinceStop = stoppedNow["htst1"] ? 0 : htstStepsSinceStop + 1;
             if (htst < 0 || htst > 80) Fail($"htst1_outlet.value = {htst} outside [0, 80] at {t:O}");
-            else if (htstRunningSteps > warmedUpAfter && htst < 60)
-                Fail($"htst1_outlet.value = {htst} below 60 after 10 min running at {t:O}");
+            else if (htstStepsSinceStop > warmUp && htst < 60)
+                Fail($"htst1_outlet.value = {htst} below 60 while htst1 is not stopped (Idle counts as running) at {t:O}");
 
             foreach (var u in ambients)
             {
                 var p = u.Ambient!;
                 var v = engine.Read(Sid, $"{u.Id}.value");
-                var running = p.FollowsUnit is null || engine.Read(Sid, $"{p.FollowsUnit}.state") == 1;
+                var running = p.FollowsUnit is null || !stoppedNow[p.FollowsUnit];
                 if (running)
                 {
                     var half = p.Amplitude + NoiseSigmas * p.NoiseSd;

@@ -1609,19 +1609,6 @@
       }
     },
     {
-      "id": "m_main_current",
-      "kind": "ambient",
-      "ambient": {
-        "center": 420,
-        "amplitude": 12,
-        "periodMinutes": 110,
-        "noiseSd": 2,
-        "followsUnit": null,
-        "stoppedValue": null,
-        "unit": "A"
-      }
-    },
-    {
       "id": "m_boiler_voltage",
       "kind": "ambient",
       "ambient": {
@@ -1632,19 +1619,6 @@
         "followsUnit": null,
         "stoppedValue": null,
         "unit": "V"
-      }
-    },
-    {
-      "id": "m_boiler_current",
-      "kind": "ambient",
-      "ambient": {
-        "center": 32,
-        "amplitude": 1,
-        "periodMinutes": 127,
-        "noiseSd": 0.2,
-        "followsUnit": null,
-        "stoppedValue": null,
-        "unit": "A"
       }
     },
     {
@@ -1661,19 +1635,6 @@
       }
     },
     {
-      "id": "m_refrig_current",
-      "kind": "ambient",
-      "ambient": {
-        "center": 170,
-        "amplitude": 5,
-        "periodMinutes": 144,
-        "noiseSd": 0.8,
-        "followsUnit": null,
-        "stoppedValue": null,
-        "unit": "A"
-      }
-    },
-    {
       "id": "m_iws1_voltage",
       "kind": "ambient",
       "ambient": {
@@ -1684,19 +1645,6 @@
         "followsUnit": null,
         "stoppedValue": null,
         "unit": "V"
-      }
-    },
-    {
-      "id": "m_iws1_current",
-      "kind": "ambient",
-      "ambient": {
-        "center": 60,
-        "amplitude": 2,
-        "periodMinutes": 161,
-        "noiseSd": 0.3,
-        "followsUnit": null,
-        "stoppedValue": null,
-        "unit": "A"
       }
     },
     {
@@ -1713,19 +1661,6 @@
       }
     },
     {
-      "id": "m_iws2_current",
-      "kind": "ambient",
-      "ambient": {
-        "center": 58,
-        "amplitude": 2,
-        "periodMinutes": 178,
-        "noiseSd": 0.3,
-        "followsUnit": null,
-        "stoppedValue": null,
-        "unit": "A"
-      }
-    },
-    {
       "id": "m_air_voltage",
       "kind": "ambient",
       "ambient": {
@@ -1736,19 +1671,6 @@
         "followsUnit": null,
         "stoppedValue": null,
         "unit": "V"
-      }
-    },
-    {
-      "id": "m_air_current",
-      "kind": "ambient",
-      "ambient": {
-        "center": 75,
-        "amplitude": 2,
-        "periodMinutes": 195,
-        "noiseSd": 0.4,
-        "followsUnit": null,
-        "stoppedValue": null,
-        "unit": "A"
       }
     }
   ],

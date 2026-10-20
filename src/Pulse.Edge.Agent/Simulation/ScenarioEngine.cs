@@ -12,6 +12,9 @@ public sealed record UnitStatus(string Id, string Kind, string Mode, double? Val
 
 public sealed record ActiveEvent(string Id, DateTime UntilUtc);
 
+/// <summary>Something worth a warning that is not a fault, e.g. a catch-up gap that was capped. Reported through <c>onError</c>.</summary>
+public sealed class ScenarioNotice(string message) : Exception(message);
+
 /// <summary>
 /// Runs scenarios: advances counters, analogs and meters on each <see cref="Update"/>, applies presenter
 /// and scheduled events, and persists through <see cref="ScenarioStateStore"/> (at most every 30 s of
@@ -19,20 +22,50 @@ public sealed record ActiveEvent(string Id, DateTime UntilUtc);
 /// draining never escape Update: they go to <c>onError</c> (default no-op) and are retried next tick.
 /// Machine modes, noise and scheduled events are pure functions of time,
 /// so a restart resumes the same plant. One lock per scenario.
+/// Update does real work at most once per second of scenario time (the Worker loops every 100 ms);
+/// a catch-up after downtime covers at most the last 7 days, and a backwards clock jump never
+/// rewinds a counter. A failed scenario load (IO) is reported and retried on the next Update.
 /// </summary>
 public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? onError = null) : IDisposable
 {
     private static readonly TimeSpan SaveInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LongGap = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan GapSubStep = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan MinStep = TimeSpan.FromSeconds(1);
+
+    /// <summary>The longest downtime a catch-up covers; older production is skipped (and reported).</summary>
+    public static readonly TimeSpan MaxCatchUp = TimeSpan.FromDays(7);
+
+    private static readonly Lazy<HashSet<string>> KnownIds =
+        new(() => ScenarioCatalog.Ids().ToHashSet(StringComparer.Ordinal));
 
     private readonly ConcurrentDictionary<string, Lazy<Runtime>> _runtimes = new(StringComparer.Ordinal);
 
+    /// <summary>Scenarios with a runtime entry. Public (not internal) for test access, like MachineStateModel.CachedBucketCount.</summary>
+    public int RuntimeCount => _runtimes.Count;
+
+    /// <summary>
+    /// Advances the scenario to <paramref name="nowUtc"/>. Unknown scenario ids throw KeyNotFoundException;
+    /// IO failures (loading, saving, draining) go to onError and are retried on a later call.
+    /// </summary>
     public void Update(string scenarioId, DateTime nowUtc)
     {
-        var rt = Get(scenarioId);
+        nowUtc = AsUtc(nowUtc);
+        Runtime rt;
+        try
+        {
+            rt = Get(scenarioId);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            onError?.Invoke(ex); // the Lazy does not keep the failure: the next Update loads again
+            return;
+        }
         lock (rt.Gate)
         {
+            // Throttle: under a second since the last applied update (clock not gone back) = no work,
+            // which also limits event draining to once per second.
+            if (rt.LastAppliedUtc is { } applied && nowUtc >= applied && nowUtc - applied < MinStep) return;
             var drained = rt.Update(store, nowUtc, onError);
             // Save right after a non-empty drain: the requests are gone from disk, so a crash before
             // the next periodic save would otherwise lose them.
@@ -59,7 +92,7 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
         {
             if (!rt.AddressIndex.TryGetValue(address, out var i))
                 throw new KeyNotFoundException($"Unknown address '{address}' in scenario '{scenarioId}'.");
-            if (rt.LastUpdateUtc is null)
+            if (rt.LastAppliedUtc is null)
                 throw new InvalidOperationException($"Scenario '{scenarioId}' has not been updated yet.");
             return rt.Values[i];
         }
@@ -91,7 +124,7 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
             var rt = lazy.Value;
             lock (rt.Gate)
             {
-                if (rt.LastUpdateUtc is null) continue;
+                if (rt.LastAppliedUtc is null) continue;
                 try { store.Save(id, rt.Snapshot()); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -101,8 +134,26 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
         }
     }
 
-    private Runtime Get(string scenarioId) =>
-        _runtimes.GetOrAdd(scenarioId, id => new Lazy<Runtime>(() => new Runtime(id, store.Load(id)))).Value;
+    private Runtime Get(string scenarioId)
+    {
+        if (!_runtimes.TryGetValue(scenarioId, out var lazy))
+        {
+            // Validate first so unknown ids never create entries.
+            if (!KnownIds.Value.Contains(scenarioId))
+                throw new KeyNotFoundException($"Unknown scenario '{scenarioId}'.");
+            // PublicationOnly: a constructor that throws (e.g. the state file is locked) is not cached.
+            lazy = _runtimes.GetOrAdd(scenarioId, id => new Lazy<Runtime>(
+                () => new Runtime(id, store.Load(id, onError)), LazyThreadSafetyMode.PublicationOnly));
+        }
+        return lazy.Value;
+    }
+
+    private static DateTime AsUtc(DateTime d) => d.Kind switch
+    {
+        DateTimeKind.Utc => d,
+        DateTimeKind.Local => d.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(d, DateTimeKind.Utc),
+    };
 
     private sealed class Runtime
     {
@@ -117,12 +168,15 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
         public double[] Values;
         public DateTime? LastUpdateUtc;
         public DateTime? LastSaveUtc;
+        /// <summary>When this process last applied an Update (null until the first one; Values are valid after it).</summary>
+        public DateTime? LastAppliedUtc;
 
         private readonly MachineStateModel?[] _models;
         private readonly int[] _valueBase; // first value slot of each unit
         private readonly int[] _followIdx; // followed machine index or -1 (analog/ambient)
         private readonly int[][] _feeds; // meter → fed machine indices
         private readonly double[] _phase; // ambient
+        private readonly double[] _voltage; // meter: centre of its <meter>_voltage ambient, else 400 V
         private readonly EventDefinition[][] _eventsOnUnit;
         private readonly (int Weekday, int StartMin, int EndMin)[] _shiftWindows;
         private readonly Dictionary<(string, DateOnly), DateTime?> _scheduleCache = [];
@@ -145,6 +199,7 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
             _followIdx = new int[Units.Length];
             _feeds = new int[Units.Length][];
             _phase = new double[Units.Length];
+            _voltage = new double[Units.Length];
             _eventsOnUnit = new EventDefinition[Units.Length][];
             _modeNow = new MachineSnapshot[Units.Length];
 
@@ -162,6 +217,11 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
                 if (u.Kind == "ambient")
                     _phase[i] = 2 * Math.PI * StableRandom.For(id, u.Id, "phase").NextDouble();
             }
+            for (var i = 0; i < Units.Length; i++)
+                if (Units[i].Kind == "meter")
+                    _voltage[i] = UnitIndex.TryGetValue($"{Units[i].Id}_voltage", out var v) && Units[v].Ambient is { } amb
+                        ? amb.Center
+                        : 400;
             Values = new double[slot];
             foreach (var e in Def.Events) EventById[e.Id] = e;
             for (var i = 0; i < Units.Length; i++)
@@ -201,6 +261,17 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
             }
 
             var last = LastUpdateUtc;
+            if (last is { } prev && now < prev)
+            {
+                last = now; // backwards clock jump: no catch-up, no negative delta; counters stay, rebase on now
+            }
+            else if (last is { } old && now - old > MaxCatchUp)
+            {
+                onError?.Invoke(new ScenarioNotice(
+                    $"Scenario '{Id}' was last updated at {old:O}, {(now - old).TotalDays:F1} days ago; " +
+                    $"catching up only the most recent {MaxCatchUp.TotalDays:F0} days."));
+                last = now - MaxCatchUp;
+            }
             var dt = last is { } l ? now - l : TimeSpan.Zero;
             var advancing = dt > TimeSpan.Zero;
 
@@ -256,7 +327,7 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
                     {
                         var p = u.Ambient!;
                         var f = _followIdx[i];
-                        if (f >= 0 && _modeNow[f].Mode != MachineMode.Running)
+                        if (f >= 0 && IsStopped(_modeNow[f].Mode))
                         {
                             Values[b] = p.StoppedValue ?? 0;
                             break;
@@ -291,9 +362,12 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
                         _counters[key] = kwh;
                         var full = p.BaseKw + _feeds[i].Sum(f => Units[f].Machine!.RunningKw);
                         var load = full > 0 ? Math.Clamp(kw / full, 0, 1) : 0;
+                        var pf = p.PfAtLowLoad + (p.PfAtFullLoad - p.PfAtLowLoad) * load;
                         Values[b + 0] = kw;
                         Values[b + 1] = kwh;
-                        Values[b + 2] = p.PfAtLowLoad + (p.PfAtFullLoad - p.PfAtLowLoad) * load;
+                        Values[b + 2] = pf;
+                        // Three-phase line current: I = P / (sqrt(3) * V * pf).
+                        Values[b + 3] = pf > 0 ? kw * 1000 / (Math.Sqrt(3) * _voltage[i] * pf) : 0;
                         break;
                     }
                 }
@@ -301,7 +375,8 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
 
             foreach (var k in _activeUntil.Where(kv => kv.Value <= now).Select(kv => kv.Key).ToList())
                 _activeUntil.Remove(k);
-            if (last is null || advancing) LastUpdateUtc = now;
+            LastUpdateUtc = now;
+            LastAppliedUtc = now;
             return requests.Count > 0;
         }
 
@@ -312,7 +387,7 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
             for (var i = 0; i < Units.Length; i++)
             {
                 var u = Units[i];
-                double? value = LastUpdateUtc is null || u.Kind == "machine" ? null : Values[_valueBase[i]];
+                double? value = LastAppliedUtc is null || u.Kind == "machine" ? null : Values[_valueBase[i]];
                 string mode;
                 if (_models[i] is not null) mode = EffectiveMode(i, now).Mode.ToString();
                 else if (_eventsOnUnit[i].Any(e => ActiveWindow(e, now) is not null)) mode = "Event";
@@ -335,6 +410,10 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
             return initial;
         }
 
+        /// <summary>Process values and ambients fall to their stopped value only on Fault or PlannedStop; a
+        /// micro-stop (Idle, 20-90 s) leaves the line hot and the motors energised.</summary>
+        private static bool IsStopped(MachineMode m) => m is MachineMode.Fault or MachineMode.PlannedStop;
+
         private MachineSnapshot EffectiveMode(int machineIdx, DateTime t)
         {
             foreach (var e in _eventsOnUnit[machineIdx])
@@ -347,7 +426,7 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
         {
             var p = Units[i].Analog!;
             var f = _followIdx[i];
-            var target = f >= 0 && _modeNow[f].Mode != MachineMode.Running ? p.StoppedValue ?? p.Setpoint : p.Setpoint;
+            var target = f >= 0 && IsStopped(_modeNow[f].Mode) ? p.StoppedValue ?? p.Setpoint : p.Setpoint;
             foreach (var e in _eventsOnUnit[i])
             {
                 if (ActiveWindow(e, t) is not { } w) continue;

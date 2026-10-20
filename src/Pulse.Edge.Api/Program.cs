@@ -257,9 +257,13 @@ if (isSinglePort)
     builder.Services.AddTransient<SimulatorDriver>();
     builder.Services.AddSingleton(sp => new Pulse.Edge.Agent.Simulation.ScenarioEngine(
         sp.GetRequiredService<Pulse.Edge.Agent.Simulation.ScenarioStateStore>(),
-        ex => sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
-            .CreateLogger<Pulse.Edge.Agent.Simulation.ScenarioEngine>()
-            .LogError(ex, "Scenario engine error")));
+        ex =>
+        {
+            var log = sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                .CreateLogger<Pulse.Edge.Agent.Simulation.ScenarioEngine>();
+            if (ex is Pulse.Edge.Agent.Simulation.ScenarioNotice) log.LogWarning("{Notice}", ex.Message);
+            else log.LogError(ex, "Scenario engine error");
+        }));
 
     // Register Poller Drivers (Transient)
     builder.Services.AddTransient<OpcUaDriverPoller>();

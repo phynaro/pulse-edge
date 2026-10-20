@@ -39,7 +39,7 @@ public static class ScenarioCatalog
     {
         "machine" => ["state", "fault", "fault_code", "good_count", "reject_count", "speed"],
         "analog" or "ambient" => ["value"],
-        "meter" => ["kw", "kwh", "pf"],
+        "meter" => ["kw", "kwh", "pf", "current"],
         _ => throw new ArgumentException($"Unknown unit kind '{u.Kind}' on '{u.Id}'.", nameof(u)),
     };
 

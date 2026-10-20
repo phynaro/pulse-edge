@@ -66,6 +66,21 @@ public class ScenarioCatalogTests
         Assert.True(Dairy().Units.Count(u => u.Kind == "ambient") >= 60);
 
     [Fact]
+    public void IntegraDairy_MeterCurrentIsComputed_NotAmbient()
+    {
+        // R10: each meter's current is derived from its load (signal "current"); only voltages stay ambient.
+        var s = Dairy();
+        var byId = s.Units.ToDictionary(u => u.Id);
+        foreach (var m in s.Units.Where(u => u.Kind == "meter"))
+        {
+            Assert.False(byId.ContainsKey(m.Id + "_current"), $"{m.Id}_current should not be an ambient unit");
+            Assert.Equal("ambient", byId[m.Id + "_voltage"].Kind);
+        }
+        Assert.Equal(125, s.Units.Count);
+        Assert.Equal(84, s.Units.Count(u => u.Kind == "ambient"));
+    }
+
+    [Fact]
     public void IntegraDairy_KindsCarryTheirParams()
     {
         foreach (var u in Dairy().Units)
@@ -84,7 +99,7 @@ public class ScenarioCatalogTests
         var s = Dairy();
         Assert.Equal(["state", "fault", "fault_code", "good_count", "reject_count", "speed"],
             ScenarioCatalog.SignalsOf(s.Units.First(u => u.Id == "iws1")));
-        Assert.Equal(["kw", "kwh", "pf"], ScenarioCatalog.SignalsOf(s.Units.First(u => u.Id == "m_main")));
+        Assert.Equal(["kw", "kwh", "pf", "current"],ScenarioCatalog.SignalsOf(s.Units.First(u => u.Id == "m_main")));
         Assert.Equal(["value"], ScenarioCatalog.SignalsOf(s.Units.First(u => u.Id == "htst1_outlet")));
     }
 

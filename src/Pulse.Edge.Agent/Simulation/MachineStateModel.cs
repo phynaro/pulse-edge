@@ -77,13 +77,63 @@ public sealed class MachineStateModel(string scenarioId, UnitDefinition unit, Sh
     {
         if (toUtc <= fromUtc) return 0;
         const long perSec = TimeSpan.TicksPerSecond;
-        var first = (fromUtc.Ticks + perSec - 1) / perSec;
-        var last = (toUtc.Ticks + perSec - 1) / perSec; // exclusive
+        var lo = CeilSecond(fromUtc.Ticks) * perSec; // seconds counted: lo <= s < hi
+        var hi = CeilSecond(toUtc.Ticks) * perSec;
         long running = 0;
-        for (var s = first; s < last; s++)
-            if (At(new DateTime(s * perSec, DateTimeKind.Utc)).Mode == MachineMode.Running)
-                running++;
+        // Count per local hour by intervals instead of probing every second (a 7-day catch-up of 25 machines
+        // would otherwise be ~15M At calls). Within hour h, At(s) consults exactly the shift calendar, faults of
+        // buckets h-2..h and micro-stops of h-1..h, so this equals the per-second count.
+        for (var h = HourIndex(lo); ; h++)
+        {
+            var hs = h * TimeSpan.TicksPerHour - utcOffset.Ticks;
+            if (hs >= hi) break;
+            var a = Math.Max(hs, lo);
+            var b = Math.Min(hs + TimeSpan.TicksPerHour, hi);
+            if (a < b) running += RunningSecondsInHour(h, hs, a, b);
+        }
         return running * _p.RatePerMin / 60.0;
+    }
+
+    private static long CeilSecond(long ticks) => (ticks + TimeSpan.TicksPerSecond - 1) / TimeSpan.TicksPerSecond;
+
+    /// <summary>Whole-second instants s with a &lt;= s &lt; b (ticks).</summary>
+    private static long SecondsIn(long a, long b) => b > a ? CeilSecond(b) - CeilSecond(a) : 0;
+
+    /// <summary>Running whole seconds in [a, b), which lies inside local hour h starting at UTC tick hs.</summary>
+    private long RunningSecondsInHour(long h, long hs, long a, long b)
+    {
+        var down = new List<(long S, long E)>();
+        if (_p.FollowsShifts)
+        {
+            // Shift windows are whole local minutes and the offset is whole minutes, so check minute starts.
+            for (var m = 0; m < 60; m++)
+            {
+                var ms = hs + m * TimeSpan.TicksPerMinute;
+                if (!InShift(ms)) down.Add((ms, ms + TimeSpan.TicksPerMinute));
+            }
+        }
+        for (var k = h; k >= h - LookbackBuckets; k--)
+        {
+            var bucket = GetBucket(k);
+            for (var i = 0; i < bucket.FaultStart.Length; i++) down.Add((bucket.FaultStart[i], bucket.FaultEnd[i]));
+            if (k < h - 1) continue;
+            for (var i = 0; i < bucket.MicroStart.Length; i++) down.Add((bucket.MicroStart[i], bucket.MicroEnd[i]));
+        }
+
+        long downSeconds = 0;
+        long curS = 0, curE = long.MinValue;
+        foreach (var (s0, e0) in down.Select(x => (Math.Max(x.S, a), Math.Min(x.E, b))).Where(x => x.Item2 > x.Item1).OrderBy(x => x.Item1))
+        {
+            if (s0 <= curE)
+            {
+                if (e0 > curE) curE = e0;
+                continue;
+            }
+            if (curE > curS) downSeconds += SecondsIn(curS, curE);
+            (curS, curE) = (s0, e0);
+        }
+        if (curE > curS) downSeconds += SecondsIn(curS, curE);
+        return SecondsIn(a, b) - downSeconds;
     }
 
     private bool InShift(long utcTicks)
