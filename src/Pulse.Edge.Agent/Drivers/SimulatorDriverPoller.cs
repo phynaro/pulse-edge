@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Pulse.Edge.Agent.Simulation;
 using Pulse.Edge.Storage;
 using Pulse.Edge.Storage.Models;
 using Pulse.Edge.Storage.Services;
@@ -17,7 +18,9 @@ public class SimulatorDriverPoller : IProtocolDriver
     private readonly ILogger<SimulatorDriverPoller> _logger;
     private readonly SimulatorDriver _simulatorDriver;
     private readonly QueueStorageService _storageService;
+    private readonly ScenarioEngine _scenarioEngine;
     private readonly ConcurrentDictionary<string, DateTime> _lastDbWriteTimes = new();
+    private readonly ConcurrentDictionary<string, bool> _scenarioErrorLogged = new();
 
     public string ProtocolName => "SIMULATOR";
     public bool IsConnected => true; // Simulator is always connected
@@ -25,11 +28,13 @@ public class SimulatorDriverPoller : IProtocolDriver
     public SimulatorDriverPoller(
         ILogger<SimulatorDriverPoller> logger,
         SimulatorDriver simulatorDriver,
-        QueueStorageService storageService)
+        QueueStorageService storageService,
+        ScenarioEngine scenarioEngine)
     {
         _logger = logger;
         _simulatorDriver = simulatorDriver;
         _storageService = storageService;
+        _scenarioEngine = scenarioEngine;
     }
 
     public Task ConnectAsync(DriverAdapter adapter, CancellationToken ct)
@@ -51,6 +56,7 @@ public class SimulatorDriverPoller : IProtocolDriver
     {
         string adapterId = adapter.Id;
         string template = "energy";
+        string? scenarioId = null;
         try
         {
             if (!string.IsNullOrEmpty(adapter.ConfigJson))
@@ -60,6 +66,11 @@ public class SimulatorDriverPoller : IProtocolDriver
                 {
                     template = templateProp.GetString()?.ToLowerInvariant() ?? "energy";
                 }
+                if (jsonDoc.RootElement.TryGetProperty("Scenario", out var scenarioProp)
+                    && scenarioProp.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    scenarioId = scenarioProp.GetString();
+                }
             }
         }
         catch (Exception ex)
@@ -67,8 +78,42 @@ public class SimulatorDriverPoller : IProtocolDriver
             _logger.LogError(ex, "Failed to parse ConfigJson for simulator adapter {AdapterId}", adapterId);
         }
 
-        using var db = new QueueDbContext();
-        _simulatorDriver.UpdateState(adapterId, template, now, db);
+        bool isScenario = template == "scenario";
+        string? scenarioError = null;
+        if (isScenario)
+        {
+            // The engine works in UTC; callers normally pass UtcNow, but normalise defensively.
+            var nowUtc = now.Kind switch
+            {
+                DateTimeKind.Local => now.ToUniversalTime(),
+                DateTimeKind.Unspecified => DateTime.SpecifyKind(now, DateTimeKind.Utc),
+                _ => now
+            };
+            if (string.IsNullOrWhiteSpace(scenarioId))
+            {
+                scenarioError = "Scenario id is not configured for this simulator adapter";
+            }
+            else
+            {
+                try
+                {
+                    _scenarioEngine.Update(scenarioId, nowUtc);
+                }
+                catch (Exception ex)
+                {
+                    scenarioError = $"Scenario '{scenarioId}' could not be loaded: {ex.Message}";
+                }
+            }
+            if (scenarioError != null && _scenarioErrorLogged.TryAdd(adapterId, true))
+            {
+                _logger.LogError("Simulator adapter {AdapterId}: {Error}", adapterId, scenarioError);
+            }
+        }
+        else
+        {
+            using var db = new QueueDbContext();
+            _simulatorDriver.UpdateState(adapterId, template, now, db);
+        }
 
         var dueDps = group.Where(dp =>
         {
@@ -92,7 +137,10 @@ public class SimulatorDriverPoller : IProtocolDriver
 
             try
             {
-                double rawVal = _simulatorDriver.ReadValue(adapterId, dp.Address);
+                if (isScenario && scenarioError != null) throw new InvalidOperationException(scenarioError);
+                double rawVal = isScenario
+                    ? _scenarioEngine.Read(scenarioId!, dp.Address)
+                    : _simulatorDriver.ReadValue(adapterId, dp.Address);
                 double val = (rawVal * dp.ScaleFactor) + dp.Offset;
 
                 _logger.LogDebug("[Simulator Read] Adapter: {AdapterName} | Address: {Address} | Raw: {Raw} | Processed: {Value}", adapter.Name, dp.Address, rawVal, val);
