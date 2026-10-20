@@ -1,0 +1,1799 @@
+{
+  "id": "integra-dairy",
+  "name": "Integra Dairy",
+  "utcOffset": "+07:00",
+  "shifts": {
+    "windows": [
+      {
+        "weekdays": [1, 2, 3, 4, 5, 6],
+        "start": "06:00",
+        "end": "14:00"
+      },
+      {
+        "weekdays": [1, 2, 3, 4, 5, 6],
+        "start": "14:00",
+        "end": "22:00"
+      }
+    ]
+  },
+  "units": [
+    {
+      "id": "sep1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 150,
+        "rejectFraction": 0.005,
+        "mtbfMinutes": 600,
+        "mttrMinutes": 20,
+        "microStopsPerHour": 1,
+        "faultCodes": [21, 22],
+        "followsShifts": true,
+        "runningKw": 22,
+        "idleKw": 4
+      }
+    },
+    {
+      "id": "htst1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 300,
+        "rejectFraction": 0.002,
+        "mtbfMinutes": 900,
+        "mttrMinutes": 25,
+        "microStopsPerHour": 0.5,
+        "faultCodes": [31, 32],
+        "followsShifts": true,
+        "runningKw": 12,
+        "idleKw": 3
+      }
+    },
+    {
+      "id": "vat1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 4,
+        "rejectFraction": 0.01,
+        "mtbfMinutes": 800,
+        "mttrMinutes": 30,
+        "microStopsPerHour": 0.5,
+        "faultCodes": [41, 42],
+        "followsShifts": true,
+        "runningKw": 8,
+        "idleKw": 2
+      }
+    },
+    {
+      "id": "vat2",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 4,
+        "rejectFraction": 0.01,
+        "mtbfMinutes": 800,
+        "mttrMinutes": 30,
+        "microStopsPerHour": 0.5,
+        "faultCodes": [41, 42],
+        "followsShifts": true,
+        "runningKw": 8,
+        "idleKw": 2
+      }
+    },
+    {
+      "id": "prs1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 2,
+        "rejectFraction": 0.02,
+        "mtbfMinutes": 700,
+        "mttrMinutes": 25,
+        "microStopsPerHour": 1,
+        "faultCodes": [51, 52],
+        "followsShifts": true,
+        "runningKw": 11,
+        "idleKw": 2
+      }
+    },
+    {
+      "id": "grd1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 80,
+        "rejectFraction": 0.01,
+        "mtbfMinutes": 500,
+        "mttrMinutes": 20,
+        "microStopsPerHour": 2,
+        "faultCodes": [61, 62],
+        "followsShifts": true,
+        "runningKw": 15,
+        "idleKw": 3
+      }
+    },
+    {
+      "id": "bld1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 60,
+        "rejectFraction": 0.008,
+        "mtbfMinutes": 600,
+        "mttrMinutes": 20,
+        "microStopsPerHour": 1.5,
+        "faultCodes": [71, 72],
+        "followsShifts": true,
+        "runningKw": 18,
+        "idleKw": 3
+      }
+    },
+    {
+      "id": "ckr1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 50,
+        "rejectFraction": 0.01,
+        "mtbfMinutes": 700,
+        "mttrMinutes": 30,
+        "microStopsPerHour": 1,
+        "faultCodes": [81, 82],
+        "followsShifts": true,
+        "runningKw": 30,
+        "idleKw": 6
+      }
+    },
+    {
+      "id": "cip1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 1,
+        "rejectFraction": 0,
+        "mtbfMinutes": 1200,
+        "mttrMinutes": 30,
+        "microStopsPerHour": 0.2,
+        "faultCodes": [91],
+        "followsShifts": true,
+        "runningKw": 10,
+        "idleKw": 1.5
+      }
+    },
+    {
+      "id": "iws1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 420,
+        "rejectFraction": 0.015,
+        "mtbfMinutes": 180,
+        "mttrMinutes": 12,
+        "microStopsPerHour": 4,
+        "faultCodes": [11, 12, 13],
+        "followsShifts": true,
+        "runningKw": 20,
+        "idleKw": 4
+      }
+    },
+    {
+      "id": "iws2",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 420,
+        "rejectFraction": 0.015,
+        "mtbfMinutes": 180,
+        "mttrMinutes": 12,
+        "microStopsPerHour": 4,
+        "faultCodes": [11, 12, 13],
+        "followsShifts": true,
+        "runningKw": 20,
+        "idleKw": 4
+      }
+    },
+    {
+      "id": "fw1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 400,
+        "rejectFraction": 0.01,
+        "mtbfMinutes": 300,
+        "mttrMinutes": 10,
+        "microStopsPerHour": 3,
+        "faultCodes": [14, 15],
+        "followsShifts": true,
+        "runningKw": 3,
+        "idleKw": 0.8
+      }
+    },
+    {
+      "id": "fw2",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 400,
+        "rejectFraction": 0.01,
+        "mtbfMinutes": 300,
+        "mttrMinutes": 10,
+        "microStopsPerHour": 3,
+        "faultCodes": [14, 15],
+        "followsShifts": true,
+        "runningKw": 3,
+        "idleKw": 0.8
+      }
+    },
+    {
+      "id": "cw1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 400,
+        "rejectFraction": 0.02,
+        "mtbfMinutes": 600,
+        "mttrMinutes": 8,
+        "microStopsPerHour": 1,
+        "faultCodes": [16],
+        "followsShifts": true,
+        "runningKw": 1.5,
+        "idleKw": 0.4
+      }
+    },
+    {
+      "id": "cw2",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 400,
+        "rejectFraction": 0.02,
+        "mtbfMinutes": 600,
+        "mttrMinutes": 8,
+        "microStopsPerHour": 1,
+        "faultCodes": [16],
+        "followsShifts": true,
+        "runningKw": 1.5,
+        "idleKw": 0.4
+      }
+    },
+    {
+      "id": "md1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 400,
+        "rejectFraction": 0.003,
+        "mtbfMinutes": 900,
+        "mttrMinutes": 8,
+        "microStopsPerHour": 0.5,
+        "faultCodes": [17],
+        "followsShifts": true,
+        "runningKw": 1,
+        "idleKw": 0.5
+      }
+    },
+    {
+      "id": "md2",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 400,
+        "rejectFraction": 0.003,
+        "mtbfMinutes": 900,
+        "mttrMinutes": 8,
+        "microStopsPerHour": 0.5,
+        "faultCodes": [17],
+        "followsShifts": true,
+        "runningKw": 1,
+        "idleKw": 0.5
+      }
+    },
+    {
+      "id": "ce1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 8,
+        "rejectFraction": 0.005,
+        "mtbfMinutes": 500,
+        "mttrMinutes": 10,
+        "microStopsPerHour": 2,
+        "faultCodes": [18, 19],
+        "followsShifts": true,
+        "runningKw": 4,
+        "idleKw": 1
+      }
+    },
+    {
+      "id": "cp1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 8,
+        "rejectFraction": 0.005,
+        "mtbfMinutes": 450,
+        "mttrMinutes": 12,
+        "microStopsPerHour": 2,
+        "faultCodes": [18, 19],
+        "followsShifts": true,
+        "runningKw": 5,
+        "idleKw": 1.2
+      }
+    },
+    {
+      "id": "pal1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 2,
+        "rejectFraction": 0.002,
+        "mtbfMinutes": 500,
+        "mttrMinutes": 15,
+        "microStopsPerHour": 1.5,
+        "faultCodes": [20, 23],
+        "followsShifts": true,
+        "runningKw": 7,
+        "idleKw": 1.5
+      }
+    },
+    {
+      "id": "blr1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 1,
+        "rejectFraction": 0,
+        "mtbfMinutes": 2400,
+        "mttrMinutes": 45,
+        "microStopsPerHour": 0.1,
+        "faultCodes": [101, 102],
+        "followsShifts": false,
+        "runningKw": 20,
+        "idleKw": 8
+      }
+    },
+    {
+      "id": "nh3_1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 1,
+        "rejectFraction": 0,
+        "mtbfMinutes": 3000,
+        "mttrMinutes": 60,
+        "microStopsPerHour": 0.1,
+        "faultCodes": [111, 112],
+        "followsShifts": false,
+        "runningKw": 90,
+        "idleKw": 25
+      }
+    },
+    {
+      "id": "chl1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 1,
+        "rejectFraction": 0,
+        "mtbfMinutes": 2400,
+        "mttrMinutes": 45,
+        "microStopsPerHour": 0.1,
+        "faultCodes": [121],
+        "followsShifts": false,
+        "runningKw": 40,
+        "idleKw": 12
+      }
+    },
+    {
+      "id": "ac1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 1,
+        "rejectFraction": 0,
+        "mtbfMinutes": 2000,
+        "mttrMinutes": 40,
+        "microStopsPerHour": 0.2,
+        "faultCodes": [131, 132],
+        "followsShifts": false,
+        "runningKw": 45,
+        "idleKw": 10
+      }
+    },
+    {
+      "id": "wwt1",
+      "kind": "machine",
+      "machine": {
+        "ratePerMin": 1,
+        "rejectFraction": 0,
+        "mtbfMinutes": 2800,
+        "mttrMinutes": 50,
+        "microStopsPerHour": 0.1,
+        "faultCodes": [141],
+        "followsShifts": false,
+        "runningKw": 12,
+        "idleKw": 4
+      }
+    },
+    {
+      "id": "silo1_temp",
+      "kind": "analog",
+      "analog": {
+        "setpoint": 4,
+        "tauSeconds": 600,
+        "noiseSd": 0.05,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "silo2_temp",
+      "kind": "analog",
+      "analog": {
+        "setpoint": 4,
+        "tauSeconds": 600,
+        "noiseSd": 0.05,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "htst1_outlet",
+      "kind": "analog",
+      "analog": {
+        "setpoint": 73,
+        "tauSeconds": 60,
+        "noiseSd": 0.15,
+        "followsUnit": "htst1",
+        "stoppedValue": 20,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "ckr1_temp",
+      "kind": "analog",
+      "analog": {
+        "setpoint": 85,
+        "tauSeconds": 120,
+        "noiseSd": 0.4,
+        "followsUnit": "ckr1",
+        "stoppedValue": 25,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "hld1_temp",
+      "kind": "analog",
+      "analog": {
+        "setpoint": 82,
+        "tauSeconds": 300,
+        "noiseSd": 0.3,
+        "followsUnit": "ckr1",
+        "stoppedValue": 60,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "cold1_temp",
+      "kind": "analog",
+      "analog": {
+        "setpoint": 4,
+        "tauSeconds": 900,
+        "noiseSd": 0.08,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "chl1_glycol",
+      "kind": "analog",
+      "analog": {
+        "setpoint": -2,
+        "tauSeconds": 300,
+        "noiseSd": 0.1,
+        "followsUnit": "chl1",
+        "stoppedValue": 8,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "blr1_pressure",
+      "kind": "analog",
+      "analog": {
+        "setpoint": 8,
+        "tauSeconds": 120,
+        "noiseSd": 0.05,
+        "followsUnit": "blr1",
+        "stoppedValue": 0,
+        "unit": "bar"
+      }
+    },
+    {
+      "id": "ac1_pressure",
+      "kind": "analog",
+      "analog": {
+        "setpoint": 7,
+        "tauSeconds": 60,
+        "noiseSd": 0.03,
+        "followsUnit": "ac1",
+        "stoppedValue": 3,
+        "unit": "bar"
+      }
+    },
+    {
+      "id": "wwt1_flow",
+      "kind": "analog",
+      "analog": {
+        "setpoint": 35,
+        "tauSeconds": 300,
+        "noiseSd": 0.8,
+        "followsUnit": "wwt1",
+        "stoppedValue": 0,
+        "unit": "m3/h"
+      }
+    },
+    {
+      "id": "m_main",
+      "kind": "meter",
+      "meter": {
+        "baseKw": 60,
+        "feeds": ["sep1", "htst1", "vat1", "vat2", "prs1", "grd1", "bld1", "ckr1", "cip1", "iws1", "iws2", "fw1", "fw2", "cw1", "cw2", "md1", "md2", "ce1", "cp1", "pal1", "blr1", "nh3_1", "chl1", "ac1", "wwt1"],
+        "pfAtFullLoad": 0.93,
+        "pfAtLowLoad": 0.78,
+        "startKwh": 1250000
+      }
+    },
+    {
+      "id": "m_boiler",
+      "kind": "meter",
+      "meter": {
+        "baseKw": 2,
+        "feeds": ["blr1"],
+        "pfAtFullLoad": 0.9,
+        "pfAtLowLoad": 0.75,
+        "startKwh": 310000
+      }
+    },
+    {
+      "id": "m_refrig",
+      "kind": "meter",
+      "meter": {
+        "baseKw": 3,
+        "feeds": ["nh3_1", "chl1"],
+        "pfAtFullLoad": 0.88,
+        "pfAtLowLoad": 0.72,
+        "startKwh": 820000
+      }
+    },
+    {
+      "id": "m_iws1",
+      "kind": "meter",
+      "meter": {
+        "baseKw": 2.5,
+        "feeds": ["iws1", "fw1", "cw1", "md1"],
+        "pfAtFullLoad": 0.94,
+        "pfAtLowLoad": 0.8,
+        "startKwh": 205000
+      }
+    },
+    {
+      "id": "m_iws2",
+      "kind": "meter",
+      "meter": {
+        "baseKw": 2.5,
+        "feeds": ["iws2", "fw2", "cw2", "md2"],
+        "pfAtFullLoad": 0.94,
+        "pfAtLowLoad": 0.8,
+        "startKwh": 198000
+      }
+    },
+    {
+      "id": "m_air",
+      "kind": "meter",
+      "meter": {
+        "baseKw": 1.5,
+        "feeds": ["ac1"],
+        "pfAtFullLoad": 0.9,
+        "pfAtLowLoad": 0.76,
+        "startKwh": 260000
+      }
+    },
+    {
+      "id": "sep1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 37.4,
+        "amplitude": 1.5,
+        "periodMinutes": 37,
+        "noiseSd": 0.449,
+        "followsUnit": "sep1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "sep1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.8,
+        "amplitude": 0.15,
+        "periodMinutes": 53,
+        "noiseSd": 0.03,
+        "followsUnit": "sep1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "htst1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 20.4,
+        "amplitude": 0.82,
+        "periodMinutes": 46,
+        "noiseSd": 0.245,
+        "followsUnit": "htst1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "htst1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.4,
+        "amplitude": 0.15,
+        "periodMinutes": 64,
+        "noiseSd": 0.03,
+        "followsUnit": "htst1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "vat1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 13.6,
+        "amplitude": 0.54,
+        "periodMinutes": 55,
+        "noiseSd": 0.163,
+        "followsUnit": "vat1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "vat1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.2,
+        "amplitude": 0.15,
+        "periodMinutes": 75,
+        "noiseSd": 0.03,
+        "followsUnit": "vat1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "vat2_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 13.6,
+        "amplitude": 0.54,
+        "periodMinutes": 64,
+        "noiseSd": 0.163,
+        "followsUnit": "vat2",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "vat2_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.2,
+        "amplitude": 0.15,
+        "periodMinutes": 86,
+        "noiseSd": 0.03,
+        "followsUnit": "vat2",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "prs1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 18.7,
+        "amplitude": 0.75,
+        "periodMinutes": 73,
+        "noiseSd": 0.224,
+        "followsUnit": "prs1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "prs1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.5,
+        "amplitude": 0.15,
+        "periodMinutes": 97,
+        "noiseSd": 0.03,
+        "followsUnit": "prs1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "grd1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 25.5,
+        "amplitude": 1.02,
+        "periodMinutes": 82,
+        "noiseSd": 0.306,
+        "followsUnit": "grd1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "grd1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 2.1,
+        "amplitude": 0.15,
+        "periodMinutes": 53,
+        "noiseSd": 0.03,
+        "followsUnit": "grd1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "bld1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 30.6,
+        "amplitude": 1.22,
+        "periodMinutes": 91,
+        "noiseSd": 0.367,
+        "followsUnit": "bld1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "bld1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.9,
+        "amplitude": 0.15,
+        "periodMinutes": 64,
+        "noiseSd": 0.03,
+        "followsUnit": "bld1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "ckr1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 50.9,
+        "amplitude": 2.04,
+        "periodMinutes": 37,
+        "noiseSd": 0.611,
+        "followsUnit": "ckr1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "ckr1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.6,
+        "amplitude": 0.15,
+        "periodMinutes": 75,
+        "noiseSd": 0.03,
+        "followsUnit": "ckr1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "cip1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 17,
+        "amplitude": 0.68,
+        "periodMinutes": 46,
+        "noiseSd": 0.204,
+        "followsUnit": "cip1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "cip1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.3,
+        "amplitude": 0.15,
+        "periodMinutes": 86,
+        "noiseSd": 0.03,
+        "followsUnit": "cip1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "iws1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 34,
+        "amplitude": 1.36,
+        "periodMinutes": 55,
+        "noiseSd": 0.408,
+        "followsUnit": "iws1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "iws1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 2.2,
+        "amplitude": 0.15,
+        "periodMinutes": 97,
+        "noiseSd": 0.03,
+        "followsUnit": "iws1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "iws2_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 34,
+        "amplitude": 1.36,
+        "periodMinutes": 64,
+        "noiseSd": 0.408,
+        "followsUnit": "iws2",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "iws2_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 2.2,
+        "amplitude": 0.15,
+        "periodMinutes": 53,
+        "noiseSd": 0.03,
+        "followsUnit": "iws2",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "fw1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 5.1,
+        "amplitude": 0.2,
+        "periodMinutes": 73,
+        "noiseSd": 0.061,
+        "followsUnit": "fw1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "fw1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.7,
+        "amplitude": 0.15,
+        "periodMinutes": 64,
+        "noiseSd": 0.03,
+        "followsUnit": "fw1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "fw2_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 5.1,
+        "amplitude": 0.2,
+        "periodMinutes": 82,
+        "noiseSd": 0.061,
+        "followsUnit": "fw2",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "fw2_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.7,
+        "amplitude": 0.15,
+        "periodMinutes": 75,
+        "noiseSd": 0.03,
+        "followsUnit": "fw2",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "cw1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 2.5,
+        "amplitude": 0.1,
+        "periodMinutes": 91,
+        "noiseSd": 0.03,
+        "followsUnit": "cw1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "cw1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.1,
+        "amplitude": 0.15,
+        "periodMinutes": 86,
+        "noiseSd": 0.03,
+        "followsUnit": "cw1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "cw2_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 2.5,
+        "amplitude": 0.1,
+        "periodMinutes": 37,
+        "noiseSd": 0.03,
+        "followsUnit": "cw2",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "cw2_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.1,
+        "amplitude": 0.15,
+        "periodMinutes": 97,
+        "noiseSd": 0.03,
+        "followsUnit": "cw2",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "md1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.7,
+        "amplitude": 0.07,
+        "periodMinutes": 46,
+        "noiseSd": 0.02,
+        "followsUnit": "md1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "md1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1,
+        "amplitude": 0.15,
+        "periodMinutes": 53,
+        "noiseSd": 0.03,
+        "followsUnit": "md1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "md2_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.7,
+        "amplitude": 0.07,
+        "periodMinutes": 55,
+        "noiseSd": 0.02,
+        "followsUnit": "md2",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "md2_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1,
+        "amplitude": 0.15,
+        "periodMinutes": 64,
+        "noiseSd": 0.03,
+        "followsUnit": "md2",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "ce1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 6.8,
+        "amplitude": 0.27,
+        "periodMinutes": 64,
+        "noiseSd": 0.082,
+        "followsUnit": "ce1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "ce1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.6,
+        "amplitude": 0.15,
+        "periodMinutes": 75,
+        "noiseSd": 0.03,
+        "followsUnit": "ce1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "cp1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 8.5,
+        "amplitude": 0.34,
+        "periodMinutes": 73,
+        "noiseSd": 0.102,
+        "followsUnit": "cp1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "cp1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.8,
+        "amplitude": 0.15,
+        "periodMinutes": 86,
+        "noiseSd": 0.03,
+        "followsUnit": "cp1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "pal1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 11.9,
+        "amplitude": 0.48,
+        "periodMinutes": 82,
+        "noiseSd": 0.143,
+        "followsUnit": "pal1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "pal1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.5,
+        "amplitude": 0.15,
+        "periodMinutes": 97,
+        "noiseSd": 0.03,
+        "followsUnit": "pal1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "blr1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 34,
+        "amplitude": 1.36,
+        "periodMinutes": 91,
+        "noiseSd": 0.408,
+        "followsUnit": "blr1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "blr1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 2.4,
+        "amplitude": 0.15,
+        "periodMinutes": 53,
+        "noiseSd": 0.03,
+        "followsUnit": "blr1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "nh3_1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 152.8,
+        "amplitude": 6.11,
+        "periodMinutes": 37,
+        "noiseSd": 1.834,
+        "followsUnit": "nh3_1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "nh3_1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 2.5,
+        "amplitude": 0.15,
+        "periodMinutes": 64,
+        "noiseSd": 0.03,
+        "followsUnit": "nh3_1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "chl1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 67.9,
+        "amplitude": 2.72,
+        "periodMinutes": 46,
+        "noiseSd": 0.815,
+        "followsUnit": "chl1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "chl1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 2.2,
+        "amplitude": 0.15,
+        "periodMinutes": 75,
+        "noiseSd": 0.03,
+        "followsUnit": "chl1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "ac1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 76.4,
+        "amplitude": 3.06,
+        "periodMinutes": 55,
+        "noiseSd": 0.917,
+        "followsUnit": "ac1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "ac1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 2.3,
+        "amplitude": 0.15,
+        "periodMinutes": 86,
+        "noiseSd": 0.03,
+        "followsUnit": "ac1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "wwt1_motor_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 20.4,
+        "amplitude": 0.82,
+        "periodMinutes": 64,
+        "noiseSd": 0.245,
+        "followsUnit": "wwt1",
+        "stoppedValue": 0,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "wwt1_vibration",
+      "kind": "ambient",
+      "ambient": {
+        "center": 1.7,
+        "amplitude": 0.15,
+        "periodMinutes": 97,
+        "noiseSd": 0.03,
+        "followsUnit": "wwt1",
+        "stoppedValue": 0,
+        "unit": "mm/s"
+      }
+    },
+    {
+      "id": "rcv_room_temp",
+      "kind": "ambient",
+      "ambient": {
+        "center": 10,
+        "amplitude": 0.6,
+        "periodMinutes": 180,
+        "noiseSd": 0.05,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "rcv_room_rh",
+      "kind": "ambient",
+      "ambient": {
+        "center": 70,
+        "amplitude": 2.5,
+        "periodMinutes": 240,
+        "noiseSd": 0.3,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "chs_room_temp",
+      "kind": "ambient",
+      "ambient": {
+        "center": 16,
+        "amplitude": 0.6,
+        "periodMinutes": 180,
+        "noiseSd": 0.05,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "chs_room_rh",
+      "kind": "ambient",
+      "ambient": {
+        "center": 80,
+        "amplitude": 2.5,
+        "periodMinutes": 240,
+        "noiseSd": 0.3,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "prc_room_temp",
+      "kind": "ambient",
+      "ambient": {
+        "center": 22,
+        "amplitude": 0.6,
+        "periodMinutes": 180,
+        "noiseSd": 0.05,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "prc_room_rh",
+      "kind": "ambient",
+      "ambient": {
+        "center": 60,
+        "amplitude": 2.5,
+        "periodMinutes": 240,
+        "noiseSd": 0.3,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "pkg_room_temp",
+      "kind": "ambient",
+      "ambient": {
+        "center": 12,
+        "amplitude": 0.6,
+        "periodMinutes": 180,
+        "noiseSd": 0.05,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "pkg_room_rh",
+      "kind": "ambient",
+      "ambient": {
+        "center": 55,
+        "amplitude": 2.5,
+        "periodMinutes": 240,
+        "noiseSd": 0.3,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "wh_dock_temp",
+      "kind": "ambient",
+      "ambient": {
+        "center": 18,
+        "amplitude": 0.6,
+        "periodMinutes": 180,
+        "noiseSd": 0.05,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "wh_dock_rh",
+      "kind": "ambient",
+      "ambient": {
+        "center": 65,
+        "amplitude": 2.5,
+        "periodMinutes": 240,
+        "noiseSd": 0.3,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "qa_lab_temp",
+      "kind": "ambient",
+      "ambient": {
+        "center": 22,
+        "amplitude": 0.6,
+        "periodMinutes": 180,
+        "noiseSd": 0.05,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "qa_lab_rh",
+      "kind": "ambient",
+      "ambient": {
+        "center": 50,
+        "amplitude": 2.5,
+        "periodMinutes": 240,
+        "noiseSd": 0.3,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "rip1_temp",
+      "kind": "ambient",
+      "ambient": {
+        "center": 12,
+        "amplitude": 0.4,
+        "periodMinutes": 360,
+        "noiseSd": 0.04,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "rip1_rh",
+      "kind": "ambient",
+      "ambient": {
+        "center": 85,
+        "amplitude": 1.5,
+        "periodMinutes": 300,
+        "noiseSd": 0.2,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "silo1_level",
+      "kind": "ambient",
+      "ambient": {
+        "center": 62,
+        "amplitude": 12,
+        "periodMinutes": 720,
+        "noiseSd": 0.2,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "silo2_level",
+      "kind": "ambient",
+      "ambient": {
+        "center": 48,
+        "amplitude": 12,
+        "periodMinutes": 840,
+        "noiseSd": 0.2,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "whey_tank_level",
+      "kind": "ambient",
+      "ambient": {
+        "center": 40,
+        "amplitude": 10,
+        "periodMinutes": 600,
+        "noiseSd": 0.3,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "cip1_tank_temp",
+      "kind": "ambient",
+      "ambient": {
+        "center": 60,
+        "amplitude": 2,
+        "periodMinutes": 420,
+        "noiseSd": 0.2,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "cip1_conductivity",
+      "kind": "ambient",
+      "ambient": {
+        "center": 22,
+        "amplitude": 1.5,
+        "periodMinutes": 480,
+        "noiseSd": 0.2,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "mS/cm"
+      }
+    },
+    {
+      "id": "hld1_level",
+      "kind": "ambient",
+      "ambient": {
+        "center": 55,
+        "amplitude": 6,
+        "periodMinutes": 300,
+        "noiseSd": 0.3,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "blr1_feedwater_temp",
+      "kind": "ambient",
+      "ambient": {
+        "center": 95,
+        "amplitude": 1.2,
+        "periodMinutes": 240,
+        "noiseSd": 0.1,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "blr1_steam_flow",
+      "kind": "ambient",
+      "ambient": {
+        "center": 2.4,
+        "amplitude": 0.2,
+        "periodMinutes": 150,
+        "noiseSd": 0.02,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "t/h"
+      }
+    },
+    {
+      "id": "ac1_flow",
+      "kind": "ambient",
+      "ambient": {
+        "center": 9.5,
+        "amplitude": 0.5,
+        "periodMinutes": 200,
+        "noiseSd": 0.05,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "m3/min"
+      }
+    },
+    {
+      "id": "nh3_1_suction_pressure",
+      "kind": "ambient",
+      "ambient": {
+        "center": 3.2,
+        "amplitude": 0.1,
+        "periodMinutes": 210,
+        "noiseSd": 0.01,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "bar"
+      }
+    },
+    {
+      "id": "chl1_flow",
+      "kind": "ambient",
+      "ambient": {
+        "center": 42,
+        "amplitude": 1.5,
+        "periodMinutes": 260,
+        "noiseSd": 0.2,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "m3/h"
+      }
+    },
+    {
+      "id": "wwt1_ph",
+      "kind": "ambient",
+      "ambient": {
+        "center": 7.1,
+        "amplitude": 0.12,
+        "periodMinutes": 380,
+        "noiseSd": 0.015,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "pH"
+      }
+    },
+    {
+      "id": "wwt1_level",
+      "kind": "ambient",
+      "ambient": {
+        "center": 58,
+        "amplitude": 5,
+        "periodMinutes": 500,
+        "noiseSd": 0.2,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "%"
+      }
+    },
+    {
+      "id": "water_main_flow",
+      "kind": "ambient",
+      "ambient": {
+        "center": 28,
+        "amplitude": 2.5,
+        "periodMinutes": 170,
+        "noiseSd": 0.3,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "m3/h"
+      }
+    },
+    {
+      "id": "m_main_voltage",
+      "kind": "ambient",
+      "ambient": {
+        "center": 400,
+        "amplitude": 2.5,
+        "periodMinutes": 90,
+        "noiseSd": 0.4,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "V"
+      }
+    },
+    {
+      "id": "m_main_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 420,
+        "amplitude": 12,
+        "periodMinutes": 110,
+        "noiseSd": 2,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "m_boiler_voltage",
+      "kind": "ambient",
+      "ambient": {
+        "center": 400,
+        "amplitude": 2.5,
+        "periodMinutes": 103,
+        "noiseSd": 0.4,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "V"
+      }
+    },
+    {
+      "id": "m_boiler_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 32,
+        "amplitude": 1,
+        "periodMinutes": 127,
+        "noiseSd": 0.2,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "m_refrig_voltage",
+      "kind": "ambient",
+      "ambient": {
+        "center": 400,
+        "amplitude": 2.5,
+        "periodMinutes": 116,
+        "noiseSd": 0.4,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "V"
+      }
+    },
+    {
+      "id": "m_refrig_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 170,
+        "amplitude": 5,
+        "periodMinutes": 144,
+        "noiseSd": 0.8,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "m_iws1_voltage",
+      "kind": "ambient",
+      "ambient": {
+        "center": 400,
+        "amplitude": 2.5,
+        "periodMinutes": 129,
+        "noiseSd": 0.4,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "V"
+      }
+    },
+    {
+      "id": "m_iws1_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 60,
+        "amplitude": 2,
+        "periodMinutes": 161,
+        "noiseSd": 0.3,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "m_iws2_voltage",
+      "kind": "ambient",
+      "ambient": {
+        "center": 400,
+        "amplitude": 2.5,
+        "periodMinutes": 142,
+        "noiseSd": 0.4,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "V"
+      }
+    },
+    {
+      "id": "m_iws2_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 58,
+        "amplitude": 2,
+        "periodMinutes": 178,
+        "noiseSd": 0.3,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "A"
+      }
+    },
+    {
+      "id": "m_air_voltage",
+      "kind": "ambient",
+      "ambient": {
+        "center": 400,
+        "amplitude": 2.5,
+        "periodMinutes": 155,
+        "noiseSd": 0.4,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "V"
+      }
+    },
+    {
+      "id": "m_air_current",
+      "kind": "ambient",
+      "ambient": {
+        "center": 75,
+        "amplitude": 2,
+        "periodMinutes": 195,
+        "noiseSd": 0.4,
+        "followsUnit": null,
+        "stoppedValue": null,
+        "unit": "A"
+      }
+    }
+  ],
+  "events": [
+    {
+      "id": "htst_temp_drop",
+      "unit": "htst1_outlet",
+      "effect": "offset",
+      "magnitude": -3.5,
+      "durationMinutes": 8,
+      "faultCode": null,
+      "dailyProbability": 0.4
+    },
+    {
+      "id": "iws1_film_jam",
+      "unit": "iws1",
+      "effect": "force_fault",
+      "magnitude": 0,
+      "durationMinutes": 15,
+      "faultCode": 11,
+      "dailyProbability": 0.5
+    },
+    {
+      "id": "cold_store_drift",
+      "unit": "cold1_temp",
+      "effect": "ramp",
+      "magnitude": 6,
+      "durationMinutes": 90,
+      "faultCode": null,
+      "dailyProbability": 0.3
+    },
+    {
+      "id": "boiler_trip",
+      "unit": "blr1",
+      "effect": "force_fault",
+      "magnitude": 0,
+      "durationMinutes": 20,
+      "faultCode": 101,
+      "dailyProbability": 0.3
+    },
+    {
+      "id": "air_leak",
+      "unit": "ac1_pressure",
+      "effect": "offset",
+      "magnitude": -1.2,
+      "durationMinutes": 45,
+      "faultCode": null,
+      "dailyProbability": 0.4
+    }
+  ]
+}
