@@ -65,6 +65,23 @@ describe('ScenarioPanel', () => {
     expect(JSON.parse((post[1] as RequestInit).body as string)).toEqual({ eventId: 'filler-jam' });
   });
 
+  it('shows active-until from the catalog right after a 202, before the server reports the event', async () => {
+    // The engine drains the request on its next tick, so every status here still lists no active event.
+    stubFetch();
+    render(<ScenarioPanel scenarioId="integra-dairy" canTrigger />);
+    const button = await screen.findByRole('button', { name: /filler-jam/ });
+    const before = Date.now();
+    fireEvent.click(button);
+    const text = await screen.findByText(/active until \d{2}:\d{2}/i, {}, { timeout: 1000 });
+    const hhmm = (ms: number) => {
+      const d = new Date(ms);
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+    // now + the event's 10 minutes (either side of a minute boundary crossed during the test)
+    expect([hhmm(before + 10 * 60_000), hhmm(Date.now() + 10 * 60_000)]).toContain(text.textContent?.match(/\d{2}:\d{2}/)?.[0]);
+    expect(screen.getByRole('button', { name: /filler-jam/ })).toBeDisabled();
+  });
+
   it('hides event buttons for non-admins', async () => {
     stubFetch();
     render(<ScenarioPanel scenarioId="integra-dairy" canTrigger={false} />);

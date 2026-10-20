@@ -31,6 +31,15 @@ function formatTime(iso: string): string {
   return `${hh}:${mm}`;
 }
 
+/** ISO time `minutes` from now (module scope: reading the clock is not render work). */
+function untilFromNow(minutes: number): string {
+  return new Date(Date.now() + minutes * 60_000).toISOString();
+}
+
+function isFuture(iso: string): boolean {
+  return Date.parse(iso) > Date.now();
+}
+
 interface ScenarioPanelProps {
   scenarioId: string;
   /** Admins may trigger events; everyone else sees the unit list read-only. */
@@ -45,6 +54,9 @@ export default function ScenarioPanel({ scenarioId, canTrigger }: ScenarioPanelP
   const [blocked, setBlocked] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyEvent, setBusyEvent] = useState<string | null>(null);
+  // Optimistic "active until" after a 202: the engine drains the request on its next tick, so the status
+  // fetched right after the POST may not list the event yet. The server value replaces it once reported.
+  const [localUntil, setLocalUntil] = useState<Record<string, string>>({});
 
   const loadStatus = useCallback(async (): Promise<void> => {
     try {
@@ -60,7 +72,13 @@ export default function ScenarioPanel({ scenarioId, canTrigger }: ScenarioPanelP
       }
       setBlocked(null);
       setError(null);
-      setStatus((await res.json()) as ScenarioStatus);
+      const next = (await res.json()) as ScenarioStatus;
+      setStatus(next);
+      const reported = new Set(next.activeEvents.map(e => e.id));
+      setLocalUntil(prev => {
+        const kept = Object.entries(prev).filter(([id, until]) => !reported.has(id) && isFuture(until));
+        return kept.length === Object.keys(prev).length ? prev : Object.fromEntries(kept);
+      });
     } catch {
       setError(t('scenario.statusFailed'));
     }
@@ -95,8 +113,16 @@ export default function ScenarioPanel({ scenarioId, canTrigger }: ScenarioPanelP
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ eventId }),
       });
-      if (!res.ok) setError(t('scenario.triggerFailed'));
-      else setError(null);
+      if (!res.ok) {
+        setError(t('scenario.triggerFailed'));
+      } else {
+        setError(null);
+        const minutes = catalog?.events.find(e => e.id === eventId)?.durationMinutes;
+        if (minutes !== undefined) {
+          const until = untilFromNow(minutes);
+          setLocalUntil(prev => ({ ...prev, [eventId]: until }));
+        }
+      }
       await loadStatus();
     } catch {
       setError(t('scenario.triggerFailed'));
@@ -109,7 +135,8 @@ export default function ScenarioPanel({ scenarioId, canTrigger }: ScenarioPanelP
     return <div className="scenario-panel scenario-panel-blocked" role="status">{blocked}</div>;
   }
 
-  const activeUntil = new Map((status?.activeEvents ?? []).map(e => [e.id, e.untilUtc]));
+  const activeUntil = new Map<string, string>(Object.entries(localUntil));
+  for (const e of status?.activeEvents ?? []) activeUntil.set(e.id, e.untilUtc);
   const statusUnits = status?.units ?? [];
   const kinds = KIND_ORDER.filter(k => statusUnits.some(u => u.kind === k));
 
