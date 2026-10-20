@@ -84,6 +84,32 @@ public sealed class ScenarioEngineTests : IDisposable
     }
 
     [Fact]
+    public void Analog_WithMin_NeverReadsBelowIt_WhileItsMachineIsStopped()
+    {
+        // Real path: wwt1_flow (Min 0, stopped value 0, noise sd 0.8) follows wwt1. Find the first instant
+        // wwt1 is not Running, start a fresh engine there (an analog starts settled at its stopped value),
+        // then run one hour at 1 s steps.
+        Assert.Equal(0, Def.Units.Single(u => u.Id == "wwt1_flow").Analog!.Min);
+        var m = Model("wwt1");
+        DateTime? stopped = null;
+        for (var t = WeekdayMorning; t < WeekdayMorning.AddDays(60) && stopped is null; t = t.AddMinutes(1))
+            if (m.At(t).Mode != MachineMode.Running) stopped = t;
+        Assert.NotNull(stopped);
+
+        using var engine = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        double lowest = double.MaxValue;
+        var clamped = 0;
+        Step(engine, stopped!.Value, stopped.Value.AddHours(1), _ =>
+        {
+            var v = engine.Read(Sid, "wwt1_flow.value");
+            lowest = Math.Min(lowest, v);
+            if (v == 0) clamped++;
+        });
+        Assert.True(lowest >= 0, $"wwt1_flow dipped to {lowest}");
+        Assert.True(clamped > 0, "the clamp never engaged, so this test proves nothing");
+    }
+
+    [Fact]
     public void Counters_AreMonotonic()
     {
         using var engine = new ScenarioEngine(new ScenarioStateStore(NewDir()));

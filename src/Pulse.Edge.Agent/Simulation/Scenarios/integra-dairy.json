@@ -485,6 +485,7 @@
         "noiseSd": 0.05,
         "followsUnit": "blr1",
         "stoppedValue": 0.3,
+        "min": 0,
         "unit": "bar"
       }
     },
@@ -497,6 +498,7 @@
         "noiseSd": 0.03,
         "followsUnit": "ac1",
         "stoppedValue": 3,
+        "min": 0,
         "unit": "bar"
       }
     },
@@ -509,6 +511,7 @@
         "noiseSd": 0.8,
         "followsUnit": "wwt1",
         "stoppedValue": 0,
+        "min": 0,
         "unit": "m3/h"
       }
     },
