@@ -251,6 +251,12 @@ if (isSinglePort)
     builder.Services.AddTransient<MqttDriver>();
     builder.Services.AddTransient<ModbusDriver>();
     builder.Services.AddTransient<SimulatorDriver>();
+    builder.Services.AddSingleton(new Pulse.Edge.Agent.Simulation.ScenarioStateStore(Pulse.Edge.Storage.QueueDbContext.ResolveDataDirectory()));
+    builder.Services.AddSingleton(sp => new Pulse.Edge.Agent.Simulation.ScenarioEngine(
+        sp.GetRequiredService<Pulse.Edge.Agent.Simulation.ScenarioStateStore>(),
+        ex => sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
+            .CreateLogger<Pulse.Edge.Agent.Simulation.ScenarioEngine>()
+            .LogError(ex, "Scenario engine error")));
 
     // Register Poller Drivers (Transient)
     builder.Services.AddTransient<OpcUaDriverPoller>();
