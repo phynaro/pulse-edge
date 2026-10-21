@@ -186,7 +186,7 @@ public sealed class ScenarioEngineTests : IDisposable
         var weekdayKw = b.Read(Sid, "m_iws1.kw");
 
         Assert.True(sundayKw < weekdayKw, $"sunday={sundayKw} weekday={weekdayKw}");
-        Assert.InRange(b.Read(Sid, "m_iws1.pf"), 0.8, 0.94);
+        Assert.InRange(b.Read(Sid, "m_iws1.pf"), 0.79, 0.955); // the pf curve plus its ±0.003 wobble
         Assert.True(b.Read(Sid, "m_iws1.kwh") >= 205000);
     }
 
@@ -397,7 +397,7 @@ public sealed class ScenarioEngineTests : IDisposable
         using var a = new ScenarioEngine(new ScenarioStateStore(NewDir()));
         a.Update(Sid, Sunday);
         var baseKw = Def.Units.Single(u => u.Id == "m_iws1").Meter!.BaseKw;
-        Assert.Equal(baseKw, a.Read(Sid, "m_iws1.kw"), 6);
+        Assert.InRange(a.Read(Sid, "m_iws1.kw"), baseKw * 0.95, baseKw * 1.05); // base load plus the small wobble
         var sundayMain = a.Read(Sid, "m_main.kw");
 
         using var b = new ScenarioEngine(new ScenarioStateStore(NewDir()));
@@ -489,6 +489,30 @@ public sealed class ScenarioEngineTests : IDisposable
             Assert.True(v >= 70, $"htst1_outlet fell to {v} during a micro-stop at {now:O}");
         });
         Assert.True(idleSamples >= 20, $"only {idleSamples} idle samples");
+    }
+
+    [Fact]
+    public void Meter_Wobbles_WhileLoadIsSteady()
+    {
+        using var probe = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        var running = FindRunning(probe, "iws1", TimeSpan.Zero, TimeSpan.FromSeconds(30), null);
+        using var engine = new ScenarioEngine(new ScenarioStateStore(NewDir()));
+        var kws = new List<double>();
+        var currents = new List<double>();
+        var kwh = new List<double>();
+        for (var s = 0; s <= 30; s++)
+        {
+            engine.Update(Sid, running.AddSeconds(s));
+            kws.Add(engine.Read(Sid, "m_iws1.kw"));
+            currents.Add(engine.Read(Sid, "m_iws1.current"));
+            kwh.Add(engine.Read(Sid, "m_iws1.kwh"));
+        }
+
+        Assert.True(kws.Distinct().Count() > 20, "kW should move second to second");
+        Assert.True(currents.Distinct().Count() > 20, "current should move second to second");
+        var mean = kws.Average();
+        Assert.All(kws, kw => Assert.InRange(kw, mean * 0.94, mean * 1.06)); // a wobble, not a swing
+        Assert.All(kwh.Zip(kwh.Skip(1)), p => Assert.True(p.Second >= p.First, "kWh never goes backwards"));
     }
 
     [Fact]

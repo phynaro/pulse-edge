@@ -363,11 +363,14 @@ public sealed class ScenarioEngine(ScenarioStateStore store, Action<Exception>? 
                         var full = p.BaseKw + _feeds[i].Sum(f => Units[f].Machine!.RunningKw);
                         var load = full > 0 ? Math.Clamp(kw / full, 0, 1) : 0;
                         var pf = p.PfAtLowLoad + (p.PfAtFullLoad - p.PfAtLowLoad) * load;
-                        Values[b + 0] = kw;
+                        // The reported values wobble around the step load; kWh above stays noise-free.
+                        var reportedKw = Math.Max(0, kw * (1 + Noise($"{u.Id}.kw", now, p.KwNoisePct)));
+                        var reportedPf = pf > 0 ? Math.Clamp(pf + Noise($"{u.Id}.pf", now, p.PfNoiseSd), 0.5, 0.99) : 0;
+                        Values[b + 0] = reportedKw;
                         Values[b + 1] = kwh;
-                        Values[b + 2] = pf;
+                        Values[b + 2] = reportedPf;
                         // Three-phase line current: I = P / (sqrt(3) * V * pf).
-                        Values[b + 3] = pf > 0 ? kw * 1000 / (Math.Sqrt(3) * _voltage[i] * pf) : 0;
+                        Values[b + 3] = reportedPf > 0 ? reportedKw * 1000 / (Math.Sqrt(3) * _voltage[i] * reportedPf) : 0;
                         break;
                     }
                 }

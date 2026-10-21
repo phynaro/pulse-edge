@@ -54,12 +54,16 @@ public sealed record AnalogParams(
     string Unit,
     double? Min = null);
 
+/// <summary>KwNoisePct (a fraction of kW) and PfNoiseSd make the reported kW and pf wobble while the
+/// load is steady; kWh integrates the noise-free load, so totals and catch-up are unaffected.</summary>
 public sealed record MeterParams(
     double BaseKw,
     string[] Feeds,
     double PfAtFullLoad,
     double PfAtLowLoad,
-    double StartKwh);
+    double StartKwh,
+    double KwNoisePct = 0.01,
+    double PfNoiseSd = 0.003);
 
 /// <summary>Effect is force_fault, offset or ramp.</summary>
 public sealed record EventDefinition(

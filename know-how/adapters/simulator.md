@@ -67,7 +67,7 @@ Machines that follow shifts run Mon-Sat 06:00-14:00 and 14:00-22:00 (plant time,
 
 ### Power and PlannedStop
 
-Meters add up the power of the machines they feed: a running machine draws its running kW, an idle or faulted one its idle kW, and **a machine in PlannedStop draws 0 kW**. Each meter also has a base load. So `m_main.kw` at night or on Sunday is roughly the 60 kW base load plus the always-on utilities (about 120 to 270 kW in total), not just 60 kW and not the full-plant figure (about 500 kW in a busy shift).
+Meters add up the power of the machines they feed: a running machine draws its running kW, an idle or faulted one its idle kW, and **a machine in PlannedStop draws 0 kW**. Each meter also has a base load. So `m_main.kw` at night or on Sunday is roughly the 60 kW base load plus the always-on utilities (about 120 to 270 kW in total), not just 60 kW and not the full-plant figure (about 500 kW in a busy shift). The reported `kw` and `pf` wobble slightly second to second (kW by about 1%, pf by about 0.003, so `current` moves too) even while every machine holds its state; `kwh` adds up the steady load, so energy totals are not affected by the wobble.
 
 ---
 
